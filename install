@@ -13,6 +13,7 @@ INFO="\uf05a"
 WARN="\uf071"
 QUESTION="\uf059"
 SEPARATOR="\ue0b0"
+CRACKER="🎉"
 
 # colors
 ESCAPE="\033["
@@ -113,7 +114,7 @@ print_question() {
 }
 
 print_complete() {
-  printf "\n${BOLD}${BG_WHITE} ${STEP_COUNT}. ${BG_GLAY}${SEPARATOR} %s${CLEAR_LINE}${RESET}\n" "$1"
+  printf "\n${BG_GLAY}${CLEAR_LINE}\n ${CRACKER}${CRACKER}${CRACKER} Complete dotfiles installation! ${CRACKER}${CRACKER}${CRACKER} ${CLEAR_LINE}\n${CLEAR_LINE}${RESET}\n"
 }
 
 is_exists() {
