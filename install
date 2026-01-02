@@ -8,11 +8,12 @@
 #
 
 # icons
-CHECK="\uf00c"
-INFO="\uf05a"
-WARN="\uf071"
-QUESTION="\uf059"
-SEPARATOR="\ue0b0"
+CHECK="✓"
+INFO="ℹ️"
+WARN="⚠"
+ERROR="✗"
+QUESTION="?"
+SEPARATOR="▶"
 CRACKER="🎉"
 
 # colors
@@ -102,7 +103,7 @@ print_warning() {
 }
 
 print_error() {
-  printf "${INDENT}${RED}${WARN}${RESET} %s\n" "$1" >&2
+  printf "${INDENT}${RED}${ERROR}${RESET} %s\n" "$1" >&2
 }
 
 print_info() {
