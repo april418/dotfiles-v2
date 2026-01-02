@@ -232,44 +232,6 @@ setup_ansible() {
   fi
 }
 
-setup_wget() {
-  print_step "Checking wget installation..."
-
-  if is_exists wget; then
-    local wget_version=$(wget --version | head -n 1 | awk '{print $3}')
-    print_info "wget is installed. Version: $wget_version"
-    print_success "wget installation check completed successfully"
-  else
-    print_info "wget is not installed."
-    print_step "Installing wget..."
-    if sudo $INSTALL_CMD wget; then
-      print_success "wget installed successfully"
-    else
-      print_error "Failed to install wget"
-      exit 1
-    fi
-  fi
-}
-
-setup_unzip() {
-  print_step "Checking unzip installation..."
-
-  if is_exists unzip; then
-    local unzip_version=$(unzip -v | head -n 1)
-    print_info "unzip is installed. Version: $unzip_version"
-    print_success "unzip installation check completed successfully"
-  else
-    print_info "unzip is not installed."
-    print_step "Installing unzip..."
-    if sudo $INSTALL_CMD unzip; then
-      print_success "unzip installed successfully"
-    else
-      print_error "Failed to install unzip"
-      exit 1
-    fi
-  fi
-}
-
 setup_git() {
   print_step "Checking git installation..."
 
@@ -352,7 +314,6 @@ check_distribution
 setup_python
 setup_pipx
 setup_ansible
-setup_wget
 setup_git
 setup_dotfiles_path
 clone_repository
