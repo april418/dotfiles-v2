@@ -137,6 +137,30 @@ confirm() {
   esac
 }
 
+check_sudo() {
+  print_step "Checking sudo availability..."
+
+  if [ "$(id -u)" -ne 0 ]; then
+    if is_exists sudo; then
+      SUDO="sudo"
+      print_info "Sudo is available"
+      # Update sudo timestamp to prevent timeout
+      sudo -v
+      if [ $? -ne 0 ]; then
+        print_error "Sudo authentication failed."
+        exit 1
+      fi
+    else
+      print_error "This script requires superuser privileges. Please run as root or install sudo."
+      exit 1
+    fi
+  else
+    SUDO=""
+  fi
+
+  print_success "Sudo check completed successfully"
+}
+
 check_distribution() {
   print_step "Checking distribution..."
 
@@ -185,7 +209,7 @@ setup_python() {
   else
     print_info "Python 3 is not installed."
     print_step "Installing Python 3..."
-    if sudo $INSTALL_CMD python3; then
+    if $SUDO $INSTALL_CMD python3; then
       print_success "Python 3 installed successfully"
     else
       print_error "Failed to install Python 3"
@@ -204,7 +228,7 @@ setup_pipx() {
   else
     print_info "pipx is not installed."
     print_step "Installing pipx..."
-    if sudo $INSTALL_CMD pipx && pipx ensurepath; then
+    if $SUDO $INSTALL_CMD pipx && pipx ensurepath; then
       print_success "pipx installed successfully"
     else
       print_error "Failed to install pipx"
@@ -242,7 +266,7 @@ setup_git() {
   else
     print_info "git is not installed."
     print_step "Installing git..."
-    if sudo $INSTALL_CMD git; then
+    if $SUDO $INSTALL_CMD git; then
       print_success "git installed successfully"
     else
       print_error "Failed to install git"
@@ -310,6 +334,7 @@ run_ansible_playbook() {
 
 # Start of the script
 print_logo
+check_sudo
 check_distribution
 setup_python
 setup_pipx
