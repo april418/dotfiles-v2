@@ -123,6 +123,11 @@ is_exists() {
   return $?
 }
 
+handle_error() {
+  msg="$1"
+  trap 'printf "\n\n"; print_error "$msg"; exit 1' "${@:2}"
+}
+
 confirm() {
   print_question "$1"
   read -p "${INDENT}${INDENT}(y/n): " yn
@@ -300,6 +305,10 @@ clone_repository() {
       else
         if confirm "Failed to pull latest changes. Do you want to re-clone the repository?" "Skipping repository clone"; then
           rm -rf "$DOTPATH"
+          if [ $? -ne 0 ]; then
+            print_error "Failed to remove existing dotfiles directory"
+            exit 1
+          fi
         else
           return
         fi
@@ -333,6 +342,7 @@ run_ansible_playbook() {
 
 
 # Start of the script
+handle_error "Aborted by user" 1 2 3 15
 print_logo
 check_sudo
 check_distribution
