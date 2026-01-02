@@ -1,0 +1,11 @@
+---
+- name: Install vim
+  ansible.builtin.package:
+    name: vim
+    state: present
+  become: true
+
+- name: Copy vimrc
+  ansible.builtin.copy:
+    src: files/.vimrc
+    dest: "{{ ansible_env.HOME }}/.vimrc"

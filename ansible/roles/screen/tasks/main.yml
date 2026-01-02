@@ -1,0 +1,11 @@
+---
+- name: Install GNU Screen
+  ansible.builtin.package:
+    name: screen
+    state: present
+  become: true
+
+- name: Copy .screenrc
+  ansible.builtin.copy:
+    src: files/.screenrc
+    dest: "{{ ansible_env.HOME }}/.screenrc"

@@ -1,0 +1,19 @@
+---
+- name: Install Git
+  ansible.builtin.package:
+    name: git
+    state: present
+  become: true
+
+- name: Install {{ item }}
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/git/git/refs/heads/master/contrib/completion/{{ item }}"
+    dest: "{{ ansible_env.HOME }}/.{{ item }}"
+  with_items:
+    - git-completion.bash
+    - git-completion.zsh
+
+- name: Copy .gitconfig
+  ansible.builtin.copy:
+    src: .gitconfig
+    dest: "{{ ansible_env.HOME }}/.gitconfig"

@@ -1,0 +1,116 @@
+#
+#    ___  ___ _ __ ___  ___ _ __  _ __ ___
+#   / __|/ __| '__/ _ \/ _ \ '_ \| '__/ __|
+#  _\__ \ (__| | |  __/  __/ | | | | | (__
+# (_)___/\___|_|  \___|\___|_| |_|_|  \___|
+#
+
+
+# ========================================
+#   キー設定
+# ========================================
+# screenコマンド開始シーケンス
+escape ^jj
+
+## デフォルトのキー設定を一部unbindする
+#break
+bind b
+bind ^b
+# screen
+bind c
+bind ^c
+# next
+#bind n
+#bind ^n
+bind <SPC>
+# prev
+bind p
+bind ^p
+#bind ^h
+bind <BackSpace>
+
+## 独自のキー設定
+# 新規タブを開く
+bind j screen
+bind ^j screen
+bindkey [A screen
+bindkey [1;2A screen
+# 前のタブ
+bind h prev
+bind ^h prev
+bindkey [D prev
+bindkey [1;2D prev
+# 次のタブ(デフォルト)
+#bind n next
+#bind ^n next
+bindkey [C next
+bindkey [1;2C next
+# タブを閉じる(デフォルト)
+#bind k kill
+#bind ^k kill
+#bindkey [B kill
+# タブのリストを表示
+bind l windowlist
+bind ^l windowlist
+bindkey [B windowlist
+bindkey [1;2B windowlist
+# タブの番号を変更(デフォルトはその番号のタブに移動)
+bind 0 number 0
+bind 1 number 1
+bind 2 number 2
+bind 3 number 3
+bind 4 number 4
+bind 5 number 5
+bind 6 number 6
+bind 7 number 7
+bind 8 number 8
+bind 9 number 9
+# enter copy mode and move up one page
+bindkey "^[k" eval "copy" "stuff ^b"
+# enter copy mode and move up one line
+bindkey "^k" eval "copy" "stuff k"
+# move up one page
+bindkey -m "^[k" stuff ^b
+# move up one line
+bindkey -m "^k" stuff k
+
+
+# ========================================
+#   表示設定
+# ========================================
+# 日本語設定
+defkanji utf8
+defencoding utf8
+encoding utf8 utf8
+termcap * 'G0:S0=\E(%.:E0=\E(B:TY=iso2022'
+
+# スクロールで戻せる行数
+defscrollback 10000
+
+# タブタイトルに表示する内容
+shelltitle "$ |$SHELL_NAME"
+
+# 最終行に表示する内容
+caption always "%L=%{= kY} %-Lw%{= Kk}%{= KR}%50> %{=bu KR}%n%f* %t%{= KR} %{= kK}%{= kY}%+Lw%<"
+hardstatus alwayslastline "%{= Ck} %H %{= kC}%{= kC} $LOGNAME %{= bk}%{= bk} %S %{= cb}%{= cw} %n%f* %t %{= kc}%=%{ky}%{= yk} %l %{= yg}%{= gk} %Y/%m/%d %c:%s %{= }"
+hardstatus off
+
+# デフォルト背景色を無効に
+defbce on
+
+
+# ========================================
+#   その他
+# ========================================
+# 起動時にメッセージを表示しない
+startup_message off
+
+# ハングアップしたときに自動でデタッチ
+autodetach on
+
+# ヴィジュアルベルをオフに(使ったこともない)
+vbell off
+
+# ウインドウ幅を勝手に変更しない
+termcapinfo xterm-256color hs@:is=\E[r\E[m\E[2J\E[H\E[?7h\E[?1;4;6l\E[?1;4;6l
+

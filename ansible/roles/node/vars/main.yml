@@ -1,0 +1,6 @@
+---
+nvm_version: "v0.40.3"
+nvm_dir: "{{ ansible_facts['env'].XDG_CONFIG_HOME | default(ansible_facts['env'].HOME) }}/.nvm"
+node_versions:
+  - 22
+  - 24

@@ -1,0 +1,45 @@
+---
+- name: Download MesloLGS NF fonts
+  ansible.builtin.get_url:
+    url: "https://github.com/romkatv/powerlevel10k-media/raw/master/{{ item | urlencode }}"
+    dest: "/tmp/{{ item }}"
+  with_items: "{{ font_files }}"
+  when: ansible_facts['os_family'] in ['Debian', 'RedHat', 'Darwin']
+
+- name: Move MesloLGS NF fonts to system fonts directory on Debian-based systems
+  ansible.builtin.copy:
+    src: "/tmp/{{ item }}"
+    dest: "/usr/share/fonts/truetype/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  with_items: "{{ font_files }}"
+  when: ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat'
+
+- name: Rebuild font cache on Debian-based systems
+  ansible.builtin.command:
+    cmd: "fc-cache -f -v"
+  become: true
+  when: ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat'
+
+- name: Install MesloLGS NF fonts on MacOS
+  ansible.builtin.copy:
+    src: "/tmp/{{ item }}"
+    dest: "~/Library/Fonts/{{ item }}"
+  with_items: "{{ font_files }}"
+  when: ansible_facts['os_family'] == 'Darwin'
+
+# - name: Install MesloLGS NF fonts on Windows
+#   ansible.builtin.win_copy:
+#     src: "{{ item }}"
+#     dest: "{{ ansible_env.WINDIR }}\\Fonts\\{{ item }}"
+#   become: true
+#   with_items: "{{ font_files }}"
+#   when: ansible_facts['os_family'] == 'Windows'
+
+# - name: Register fonts in Windows registry
+#   ansible.windows.win_regedit:
+#     path:
+#   with_items: "{{ font_files }}"
+#   when: ansible_facts['os_family'] == 'Windows'

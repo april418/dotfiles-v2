@@ -1,0 +1,9 @@
+---
+- name: Copy motd file
+  ansible.builtin.copy:
+    src: motd.sh
+    dest: /etc/motd
+    owner: root
+    group: root
+    mode: '0644'
+  become: yes

@@ -1,0 +1,12 @@
+---
+- name: Setup local machine
+  hosts: localhost
+  roles:
+    - bash
+    - fonts
+    - git
+    - motd
+    - node
+    - screen
+    - vim
+    - zsh

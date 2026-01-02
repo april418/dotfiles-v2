@@ -1,0 +1,358 @@
+#!/bin/bash
+
+#  _           _        _ _
+# (_)_ __  ___| |_ __ _| | |
+# | | '_ \/ __| __/ _` | | |
+# | | | | \__ \ || (_| | | |
+# |_|_| |_|___/\__\__,_|_|_|
+#
+
+# icons
+CHECK="\uf00c"
+INFO="\uf05a"
+WARN="\uf071"
+QUESTION="\uf059"
+SEPARATOR="\ue0b0"
+
+# colors
+ESCAPE="\033["
+RESET="${ESCAPE}0m"
+BOLD="${ESCAPE}1m"
+ITALIC="${ESCAPE}3m"
+UNDERLINE="${ESCAPE}4m"
+CLEAR_LINE="${ESCAPE}K"
+BLACK="${ESCAPE}30m"
+RED="${ESCAPE}31m"
+GREEN="${ESCAPE}32m"
+YELLOW="${ESCAPE}33m"
+BLUE="${ESCAPE}34m"
+MAGENTA="${ESCAPE}35m"
+CYAN="${ESCAPE}36m"
+WHITE="${ESCAPE}37m"
+DEFAULT="${ESCAPE}39m"
+GLAY="${ESCAPE}90m"
+BRIGHT_RED="${ESCAPE}91m"
+BRIGHT_GREEN="${ESCAPE}92m"
+BRIGHT_YELLOW="${ESCAPE}93m"
+BRIGHT_BLUE="${ESCAPE}94m"
+BRIGHT_MAGENTA="${ESCAPE}95m"
+BRIGHT_CYAN="${ESCAPE}96m"
+BRIGHT_WHITE="${ESCAPE}97m"
+BG_BLACK="${ESCAPE}40m"
+BG_RED="${ESCAPE}41m"
+BG_GREEN="${ESCAPE}42m"
+BG_YELLOW="${ESCAPE}43m"
+BG_BLUE="${ESCAPE}44m"
+BG_MAGENTA="${ESCAPE}45m"
+BG_CYAN="${ESCAPE}46m"
+BG_WHITE="${ESCAPE}47m"
+BG_DEFAULT="${ESCAPE}49m"
+BG_GRAY="${ESCAPE}100m"
+BG_BRIGHT_RED="${ESCAPE}101m"
+BG_BRIGHT_GREEN="${ESCAPE}102m"
+BG_BRIGHT_YELLOW="${ESCAPE}103m"
+BG_BRIGHT_BLUE="${ESCAPE}104m"
+BG_BRIGHT_MAGENTA="${ESCAPE}105m"
+BG_BRIGHT_CYAN="${ESCAPE}106m"
+BG_BRIGHT_WHITE="${ESCAPE}107m"
+if [[ $TERM =~ 256color ]]; then
+  GLAY="${ESCAPE}38;5;237m"
+  BG_GLAY="${ESCAPE}48;5;237m"
+fi
+
+INDENT="    "
+
+DOTFILES_GIT="https://github.com/april418/dotfiles-v2.git"
+DOTFILES_HEADER='
+====================================
+'
+DOTFILES_LOGO='
+      _       _    __ _ _
+   __| | ___ | |_ / _(_) | ___  ___
+  / _` |/ _ \| __| |_| | |/ _ \/ __|
+ | (_| | (_) | |_|  _| | |  __/\__ \
+(_)__,_|\___/ \__|_| |_|_|\___||___/
+'
+DOTFILES_FOOTER='
+====================================
+Copyright (c) 2025 @april418
+Licensed under the MIT license.
+====================================
+'
+
+
+
+print_logo() {
+  printf "${BOLD}${BG_GLAY}%s${CLEAR_LINE}${BLUE}%s${DEFAULT}%s${RESET}\n" "$DOTFILES_HEADER" "$DOTFILES_LOGO" "$DOTFILES_FOOTER"
+}
+
+STEP_COUNT=1
+print_step() {
+  printf "\n${BOLD}${BG_WHITE} ${STEP_COUNT}. ${BG_GLAY}${SEPARATOR} %s${CLEAR_LINE}${RESET}\n" "$1"
+  STEP_COUNT=$((STEP_COUNT + 1))
+}
+
+print_success() {
+  printf "${INDENT}${GREEN}${CHECK}${RESET} ${BOLD}%s${RESET}\n" "$1"
+}
+
+print_warning() {
+  printf "${INDENT}${YELLOW}${WARN}${RESET} %s\n" "$1"
+}
+
+print_error() {
+  printf "${INDENT}${RED}${WARN}${RESET} %s\n" "$1" >&2
+}
+
+print_info() {
+  printf "${INDENT}${CYAN}${INFO}${RESET} %s\n" "$1"
+}
+
+print_question() {
+  printf "${INDENT}${GLAY}${QUESTION}${RESET} %s\n" "$1"
+}
+
+print_complete() {
+  printf "\n${BOLD}${BG_WHITE} ${STEP_COUNT}. ${BG_GLAY}${SEPARATOR} %s${CLEAR_LINE}${RESET}\n" "$1"
+}
+
+is_exists() {
+  which "$1" >/dev/null 2>&1
+  return $?
+}
+
+confirm() {
+  print_question "$1"
+  read -p "${INDENT}${INDENT}(y/n): " yn
+  case "$yn" in
+    [yY]*)
+      return 0
+      ;;
+    *)
+      print_warning "$2"
+      return 1
+      ;;
+  esac
+}
+
+check_distribution() {
+  print_step "Checking distribution..."
+
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    DISTRO_ID="$ID"
+  else
+    print_error "Failed to determine distribution. \`/etc/os-release\` not found."
+    exit 1
+  fi
+
+  case "$DISTRO_ID" in
+    ubuntu|debian)
+      INSTALL_CMD="apt install -y"
+      ;;
+    fedora)
+      INSTALL_CMD="dnf install -y"
+      ;;
+    centos|rhel)
+      INSTALL_CMD="yum install -y"
+      ;;
+    arch)
+      INSTALL_CMD="pacman -S --noconfirm"
+      ;;
+    opensuse*|suse)
+      INSTALL_CMD="zypper install -y"
+      ;;
+    *)
+      print_error "Unsupported distribution: $DISTRO_ID"
+      exit 1
+      ;;
+  esac
+
+  print_info "Distribution: $DISTRO_ID"
+  print_info "Package installation command: $INSTALL_CMD"
+  print_success "Distribution check completed successfully"
+}
+
+setup_python() {
+  print_step "Checking python installation..."
+
+  if is_exists python3; then
+    local python_version=$(python3 --version | awk '{print $2}')
+    print_info "Python 3 is installed. Version: $python_version"
+    print_success "Python installation check completed successfully"
+  else
+    print_info "Python 3 is not installed."
+    print_step "Installing Python 3..."
+    if sudo $INSTALL_CMD python3; then
+      print_success "Python 3 installed successfully"
+    else
+      print_error "Failed to install Python 3"
+      exit 1
+    fi
+  fi
+}
+
+setup_pipx() {
+  print_step "Checking pipx installation..."
+
+  if is_exists pipx; then
+    local pipx_version=$(pipx --version)
+    print_info "pipx is installed. Version: $pipx_version"
+    print_success "pipx installation check completed successfully"
+  else
+    print_info "pipx is not installed."
+    print_step "Installing pipx..."
+    if sudo $INSTALL_CMD pipx && pipx ensurepath; then
+      print_success "pipx installed successfully"
+    else
+      print_error "Failed to install pipx"
+      exit 1
+    fi
+  fi
+}
+
+setup_ansible() {
+  print_step "Checking ansible installation..."
+
+  if is_exists ansible; then
+    local ansible_version=$(ansible --version | head -n 1 | awk '{print $2}')
+    print_info "Ansible is installed. Version: $ansible_version"
+    print_success "Ansible installation check completed successfully"
+  else
+    print_info "Ansible is not installed."
+    print_step "Installing Ansible..."
+    if pipx install --include-deps ansible; then
+      print_success "Ansible installed successfully"
+    else
+      print_error "Failed to install Ansible"
+      exit 1
+    fi
+  fi
+}
+
+setup_wget() {
+  print_step "Checking wget installation..."
+
+  if is_exists wget; then
+    local wget_version=$(wget --version | head -n 1 | awk '{print $3}')
+    print_info "wget is installed. Version: $wget_version"
+    print_success "wget installation check completed successfully"
+  else
+    print_info "wget is not installed."
+    print_step "Installing wget..."
+    if sudo $INSTALL_CMD wget; then
+      print_success "wget installed successfully"
+    else
+      print_error "Failed to install wget"
+      exit 1
+    fi
+  fi
+}
+
+setup_unzip() {
+  print_step "Checking unzip installation..."
+
+  if is_exists unzip; then
+    local unzip_version=$(unzip -v | head -n 1)
+    print_info "unzip is installed. Version: $unzip_version"
+    print_success "unzip installation check completed successfully"
+  else
+    print_info "unzip is not installed."
+    print_step "Installing unzip..."
+    if sudo $INSTALL_CMD unzip; then
+      print_success "unzip installed successfully"
+    else
+      print_error "Failed to install unzip"
+      exit 1
+    fi
+  fi
+}
+
+setup_git() {
+  print_step "Checking git installation..."
+
+  if is_exists git; then
+    local git_version=$(git --version | awk '{print $3}')
+    print_info "git is installed. Version: $git_version"
+    print_success "git installation check completed successfully"
+  else
+    print_info "git is not installed."
+    print_step "Installing git..."
+    if sudo $INSTALL_CMD git; then
+      print_success "git installed successfully"
+    else
+      print_error "Failed to install git"
+      exit 1
+    fi
+  fi
+}
+
+setup_dotfiles_path() {
+  print_step "Setting up dotfiles path..."
+
+  if [ -z "${DOTPATH:-}" ]; then
+    DOTPATH=~/.dotfiles
+    export DOTPATH
+  fi
+
+  print_info "Dotfiles path: $DOTPATH"
+  print_success "Dotfiles path setup completed successfully"
+}
+
+clone_repository() {
+  print_step "Cloning dotfiles repository..."
+
+  if [ -d "$DOTPATH" ]; then
+    print_info "Dotfiles directory already exists at $DOTPATH"
+
+    if confirm "Do you want to pull the latest changes?" "Skipping repository clone"; then
+      if git -C "$DOTPATH" pull; then
+        print_success "Dotfiles repository updated successfully"
+        return
+      else
+        if confirm "Failed to pull latest changes. Do you want to re-clone the repository?" "Skipping repository clone"; then
+          rm -rf "$DOTPATH"
+        else
+          return
+        fi
+      fi
+    else
+      return
+    fi
+  fi
+
+  if git clone "$DOTFILES_GIT" "$DOTPATH"; then
+    print_success "Dotfiles repository downloaded successfully"
+  else
+    print_error "Failed to download dotfiles repository"
+    exit 1
+  fi
+}
+
+run_ansible_playbook() {
+  print_step "Running ansible playbook..."
+
+  local ansible_path="$DOTPATH/ansible"
+
+  if ansible-playbook "$ansible_path/playbook.yml" --connection=local; then
+    print_success "Ansible playbook executed successfully"
+  else
+    print_error "Failed to execute ansible playbook"
+    exit 1
+  fi
+}
+
+
+
+# Start of the script
+print_logo
+check_distribution
+setup_python
+setup_pipx
+setup_ansible
+setup_wget
+setup_git
+setup_dotfiles_path
+clone_repository
+run_ansible_playbook
+print_complete
