@@ -36,7 +36,7 @@ ZINIT_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/zinit/zinit.git"
 source "$ZINIT_HOME/zinit.zsh"
 
 # powerlevel10kをインストール
-zinit ice depth=1
+# zinit ice depth=1
 zinit light romkatv/powerlevel10k
 
 
