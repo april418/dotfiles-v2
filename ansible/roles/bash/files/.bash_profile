@@ -6,25 +6,32 @@
 #                        |_____|_|
 #
 
-# Get the aliases and functions
-# if [ -f ~/.bashrc ]; then
-#   source ~/.bashrc
-# fi
-
 # User specific environment and startup programs
 PATH=$PATH:$HOME/bin
 export PATH
 
 # rbenv
-if [ -d ~/.rbenv ]; then
+if [ -d "~/.rbenv" ]; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$($HOME/.rbenv/bin/rbenv init -)"
 fi
 
 # nvm
-export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-
-if [ -f ~/.bash_profile.local ]; then
-  source ~/.bash_profile.local
+if [ -z "$XDG_CONFIG_HOME" ]; then
+  export NVM_DIR="$HOME/.nvm"
+else
+  export NVM_DIR="$XDG_CONFIG_HOME/nvm"
 fi
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  source "$NVM_DIR/nvm.sh"
+fi
+
+# Load .bash_profile.local if it exists
+if [ -f "~/.bash_profile.local" ]; then
+  source "~/.bash_profile.local"
+fi
+
+# Get the aliases and functions
+# if [ -f ~/.bashrc ]; then
+#   source ~/.bashrc
+# fi
