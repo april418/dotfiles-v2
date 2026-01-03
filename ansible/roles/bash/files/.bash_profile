@@ -7,11 +7,11 @@
 #
 
 # User specific environment and startup programs
-PATH=$PATH:$HOME/bin
+PATH="$PATH:$HOME/bin"
 export PATH
 
 # rbenv
-if [ -d "~/.rbenv" ]; then
+if [ -d ~/.rbenv ]; then
   export PATH="$HOME/.rbenv/bin:$PATH"
   eval "$($HOME/.rbenv/bin/rbenv init -)"
 fi
@@ -25,13 +25,16 @@ fi
 if [ -s "$NVM_DIR/nvm.sh" ]; then
   source "$NVM_DIR/nvm.sh"
 fi
+if [ -s "$NVM_DIR/bash_completion" ]; then
+  source "$NVM_DIR/bash_completion"
+fi
 
 # Load .bash_profile.local if it exists
-if [ -f "~/.bash_profile.local" ]; then
-  source "~/.bash_profile.local"
+if [ -f ~/.bash_profile.local ]; then
+  source ~/.bash_profile.local
 fi
 
 # Get the aliases and functions
-# if [ -f ~/.bashrc ]; then
-#   source ~/.bashrc
-# fi
+if [ -f ~/.bashrc ]; then
+  source ~/.bashrc
+fi

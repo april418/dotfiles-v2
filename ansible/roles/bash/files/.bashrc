@@ -6,7 +6,9 @@
 #
 
 
-# Source global definitions
+# =======================================
+# /etc/bashrcがあれば読み込む
+# =======================================
 if [ -f /etc/bashrc ]; then
   source /etc/bashrc
 fi
@@ -15,7 +17,7 @@ fi
 # =======================================
 # screenのstatusbarにディレクトリ名/コマンド名を表示させる
 # =======================================
-if [ $TERM='screen' ] || [ $TERM='screen-bce' ]; then
+if [ ! -z "$(echo $TERM | sed -r 's/^.*(screen).*$/\1/')" ]; then
   export PS1='[\u@\h \W]\$ '
   export PROMPT_COMMAND='echo -ne "\033k\033\0134\033k$(basename $(pwd))\033\\"'
 else
@@ -30,3 +32,10 @@ if [ -f ~/.git-completion.bash ]; then
   source ~/.git-completion.bash
 fi
 
+
+# ========================================
+#   local設定ファイルがあれば読み込む
+# ========================================
+if [ -f ~/.bashrc.local ]; then
+  source ~/.bashrc.local
+fi
