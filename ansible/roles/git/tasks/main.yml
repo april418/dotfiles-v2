@@ -5,7 +5,7 @@
     state: present
   become: true
 
-- name: Install {{ item }}
+- name: Install Git completion scripts
   ansible.builtin.get_url:
     url: "https://raw.githubusercontent.com/git/git/refs/heads/master/contrib/completion/{{ item }}"
     dest: "{{ ansible_facts['env'].HOME }}/.{{ item }}"
