@@ -33,7 +33,7 @@
 # - name: Install MesloLGS NF fonts on Windows
 #   ansible.builtin.win_copy:
 #     src: "{{ item }}"
-#     dest: "{{ ansible_env.WINDIR }}\\Fonts\\{{ item }}"
+#     dest: "{{ ansible_facts['env'].WINDIR }}\\Fonts\\{{ item }}"
 #   become: true
 #   with_items: "{{ font_files }}"
 #   when: ansible_facts['os_family'] == 'Windows'

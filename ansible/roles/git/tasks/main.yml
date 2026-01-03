@@ -8,7 +8,7 @@
 - name: Install {{ item }}
   ansible.builtin.get_url:
     url: "https://raw.githubusercontent.com/git/git/refs/heads/master/contrib/completion/{{ item }}"
-    dest: "{{ ansible_env.HOME }}/.{{ item }}"
+    dest: "{{ ansible_facts['env'].HOME }}/.{{ item }}"
   with_items:
     - git-completion.bash
     - git-completion.zsh
@@ -16,4 +16,4 @@
 - name: Copy .gitconfig
   ansible.builtin.copy:
     src: .gitconfig
-    dest: "{{ ansible_env.HOME }}/.gitconfig"
+    dest: "{{ ansible_facts['env'].HOME }}/.gitconfig"

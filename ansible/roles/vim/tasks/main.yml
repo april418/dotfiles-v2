@@ -8,4 +8,4 @@
 - name: Copy vimrc
   ansible.builtin.copy:
     src: files/.vimrc
-    dest: "{{ ansible_env.HOME }}/.vimrc"
+    dest: "{{ ansible_facts['env'].HOME }}/.vimrc"

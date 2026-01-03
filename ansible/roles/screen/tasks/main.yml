@@ -8,4 +8,4 @@
 - name: Copy .screenrc
   ansible.builtin.copy:
     src: files/.screenrc
-    dest: "{{ ansible_env.HOME }}/.screenrc"
+    dest: "{{ ansible_facts['env'].HOME }}/.screenrc"

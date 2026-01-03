@@ -13,25 +13,29 @@
 - name: Copy .zshrc
   ansible.builtin.copy:
     src: files/.zshrc
-    dest: "{{ ansible_env.HOME }}/.zshrc"
+    dest: "{{ ansible_facts['env'].HOME }}/.zshrc"
 
 - name: Copy .zshenv
   ansible.builtin.copy:
     src: files/.zshenv
-    dest: "{{ ansible_env.HOME }}/.zshenv"
+    dest: "{{ ansible_facts['env'].HOME }}/.zshenv"
 
 - name: Copy .dircolors
   ansible.builtin.copy:
     src: files/.dircolors
-    dest: "{{ ansible_env.HOME }}/.dircolors"
+    dest: "{{ ansible_facts['env'].HOME }}/.dircolors"
 
 - name: Copy .p10k.zsh
   ansible.builtin.copy:
     src: files/.p10k.zsh
-    dest: "{{ ansible_env.HOME }}/.p10k.zsh"
+    dest: "{{ ansible_facts['env'].HOME }}/.p10k.zsh"
+
+- name: debug print user
+  ansible.builtin.debug:
+    msg: "user: {{ ansible_facts['env'].USER }}"
 
 - name: Ensure zsh is the default shell
   ansible.builtin.user:
-    name: "{{ ansible_env.USER }}"
+    name: "{{ ansible_facts['env'].USER }}"
     shell: /usr/bin/zsh
   become: true
