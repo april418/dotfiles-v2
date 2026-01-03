@@ -45,11 +45,22 @@ fi
 # ========================================
 #   nvm設定
 # ========================================
-export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
+if [ -z "$XDG_CONFIG_HOME" ]; then
+  export NVM_DIR="$HOME/.nvm"
+else
+  export NVM_DIR="$XDG_CONFIG_HOME/nvm"
+fi
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  source "$NVM_DIR/nvm.sh"
+fi
+if [ -s "$NVM_DIR/bash_completion" ]; then
+  source "$NVM_DIR/bash_completion"
+fi
 
 
-# localのzshenvを読み込む
+# ========================================
+#   local設定ファイルがあれば読み込む
+# ========================================
 if [ -f ~/.zshenv.local ]; then
   source ~/.zshenv.local
 fi
