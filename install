@@ -173,7 +173,7 @@ check_distribution() {
     . /etc/os-release
     DISTRO_ID="$ID"
   else
-    print_warning "`/etc/os-release` not found."
+    print_warning '`/etc/os-release` not found.'
   fi
 
   if is_exists sw_vers; then
