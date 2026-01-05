@@ -326,13 +326,13 @@ clone_repository() {
   print_step "Cloning dotfiles repository..."
 
   if [ -d "$DOTPATH" ]; then
-    if [ "$(git -C "$DOTPATH" remote -v | sed -nr '1s/github.com\/(.+).git/\1/p')" = 'april418/dotfile-v2' ]; then
+    if [ "$(git -C "$DOTPATH" remote -v | sed -nr '1s/.*github.com\/(.+)\.git.*/\1/p')" = 'april418/dotfiles-v2' ]; then
       print_info "Dotfiles directory already exists at $DOTPATH"
 
       if confirm "Do you want to pull the latest changes?" "Skipping repository clone"; then
         if git -C "$DOTPATH" pull; then
           print_success "Dotfiles repository updated successfully"
-          return
+          return 0
         else
           if confirm "Failed to pull latest changes. Do you want to re-clone the repository?" "Skipping repository clone"; then
             rm -rf "$DOTPATH"
@@ -341,11 +341,11 @@ clone_repository() {
               exit 1
             fi
           else
-            return
+            return 0
           fi
         fi
       else
-        return
+        return 0
       fi
     else
       print_warning "A different repository already exists at $DOTPATH"
