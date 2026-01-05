@@ -282,7 +282,7 @@ setup_ansible() {
   else
     print_info "Ansible is not installed."
     print_step "Installing Ansible..."
-    if pipx install --include-deps ansible; then
+    if pipx install --include-deps --force ansible; then
       print_success "Ansible installed successfully"
     else
       print_error "Failed to install Ansible"
