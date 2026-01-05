@@ -326,25 +326,39 @@ clone_repository() {
   print_step "Cloning dotfiles repository..."
 
   if [ -d "$DOTPATH" ]; then
-    print_info "Dotfiles directory already exists at $DOTPATH"
+    if [ "$(git -C "$DOTPATH" remote -v | sed -nr '1s/github.com\/(.+).git/\1/p')" = 'april418/dotfile-v2' ]; then
+      print_info "Dotfiles directory already exists at $DOTPATH"
 
-    if confirm "Do you want to pull the latest changes?" "Skipping repository clone"; then
-      if git -C "$DOTPATH" pull; then
-        print_success "Dotfiles repository updated successfully"
-        return
-      else
-        if confirm "Failed to pull latest changes. Do you want to re-clone the repository?" "Skipping repository clone"; then
-          rm -rf "$DOTPATH"
-          if [ $? -ne 0 ]; then
-            print_error "Failed to remove existing dotfiles directory"
-            exit 1
-          fi
-        else
+      if confirm "Do you want to pull the latest changes?" "Skipping repository clone"; then
+        if git -C "$DOTPATH" pull; then
+          print_success "Dotfiles repository updated successfully"
           return
+        else
+          if confirm "Failed to pull latest changes. Do you want to re-clone the repository?" "Skipping repository clone"; then
+            rm -rf "$DOTPATH"
+            if [ $? -ne 0 ]; then
+              print_error "Failed to remove existing dotfiles directory"
+              exit 1
+            fi
+          else
+            return
+          fi
         fi
+      else
+        return
       fi
     else
-      return
+      print_warning "A different repository already exists at $DOTPATH"
+      if confirm "Do you want to remove it and clone the dotfiles repository?" "Skipping repository clone"; then
+        rm -rf "$DOTPATH"
+        if [ $? -ne 0 ]; then
+          print_error "Failed to remove existing dotfiles directory"
+          exit 1
+        fi
+      else
+        print_error "Cannot proceed without cloning the correct repository."
+        exit 1
+      fi
     fi
   fi
 
