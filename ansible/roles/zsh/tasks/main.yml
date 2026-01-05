@@ -3,7 +3,7 @@
   ansible.builtin.package:
     name: zsh
     state: present
-  become: true
+  become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
 
 - name: Install zinit
   ansible.builtin.git:

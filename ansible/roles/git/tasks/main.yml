@@ -3,7 +3,7 @@
   ansible.builtin.package:
     name: git
     state: present
-  become: true
+  become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
 
 - name: Install Git completion scripts
   ansible.builtin.get_url:
