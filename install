@@ -166,6 +166,19 @@ check_sudo() {
   print_success "Sudo check completed successfully"
 }
 
+setup_bin_path() {
+  print_step "Setting up binary path..."
+
+  if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    export PATH="$PATH:$HOME/.local/bin"
+    print_info "Added $HOME/.local/bin to PATH"
+  else
+    print_info "$HOME/.local/bin is already in PATH"
+  fi
+
+  print_success "Binary path setup completed successfully"
+}
+
 check_distribution() {
   print_step "Checking distribution..."
 
@@ -393,6 +406,7 @@ check_distribution
 if [ "$DISTRO_ID" = "macos" ]; then
   setup_homebrew
 fi
+setup_bin_path
 setup_python
 setup_pipx
 setup_ansible
