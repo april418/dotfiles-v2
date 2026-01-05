@@ -7,7 +7,7 @@
 #
 
 # User specific environment and startup programs
-PATH="$PATH:$HOME/bin"
+PATH="$PATH:$HOME/.local/bin"
 export PATH
 
 # rbenv
