@@ -173,7 +173,15 @@ check_distribution() {
     . /etc/os-release
     DISTRO_ID="$ID"
   else
-    print_error "Failed to determine distribution. \`/etc/os-release\` not found."
+    print_warning "`/etc/os-release` not found."
+  fi
+
+  if is_exists sw_vers; then
+    DISTRO_ID="macos"
+  fi
+
+  if [ -z "${DISTRO_ID:-}" ]; then
+    print_error "Could not determine the operating system distribution."
     exit 1
   fi
 
@@ -193,6 +201,9 @@ check_distribution() {
     opensuse*|suse)
       INSTALL_CMD="zypper install -y"
       ;;
+    macos)
+      INSTALL_CMD="brew install"
+      ;;
     *)
       print_error "Unsupported distribution: $DISTRO_ID"
       exit 1
@@ -202,6 +213,25 @@ check_distribution() {
   print_info "Distribution: $DISTRO_ID"
   print_info "Package installation command: $INSTALL_CMD"
   print_success "Distribution check completed successfully"
+}
+
+setup_homebrew() {
+  print_step "Checking Homebrew installation..."
+
+  if is_exists brew; then
+    local brew_version=$(brew --version | head -n 1)
+    print_info "Homebrew is installed. Version: $brew_version"
+    print_success "Homebrew installation check completed successfully"
+  else
+    print_info "Homebrew is not installed."
+    print_step "Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    if [ $? -ne 0 ]; then
+      print_error "Failed to install Homebrew"
+      exit 1
+    fi
+    print_success "Homebrew installed successfully"
+  fi
 }
 
 setup_python() {
@@ -346,6 +376,9 @@ handle_error "Aborted by user" 1 2 3 15
 print_logo
 check_sudo
 check_distribution
+if [ "$DISTRO_ID" = "macos" ]; then
+  setup_homebrew
+fi
 setup_python
 setup_pipx
 setup_ansible
