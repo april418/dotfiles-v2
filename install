@@ -187,19 +187,19 @@ check_distribution() {
 
   case "$DISTRO_ID" in
     ubuntu|debian)
-      INSTALL_CMD="apt install -y"
+      INSTALL_CMD="$SUDO apt install -y"
       ;;
     fedora)
-      INSTALL_CMD="dnf install -y"
+      INSTALL_CMD="$SUDO dnf install -y"
       ;;
     centos|rhel)
-      INSTALL_CMD="yum install -y"
+      INSTALL_CMD="$SUDO yum install -y"
       ;;
     arch)
-      INSTALL_CMD="pacman -S --noconfirm"
+      INSTALL_CMD="$SUDO pacman -S --noconfirm"
       ;;
     opensuse*|suse)
-      INSTALL_CMD="zypper install -y"
+      INSTALL_CMD="$SUDO zypper install -y"
       ;;
     macos)
       INSTALL_CMD="brew install"
@@ -244,7 +244,7 @@ setup_python() {
   else
     print_info "Python 3 is not installed."
     print_step "Installing Python 3..."
-    if $SUDO $INSTALL_CMD python3; then
+    if $INSTALL_CMD python3; then
       print_success "Python 3 installed successfully"
     else
       print_error "Failed to install Python 3"
@@ -263,7 +263,7 @@ setup_pipx() {
   else
     print_info "pipx is not installed."
     print_step "Installing pipx..."
-    if $SUDO $INSTALL_CMD pipx && pipx ensurepath; then
+    if $INSTALL_CMD pipx && pipx ensurepath; then
       print_success "pipx installed successfully"
     else
       print_error "Failed to install pipx"
@@ -301,7 +301,7 @@ setup_git() {
   else
     print_info "git is not installed."
     print_step "Installing git..."
-    if $SUDO $INSTALL_CMD git; then
+    if $INSTALL_CMD git; then
       print_success "git installed successfully"
     else
       print_error "Failed to install git"
