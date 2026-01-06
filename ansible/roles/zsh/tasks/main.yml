@@ -38,4 +38,4 @@
   ansible.builtin.user:
     name: "{{ ansible_facts['env'].USER }}"
     shell: /usr/bin/zsh
-  become: true
+  become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
