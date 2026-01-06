@@ -7,3 +7,4 @@
     group: root
     mode: '0644'
   become: yes
+  when : ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat'
