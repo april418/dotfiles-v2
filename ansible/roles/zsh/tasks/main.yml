@@ -50,4 +50,4 @@
     name: "{{ ansible_facts['env'].USER }}"
     shell: "{{ zsh_path.stdout }}"
   become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
-  when: "{{ user_info.state | d('') === 'present' }}"
+  when: user_info.state == 'present'
