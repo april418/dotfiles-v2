@@ -39,8 +39,15 @@
   register: zsh_path
   changed_when: false
 
+- name: Get user info
+  ansible.builtin.user:
+    name: "{{ ansible_facts['env'].USER }}"
+  check_mode: true
+  register: user_info
+
 - name: Ensure zsh is the default shell
   ansible.builtin.user:
     name: "{{ ansible_facts['env'].USER }}"
     shell: "{{ zsh_path.stdout }}"
   become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
+  when: "{{ user_info.state | d('') === 'present' }}"
