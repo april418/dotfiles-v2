@@ -34,8 +34,13 @@
   ansible.builtin.debug:
     msg: "user: {{ ansible_facts['env'].USER }}"
 
+- name: Get zsh path
+  ansible.builtin.shell: which zsh
+  register: zsh_path
+  changed_when: false
+
 - name: Ensure zsh is the default shell
   ansible.builtin.user:
     name: "{{ ansible_facts['env'].USER }}"
-    shell: /usr/bin/zsh
+    shell: "{{ zsh_path.stdout }}"
   become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
