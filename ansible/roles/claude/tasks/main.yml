@@ -1,0 +1,21 @@
+---
+- name: Ensure .claude directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.claude"
+    state: directory
+    mode: "0700"
+
+- name: Copy CLAUDE.md
+  ansible.builtin.copy:
+    src: files/CLAUDE.md
+    dest: "{{ ansible_facts['env'].HOME }}/.claude/CLAUDE.md"
+
+- name: Copy settings.json
+  ansible.builtin.copy:
+    src: files/settings.json
+    dest: "{{ ansible_facts['env'].HOME }}/.claude/settings.json"
+
+- name: Copy skills
+  ansible.builtin.copy:
+    src: files/skills/
+    dest: "{{ ansible_facts['env'].HOME }}/.claude/skills/"
