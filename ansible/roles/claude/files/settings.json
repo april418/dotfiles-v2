@@ -1,4 +1,9 @@
 {
   "effortLevel": "high",
-  "model": "opus"
+  "model": "opus",
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh",
+    "padding": 2
+  }
 }
