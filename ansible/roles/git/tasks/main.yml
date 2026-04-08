@@ -17,3 +17,9 @@
   ansible.builtin.copy:
     src: .gitconfig
     dest: "{{ ansible_facts['env'].HOME }}/.gitconfig"
+
+- name: Create .gitconfig.local
+  ansible.builtin.template:
+    src: .gitconfig.local.j2
+    dest: "{{ ansible_facts['env'].HOME }}/.gitconfig.local"
+    force: false

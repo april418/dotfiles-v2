@@ -1,6 +1,13 @@
 ---
 - name: Setup local machine
   hosts: localhost
+  vars_prompt:
+    - name: git_user_name
+      prompt: "Git user name"
+      private: false
+    - name: git_user_email
+      prompt: "Git user email"
+      private: false
   roles:
     - bash
     - claude
