@@ -1,0 +1,11 @@
+---
+- name: Ensure uv config directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.config/uv"
+    state: directory
+    mode: "0755"
+
+- name: Copy uv.toml
+  ansible.builtin.copy:
+    src: files/.config/uv/uv.toml
+    dest: "{{ ansible_facts['env'].HOME }}/.config/uv/uv.toml"

@@ -1,0 +1,5 @@
+# pnpm グローバル設定
+# 共有の ignore-scripts / audit-level / audit / min-release-age は ~/.npmrc を参照
+#
+# min-release-age=7（日）に相当。pnpm は分単位のみ（v10.16+）。
+minimum-release-age=10080

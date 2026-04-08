@@ -15,6 +15,9 @@
     - git
     - motd
     - node
+    - npm
+    - pnpm
     - screen
+    - uv
     - vim
     - zsh

@@ -1,0 +1,5 @@
+---
+- name: Copy .npmrc
+  ansible.builtin.copy:
+    src: files/.npmrc
+    dest: "{{ ansible_facts['env'].HOME }}/.npmrc"
