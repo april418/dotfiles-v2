@@ -15,11 +15,16 @@
     src: files/settings.json
     dest: "{{ ansible_facts['env'].HOME }}/.claude/settings.json"
 
-- name: Copy statusline script
-  ansible.builtin.copy:
-    src: files/statusline.sh
-    dest: "{{ ansible_facts['env'].HOME }}/.claude/statusline.sh"
+- name: Ensure ccstatusline config directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.config/ccstatusline"
+    state: directory
     mode: "0755"
+
+- name: Copy ccstatusline settings
+  ansible.builtin.copy:
+    src: files/ccstatusline.json
+    dest: "{{ ansible_facts['env'].HOME }}/.config/ccstatusline/settings.json"
 
 - name: Copy skills
   ansible.builtin.copy:

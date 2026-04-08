@@ -3,7 +3,7 @@
   "model": "opus",
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/statusline.sh",
-    "padding": 2
+    "command": "npx -y ccstatusline@latest",
+    "padding": 0
   }
 }

@@ -1,0 +1,96 @@
+{
+  "version": 3,
+  "lines": [
+    [
+      {
+        "id": "1",
+        "type": "model",
+        "color": "cyan"
+      },
+      {
+        "id": "75352031-4b95-4a68-929e-10c0d6b2932b",
+        "type": "custom-text",
+        "character": "|",
+        "customText": ""
+      },
+      {
+        "id": "3",
+        "type": "context-length",
+        "color": "brightBlack"
+      },
+      {
+        "id": "e0ce724e-0864-4f17-ac58-8d64bd68f13c",
+        "type": "custom-text",
+        "customText": ""
+      },
+      {
+        "id": "5",
+        "type": "git-branch",
+        "color": "magenta"
+      },
+      {
+        "id": "7",
+        "type": "git-changes",
+        "color": "yellow"
+      },
+      {
+        "id": "f9914777-0bbb-42a8-bf01-c335ce8b7dbd",
+        "type": "flex-separator"
+      },
+      {
+        "id": "ef3e2dd8-6375-4611-9d94-d7d00112f72d",
+        "type": "reset-timer",
+        "metadata": {
+          "display": "time"
+        }
+      },
+      {
+        "id": "f3827860-e7de-42e4-8351-6ad704315c73",
+        "type": "custom-text",
+        "customText": ""
+      },
+      {
+        "id": "a5c4bba9-489c-4487-ba42-fb38b5a2ec77",
+        "type": "session-usage",
+        "metadata": {
+          "display": "time"
+        }
+      },
+      {
+        "id": "8434f8df-b474-474e-8a84-6350701befc5",
+        "type": "custom-text",
+        "customText": ""
+      },
+      {
+        "id": "36ce7159-a760-41f9-b0bd-d782835fa60c",
+        "type": "weekly-usage",
+        "metadata": {
+          "display": "time"
+        }
+      }
+    ],
+    [],
+    []
+  ],
+  "flexMode": "full",
+  "compactThreshold": 60,
+  "colorLevel": 2,
+  "defaultPadding": " ",
+  "inheritSeparatorColors": false,
+  "globalBold": false,
+  "powerline": {
+    "enabled": false,
+    "separators": [
+      ""
+    ],
+    "separatorInvertBackground": [
+      false
+    ],
+    "startCaps": [],
+    "endCaps": [
+      ""
+    ],
+    "theme": "custom",
+    "autoAlign": true
+  }
+}
