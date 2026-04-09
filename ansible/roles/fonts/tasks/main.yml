@@ -1,4 +1,18 @@
 ---
+- name: Install fontconfig on Debian-based systems
+  ansible.builtin.apt:
+    name: fontconfig
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Install fontconfig on RedHat-based systems
+  ansible.builtin.dnf:
+    name: fontconfig
+    state: present
+  become: true
+  when: ansible_facts['os_family'] == 'RedHat'
+
 - name: Download MesloLGS NF fonts
   ansible.builtin.get_url:
     url: "https://github.com/romkatv/powerlevel10k-media/raw/master/{{ item | urlencode }}"
