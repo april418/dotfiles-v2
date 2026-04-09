@@ -92,16 +92,32 @@
   with_items: "{{ font_files }}"
   when: is_wsl
 
-# - name: Install MesloLGS NF fonts on Windows
-#   ansible.builtin.win_copy:
-#     src: "{{ item }}"
-#     dest: "{{ ansible_facts['env'].WINDIR }}\\Fonts\\{{ item }}"
-#   become: true
-#   with_items: "{{ font_files }}"
-#   when: ansible_facts['os_family'] == 'Windows'
+- name: Download MesloLGS NF fonts on Windows
+  ansible.windows.win_get_url:
+    url: "https://github.com/romkatv/powerlevel10k-media/raw/master/{{ item | urlencode }}"
+    dest: "{{ ansible_facts['env']['TEMP'] }}\\{{ item }}"
+  with_items: "{{ font_files }}"
+  when: ansible_facts['os_family'] == 'Windows'
 
-# - name: Register fonts in Windows registry
-#   ansible.windows.win_regedit:
-#     path:
-#   with_items: "{{ font_files }}"
-#   when: ansible_facts['os_family'] == 'Windows'
+- name: Ensure Windows user font directory exists
+  ansible.windows.win_file:
+    path: "{{ ansible_facts['env']['LOCALAPPDATA'] }}\\Microsoft\\Windows\\Fonts"
+    state: directory
+  when: ansible_facts['os_family'] == 'Windows'
+
+- name: Install MesloLGS NF fonts to Windows user font directory
+  ansible.windows.win_copy:
+    src: "{{ ansible_facts['env']['TEMP'] }}\\{{ item }}"
+    dest: "{{ ansible_facts['env']['LOCALAPPDATA'] }}\\Microsoft\\Windows\\Fonts\\{{ item }}"
+    remote_src: true
+  with_items: "{{ font_files }}"
+  when: ansible_facts['os_family'] == 'Windows'
+
+- name: Register fonts in Windows user registry
+  ansible.windows.win_regedit:
+    path: HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts
+    name: "{{ item | regex_replace('\\.ttf$', '') }} (TrueType)"
+    data: "{{ ansible_facts['env']['LOCALAPPDATA'] }}\\Microsoft\\Windows\\Fonts\\{{ item }}"
+    type: string
+  with_items: "{{ font_files }}"
+  when: ansible_facts['os_family'] == 'Windows'
