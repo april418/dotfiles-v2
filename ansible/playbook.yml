@@ -8,6 +8,10 @@
     - name: git_user_email
       prompt: "Git user email"
       private: false
+    - name: flatt_guard_token
+      prompt: "Flatt Guard token (skip: Enter)"
+      private: true
+      default: ""
   pre_tasks:
     - name: Detect WSL environment
       ansible.builtin.set_fact:

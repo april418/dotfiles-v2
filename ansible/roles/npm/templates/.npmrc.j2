@@ -4,3 +4,6 @@ engine-strict=true
 ignore-scripts=true
 min-release-age=7
 save-exact=true
+{% if flatt_guard_token %}
+//npm.flatt.tech/:_authToken={{ flatt_guard_token }}
+{% endif %}
