@@ -29,6 +29,12 @@ if [ -s "$NVM_DIR/bash_completion" ]; then
   source "$NVM_DIR/bash_completion"
 fi
 
+# Package registry (Flatt Security Guard)
+# Token: override UV_DEFAULT_INDEX in ~/.bash_profile.local
+#   export UV_DEFAULT_INDEX="https://token:tg_anon_xxx@pypi.flatt.tech/simple/"
+export NPM_CONFIG_REGISTRY="https://npm.flatt.tech"
+export UV_DEFAULT_INDEX="https://pypi.flatt.tech/simple/"
+
 # Load .bash_profile.local if it exists
 if [ -f ~/.bash_profile.local ]; then
   source ~/.bash_profile.local

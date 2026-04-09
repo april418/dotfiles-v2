@@ -59,6 +59,16 @@ fi
 
 
 # ========================================
+#   パッケージレジストリ設定 (Flatt Security Guard)
+# ========================================
+# 環境変数で設定することでプロジェクトの設定ファイルによる上書きを防ぐ
+# トークンを設定する場合は ~/.zshenv.local で UV_DEFAULT_INDEX を上書きする
+#   export UV_DEFAULT_INDEX="https://token:tg_anon_xxx@pypi.flatt.tech/simple/"
+export NPM_CONFIG_REGISTRY="https://npm.flatt.tech"
+export UV_DEFAULT_INDEX="https://pypi.flatt.tech/simple/"
+
+
+# ========================================
 #   local設定ファイルがあれば読み込む
 # ========================================
 if [ -f ~/.zshenv.local ]; then
