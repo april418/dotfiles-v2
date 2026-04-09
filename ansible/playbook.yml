@@ -8,6 +8,10 @@
     - name: git_user_email
       prompt: "Git user email"
       private: false
+  pre_tasks:
+    - name: Detect WSL environment
+      ansible.builtin.set_fact:
+        is_wsl: "{{ 'microsoft' in ansible_facts['kernel'] | lower }}"
   roles:
     - bash
     - claude
