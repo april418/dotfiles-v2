@@ -5,12 +5,10 @@
     state: present
   become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
 
-- name: Add GitHub CLI GPG key on Debian-based systems
-  ansible.builtin.shell:
-    cmd: >-
-      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg
-      | dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg
-    creates: /etc/apt/keyrings/githubcli-archive-keyring.gpg
+- name: Remove old GitHub CLI apt source file
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/github-cli.list
+    state: absent
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
@@ -18,6 +16,15 @@
   ansible.builtin.file:
     path: /usr/share/keyrings/githubcli-archive-keyring.gpg
     state: absent
+  become: true
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Add GitHub CLI GPG key on Debian-based systems
+  ansible.builtin.shell:
+    cmd: >-
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg
+      | dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg
+    creates: /etc/apt/keyrings/githubcli-archive-keyring.gpg
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
