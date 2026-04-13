@@ -30,3 +30,20 @@
   ansible.builtin.copy:
     src: files/skills/
     dest: "{{ ansible_facts['env'].HOME }}/.claude/skills/"
+
+- name: Ensure external skill directories exist
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.claude/skills/{{ item }}"
+    state: directory
+  loop:
+    - frontend-design
+
+- name: Download external skills
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ ansible_facts['env'].HOME }}/.claude/skills/{{ item.dest }}"
+  loop:
+    - url: https://raw.githubusercontent.com/anthropics/claude-code/main/plugins/frontend-design/skills/frontend-design/SKILL.md
+      dest: frontend-design/SKILL.md
+  loop_control:
+    label: "{{ item.dest }}"
