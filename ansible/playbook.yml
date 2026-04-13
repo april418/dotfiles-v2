@@ -1,21 +1,71 @@
 ---
 - name: Setup local machine
   hosts: localhost
-  vars_prompt:
-    - name: git_user_name
-      prompt: "Git user name"
-      private: false
-    - name: git_user_email
-      prompt: "Git user email"
-      private: false
-    - name: flatt_guard_token
-      prompt: "Flatt Guard token (skip: Enter)"
-      private: true
-      default: ""
   pre_tasks:
     - name: Detect WSL environment
       ansible.builtin.set_fact:
         is_wsl: "{{ 'microsoft' in ansible_facts['kernel'] | lower }}"
+
+    # ── git_user_name / git_user_email ──
+    - name: Read existing git user.name
+      ansible.builtin.command: git config --global user.name
+      register: _git_user_name
+      changed_when: false
+      failed_when: false
+
+    - name: Read existing git user.email
+      ansible.builtin.command: git config --global user.email
+      register: _git_user_email
+      changed_when: false
+      failed_when: false
+
+    - name: Prompt for git user.name
+      ansible.builtin.pause:
+        prompt: "Git user name"
+      register: _git_user_name_input
+      when: _git_user_name.rc != 0 or _git_user_name.stdout | trim == ""
+
+    - name: Prompt for git user.email
+      ansible.builtin.pause:
+        prompt: "Git user email"
+      register: _git_user_email_input
+      when: _git_user_email.rc != 0 or _git_user_email.stdout | trim == ""
+
+    - name: Set git_user_name
+      ansible.builtin.set_fact:
+        git_user_name: >-
+          {{ _git_user_name_input.user_input
+             if _git_user_name_input is not skipped
+             else _git_user_name.stdout | trim }}
+
+    - name: Set git_user_email
+      ansible.builtin.set_fact:
+        git_user_email: >-
+          {{ _git_user_email_input.user_input
+             if _git_user_email_input is not skipped
+             else _git_user_email.stdout | trim }}
+
+    # ── flatt_guard_token ──
+    - name: Read existing Flatt Guard token from .npmrc
+      ansible.builtin.shell:
+        cmd: >-
+          grep -oP '//npm\.flatt\.tech/:_authToken=\K.+' ~/.npmrc 2>/dev/null || true
+      register: _flatt_guard_token
+      changed_when: false
+
+    - name: Prompt for Flatt Guard token
+      ansible.builtin.pause:
+        prompt: "Flatt Guard token (skip: Enter)"
+      register: _flatt_guard_token_input
+      when: _flatt_guard_token.stdout | trim == ""
+
+    - name: Set flatt_guard_token
+      ansible.builtin.set_fact:
+        flatt_guard_token: >-
+          {{ _flatt_guard_token_input.user_input | default("")
+             if _flatt_guard_token_input is not skipped
+             else _flatt_guard_token.stdout | trim }}
+
   roles:
     - bash
     - claude
