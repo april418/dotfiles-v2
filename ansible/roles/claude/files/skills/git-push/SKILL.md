@@ -86,6 +86,14 @@ git log --oneline @{upstream}..HEAD 2>/dev/null || git log --oneline -5
 | lint | `ansible-lint` がインストール済み | `ansible-lint` |
 | syntax-check | 常に実行 | `ansible-playbook --syntax-check <playbook>` |
 
+**Docker プロジェクト（`Dockerfile` または `compose.yml` / `docker-compose.yml` が存在）:**
+
+| チェック | 条件 | コマンド |
+|---------|------|---------|
+| lint | `hadolint` がインストール済み | `hadolint Dockerfile` |
+| build | `Dockerfile` が存在 | `docker build --check .` |
+| compose-config | `compose.yml` / `docker-compose.yml` が存在 | `docker compose config --quiet` |
+
 **Makefile / Taskfile（`Makefile` / `Taskfile.yml` が存在）:**
 
 `lint`, `check`, `test`, `build` ターゲットが定義されていれば実行する。
