@@ -5,13 +5,6 @@
     state: present
   become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
 
-- name: Remove old GitHub CLI apt source file
-  ansible.builtin.file:
-    path: /etc/apt/sources.list.d/github-cli.list
-    state: absent
-  become: true
-  when: ansible_facts['os_family'] == 'Debian'
-
 - name: Remove old GitHub CLI GPG key
   ansible.builtin.file:
     path: /usr/share/keyrings/githubcli-archive-keyring.gpg
@@ -29,14 +22,21 @@
   when: ansible_facts['os_family'] == 'Debian'
 
 - name: Add GitHub CLI apt repository on Debian-based systems
-  ansible.builtin.apt_repository:
-    repo: >-
+  ansible.builtin.copy:
+    content: >-
       deb [arch={{ ansible_facts['architecture'] | regex_replace('x86_64', 'amd64') }}
       signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg]
       https://cli.github.com/packages stable main
-    filename: github-cli
+    dest: /etc/apt/sources.list.d/github-cli.list
   become: true
+  register: _gh_repo
   when: ansible_facts['os_family'] == 'Debian'
+
+- name: Update apt cache after GitHub CLI repository change
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+  when: _gh_repo is changed
 
 - name: Add GitHub CLI dnf repository on RedHat-based systems
   ansible.builtin.yum_repository:
