@@ -6,6 +6,21 @@
       ansible.builtin.set_fact:
         is_wsl: "{{ 'microsoft' in ansible_facts['kernel'] | lower }}"
 
+    # ── apt ソースの競合を解消 ──
+    - name: Remove conflicting GitHub CLI apt source
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/github-cli.list
+        state: absent
+      become: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Remove old GitHub CLI GPG key
+      ansible.builtin.file:
+        path: /usr/share/keyrings/githubcli-archive-keyring.gpg
+        state: absent
+      become: true
+      when: ansible_facts['os_family'] == 'Debian'
+
     # ── git_user_name / git_user_email ──
     - name: Read existing git user.name
       ansible.builtin.command:
