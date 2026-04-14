@@ -17,7 +17,8 @@
   ansible.builtin.get_url:
     url: "https://github.com/romkatv/powerlevel10k-media/raw/master/{{ item | urlencode }}"
     dest: "/tmp/{{ item }}"
-  with_items: "{{ font_files }}"
+    mode: "0644"
+  with_items: "{{ fonts_font_files }}"
   when: ansible_facts['os_family'] in ['Debian', 'RedHat', 'Darwin']
 
 - name: Move MesloLGS NF fonts to system fonts directory on Debian-based systems
@@ -28,7 +29,7 @@
     group: root
     mode: '0644'
   become: true
-  with_items: "{{ font_files }}"
+  with_items: "{{ fonts_font_files }}"
   when: (ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat') and not is_wsl
 
 - name: Create fontconfig local.conf for WSL
@@ -45,40 +46,45 @@
   ansible.builtin.command:
     cmd: "fc-cache -f -v"
   become: true
+  changed_when: false
   when: ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat'
 
 - name: Install MesloLGS NF fonts on MacOS
   ansible.builtin.copy:
     src: "/tmp/{{ item }}"
     dest: "~/Library/Fonts/{{ item }}"
-  with_items: "{{ font_files }}"
+    mode: "0644"
+  with_items: "{{ fonts_font_files }}"
   when: ansible_facts['os_family'] == 'Darwin'
 
 - name: Get Windows LOCALAPPDATA path on WSL
   ansible.builtin.shell:
-    cmd: cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r\n'
-  register: win_localappdata_raw
+    cmd: set -o pipefail && cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r\n'
+    executable: /bin/bash
+  register: fonts_win_localappdata_raw
   changed_when: false
   when: is_wsl
 
 - name: Convert Windows LOCALAPPDATA path to WSL path
   ansible.builtin.command:
-    cmd: "wslpath '{{ win_localappdata_raw.stdout }}'"
-  register: win_localappdata_wsl
+    cmd: "wslpath '{{ fonts_win_localappdata_raw.stdout }}'"
+  register: fonts_win_localappdata_wsl
   changed_when: false
   when: is_wsl
 
 - name: Ensure Windows user font directory exists on WSL
   ansible.builtin.file:
-    path: "{{ win_localappdata_wsl.stdout }}/Microsoft/Windows/Fonts"
+    path: "{{ fonts_win_localappdata_wsl.stdout }}/Microsoft/Windows/Fonts"
     state: directory
+    mode: "0755"
   when: is_wsl
 
 - name: Install MesloLGS NF fonts to Windows user font directory on WSL
   ansible.builtin.copy:
     src: "/tmp/{{ item }}"
-    dest: "{{ win_localappdata_wsl.stdout }}/Microsoft/Windows/Fonts/{{ item }}"
-  with_items: "{{ font_files }}"
+    dest: "{{ fonts_win_localappdata_wsl.stdout }}/Microsoft/Windows/Fonts/{{ item }}"
+    mode: "0644"
+  with_items: "{{ fonts_font_files }}"
   when: is_wsl
 
 - name: Register fonts in Windows user registry on WSL
@@ -87,16 +93,17 @@
       reg.exe add "HKCU\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
       /v "{{ item | regex_replace('\.ttf$', '') }} (TrueType)"
       /t REG_SZ
-      /d "{{ win_localappdata_raw.stdout }}\Microsoft\Windows\Fonts\{{ item }}"
+      /d "{{ fonts_win_localappdata_raw.stdout }}\Microsoft\Windows\Fonts\{{ item }}"
       /f
-  with_items: "{{ font_files }}"
+  changed_when: false
+  with_items: "{{ fonts_font_files }}"
   when: is_wsl
 
 - name: Download MesloLGS NF fonts on Windows
   ansible.windows.win_get_url:
     url: "https://github.com/romkatv/powerlevel10k-media/raw/master/{{ item | urlencode }}"
     dest: "{{ ansible_facts['env']['TEMP'] }}\\{{ item }}"
-  with_items: "{{ font_files }}"
+  with_items: "{{ fonts_font_files }}"
   when: ansible_facts['os_family'] == 'Windows'
 
 - name: Ensure Windows user font directory exists
@@ -110,7 +117,7 @@
     src: "{{ ansible_facts['env']['TEMP'] }}\\{{ item }}"
     dest: "{{ ansible_facts['env']['LOCALAPPDATA'] }}\\Microsoft\\Windows\\Fonts\\{{ item }}"
     remote_src: true
-  with_items: "{{ font_files }}"
+  with_items: "{{ fonts_font_files }}"
   when: ansible_facts['os_family'] == 'Windows'
 
 - name: Register fonts in Windows user registry
@@ -119,5 +126,5 @@
     name: "{{ item | regex_replace('\\.ttf$', '') }} (TrueType)"
     data: "{{ ansible_facts['env']['LOCALAPPDATA'] }}\\Microsoft\\Windows\\Fonts\\{{ item }}"
     type: string
-  with_items: "{{ font_files }}"
+  with_items: "{{ fonts_font_files }}"
   when: ansible_facts['os_family'] == 'Windows'
