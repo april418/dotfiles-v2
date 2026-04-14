@@ -3,3 +3,4 @@
   ansible.builtin.template:
     src: .npmrc.j2
     dest: "{{ ansible_facts['env'].HOME }}/.npmrc"
+    mode: "0644"

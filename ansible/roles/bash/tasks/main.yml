@@ -3,8 +3,10 @@
   ansible.builtin.copy:
     src: files/.bashrc
     dest: "{{ ansible_facts['env'].HOME }}/.bashrc"
+    mode: "0644"
 
 - name: Copy .bash_profile
   ansible.builtin.copy:
     src: files/.bash_profile
     dest: "{{ ansible_facts['env'].HOME }}/.bash_profile"
+    mode: "0644"

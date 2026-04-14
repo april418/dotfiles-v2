@@ -9,3 +9,4 @@
   ansible.builtin.copy:
     src: files/.screenrc
     dest: "{{ ansible_facts['env'].HOME }}/.screenrc"
+    mode: "0644"

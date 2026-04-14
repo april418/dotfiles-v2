@@ -9,3 +9,4 @@
   ansible.builtin.copy:
     src: files/.config/uv/uv.toml
     dest: "{{ ansible_facts['env'].HOME }}/.config/uv/uv.toml"
+    mode: "0644"

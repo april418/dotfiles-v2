@@ -22,14 +22,14 @@
       when: ansible_facts['os_family'] == 'Debian'
 
     # ── git_user_name / git_user_email ──
-    - name: Read existing git user.name
+    - name: Read existing git user.name # noqa: command-instead-of-module
       ansible.builtin.command:
         cmd: git config --get user.name
       register: _git_user_name
       changed_when: false
       failed_when: false
 
-    - name: Read existing git user.email
+    - name: Read existing git user.email # noqa: command-instead-of-module
       ansible.builtin.command:
         cmd: git config --get user.email
       register: _git_user_email

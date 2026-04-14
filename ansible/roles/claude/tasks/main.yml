@@ -9,11 +9,13 @@
   ansible.builtin.copy:
     src: files/CLAUDE.md
     dest: "{{ ansible_facts['env'].HOME }}/.claude/CLAUDE.md"
+    mode: "0644"
 
 - name: Copy settings.json
   ansible.builtin.copy:
     src: files/settings.json
     dest: "{{ ansible_facts['env'].HOME }}/.claude/settings.json"
+    mode: "0644"
 
 - name: Ensure ccstatusline config directory exists
   ansible.builtin.file:
@@ -25,16 +27,19 @@
   ansible.builtin.copy:
     src: files/ccstatusline.json
     dest: "{{ ansible_facts['env'].HOME }}/.config/ccstatusline/settings.json"
+    mode: "0644"
 
 - name: Copy skills
   ansible.builtin.copy:
     src: files/skills/
     dest: "{{ ansible_facts['env'].HOME }}/.claude/skills/"
+    mode: "0644"
 
 - name: Ensure external skill directories exist
   ansible.builtin.file:
     path: "{{ ansible_facts['env'].HOME }}/.claude/skills/{{ item }}"
     state: directory
+    mode: "0755"
   loop:
     - frontend-design
 
@@ -42,6 +47,7 @@
   ansible.builtin.get_url:
     url: "{{ item.url }}"
     dest: "{{ ansible_facts['env'].HOME }}/.claude/skills/{{ item.dest }}"
+    mode: "0644"
   loop:
     - url: https://raw.githubusercontent.com/anthropics/claude-code/main/plugins/frontend-design/skills/frontend-design/SKILL.md
       dest: frontend-design/SKILL.md
