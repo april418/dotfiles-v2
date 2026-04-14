@@ -7,11 +7,10 @@
   when: ansible_facts['os_family'] == 'Debian'
 
 - name: Add GitHub CLI GPG key on Debian-based systems
-  ansible.builtin.shell:
-    cmd: >-
-      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg
-      | dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg
-    creates: /etc/apt/keyrings/githubcli-archive-keyring.gpg
+  ansible.builtin.get_url:
+    url: https://cli.github.com/packages/githubcli-archive-keyring.gpg
+    dest: /etc/apt/keyrings/githubcli-archive-keyring.gpg
+    mode: "0644"
   become: true
   when: ansible_facts['os_family'] == 'Debian'
 
@@ -22,15 +21,16 @@
       signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg]
       https://cli.github.com/packages stable main
     dest: /etc/apt/sources.list.d/github-cli.list
+    mode: "0644"
   become: true
-  register: _gh_repo
+  register: git_gh_repo
   when: ansible_facts['os_family'] == 'Debian'
 
 - name: Update apt cache after GitHub CLI repository change
   ansible.builtin.apt:
     update_cache: true
   become: true
-  when: _gh_repo is changed
+  when: git_gh_repo is changed # noqa: no-handler
 
 - name: Add GitHub CLI dnf repository on RedHat-based systems
   ansible.builtin.yum_repository:
@@ -59,6 +59,7 @@
   ansible.builtin.get_url:
     url: "https://raw.githubusercontent.com/git/git/refs/heads/master/contrib/completion/{{ item }}"
     dest: "{{ ansible_facts['env'].HOME }}/.{{ item }}"
+    mode: "0644"
   with_items:
     - git-completion.bash
     - git-completion.zsh
@@ -67,9 +68,11 @@
   ansible.builtin.copy:
     src: .gitconfig
     dest: "{{ ansible_facts['env'].HOME }}/.gitconfig"
+    mode: "0644"
 
 - name: Create .gitconfig.local
   ansible.builtin.template:
     src: .gitconfig.local.j2
     dest: "{{ ansible_facts['env'].HOME }}/.gitconfig.local"
+    mode: "0644"
     force: false
