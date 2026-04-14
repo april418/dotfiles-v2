@@ -1,26 +1,23 @@
 ---
 - name: Check if nvm is already installed
   ansible.builtin.stat:
-    path: "{{ nvm_dir }}/nvm.sh"
-  register: nvm_sh
+    path: "{{ node_nvm_dir }}/nvm.sh"
+  register: node_nvm_sh
+
+- name: Download nvm install script
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/nvm-sh/nvm/{{ node_nvm_version }}/install.sh"
+    dest: /tmp/nvm_install.sh
+    mode: "0755"
+  when: not node_nvm_sh.stat.exists and ansible_facts['os_family'] != 'Windows'
 
 - name: Install nvm in non-Windows systems
-  ansible.builtin.shell: |
-    wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/{{ nvm_version }}/install.sh | bash
-  when: not nvm_sh.stat.exists and ansible_facts['os_family'] != 'Windows'
-  changed_when: nvm_sh.stat.exists
+  ansible.builtin.command:
+    cmd: bash /tmp/nvm_install.sh
+  when: not node_nvm_sh.stat.exists and ansible_facts['os_family'] != 'Windows'
+  changed_when: true
 
-- name: Debug
+- name: Debug nvm already installed
   ansible.builtin.debug:
-    msg: "{{ nvm_dir }}/nvm.sh already exists, skipping nvm installation."
-
-# - name: Load nvm
-#   ansible.builtin.shell: $NVM_DIR/nvm.sh
-#   environment:
-#     NVM_DIR: "{{ nvm_dir }}"
-
-# - name: Install Node.js
-#   ansible.builtin.shell: nvm install {{ item }}
-#   with_items: "{{ node_versions }}"
-#   environment:
-#     NVM_DIR: "{{ nvm_dir }}"
+    msg: "{{ node_nvm_dir }}/nvm.sh already exists, skipping nvm installation."
+  when: node_nvm_sh.stat.exists
