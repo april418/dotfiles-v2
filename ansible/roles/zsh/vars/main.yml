@@ -1,2 +1,2 @@
 ---
-zinit_home: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share') }}/zinit/zinit.git"
+zsh_zinit_home: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share') }}/zinit/zinit.git"

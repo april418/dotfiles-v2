@@ -5,37 +5,42 @@
     state: present
   become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
 
-- name: Install zinit
+- name: Install zinit # noqa: latest[git]
   ansible.builtin.git:
     repo: https://github.com/zdharma-continuum/zinit.git
-    dest: "{{ zinit_home }}"
+    dest: "{{ zsh_zinit_home }}"
 
 - name: Copy .zshrc
   ansible.builtin.copy:
     src: files/.zshrc
     dest: "{{ ansible_facts['env'].HOME }}/.zshrc"
+    mode: "0644"
 
 - name: Copy .zshenv
   ansible.builtin.copy:
     src: files/.zshenv
     dest: "{{ ansible_facts['env'].HOME }}/.zshenv"
+    mode: "0644"
 
 - name: Copy .dircolors
   ansible.builtin.copy:
     src: files/.dircolors
     dest: "{{ ansible_facts['env'].HOME }}/.dircolors"
+    mode: "0644"
 
 - name: Copy .p10k.zsh
   ansible.builtin.copy:
     src: files/.p10k.zsh
     dest: "{{ ansible_facts['env'].HOME }}/.p10k.zsh"
+    mode: "0644"
 
-- name: debug print user
+- name: Debug print user
   ansible.builtin.debug:
     msg: "user: {{ ansible_facts['env'].USER }}"
 
 - name: Get zsh path
-  ansible.builtin.shell: which zsh
+  ansible.builtin.command:
+    cmd: which zsh
   register: zsh_path
   changed_when: false
 
@@ -43,11 +48,11 @@
   ansible.builtin.user:
     name: "{{ ansible_facts['env'].USER }}"
   check_mode: true
-  register: user_info
+  register: zsh_user_info
 
 - name: Ensure zsh is the default shell
   ansible.builtin.user:
     name: "{{ ansible_facts['env'].USER }}"
     shell: "{{ zsh_path.stdout }}"
   become: "{{ ansible_facts['os_family'] != 'Darwin' }}"
-  when: user_info.state == 'present'
+  when: zsh_user_info.state == 'present'
