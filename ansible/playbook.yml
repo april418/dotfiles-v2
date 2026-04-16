@@ -63,25 +63,32 @@
              else _git_user_email.stdout | trim }}
 
     # ── flatt_guard_token ──
-    - name: Read existing Flatt Guard token from .npmrc
-      ansible.builtin.shell:
-        cmd: >-
-          grep -oP '//npm\.flatt\.tech/:_authToken=\K.+' ~/.npmrc 2>/dev/null || true
-      register: _flatt_guard_token
+    - name: Read existing Flatt Guard token line from .npmrc
+      ansible.builtin.command:
+        cmd: "grep //npm.flatt.tech/:_authToken= {{ ansible_facts['env'].HOME }}/.npmrc"
+      register: _flatt_guard_token_raw
       changed_when: false
+      failed_when: false
+
+    - name: Extract Flatt Guard token value
+      ansible.builtin.set_fact:
+        _flatt_guard_token: >-
+          {{ _flatt_guard_token_raw.stdout
+             | regex_replace('^.*:_authToken=', '')
+             | trim }}
 
     - name: Prompt for Flatt Guard token
       ansible.builtin.pause:
         prompt: "Flatt Guard token (skip: Enter)"
       register: _flatt_guard_token_input
-      when: _flatt_guard_token.stdout | trim == ""
+      when: _flatt_guard_token == ""
 
     - name: Set flatt_guard_token
       ansible.builtin.set_fact:
         flatt_guard_token: >-
           {{ _flatt_guard_token_input.user_input | default("")
              if _flatt_guard_token_input is not skipped
-             else _flatt_guard_token.stdout | trim }}
+             else _flatt_guard_token }}
 
   roles:
     - bash
