@@ -103,17 +103,25 @@ git status --short
 - stash して進める
 - そのまま持ち込む（`git switch -c` 等、安全な場合のみ）
 
-## ルール 8: 統合ブランチの最新化は `--ff-only`
+## ルール 8: `git merge` は使用禁止、rebase で統合する
 
-ベースブランチを最新化する際は fast-forward のみを許可する。
+`git merge` は使用しない。ブランチの統合は rebase で行う。
+
+- `git pull` は常に `--rebase` を付ける
+- 作業ブランチをベースブランチに追従させる場合も `git rebase <base>` を使う
+- `git merge` を使ってよいのはユーザーが明示的に指示した場合のみ
 
 ```bash
-git pull --ff-only origin <base>
+# pull 時は必ず --rebase
+git pull --rebase origin <branch>
+
+# ベースブランチへの追従
+git rebase <base>
 ```
 
-`--ff-only` が失敗した場合（ローカルに先行コミットがある等）は、
+rebase 中にコンフリクトが発生した場合は、
 `AskUserQuestion` でユーザーに状況を報告し指示を仰ぐ。
-勝手に rebase / merge しない。
+勝手に `--abort` / `--skip` しない。
 
 ## ルール 9: スコープを逸脱しない
 
@@ -134,3 +142,5 @@ git 操作を行う前に、以下を自問する:
 - [ ] push する場合、`git-push` スキルを呼ぶ段取りになっているか？
 - [ ] 破壊的操作の場合、ユーザー承認を得たか？
 - [ ] 未コミット変更の扱いは明確か？
+- [ ] `git merge` ではなく rebase を使っているか？
+- [ ] `git pull` に `--rebase` を付けているか？
