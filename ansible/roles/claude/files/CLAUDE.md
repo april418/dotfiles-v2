@@ -48,8 +48,7 @@
 
 ## Git操作
 
-- git commitをする際は必ずgit-commit skillに従うこと
-- git pushをする際は必ずgit-push skillに従うこと
+- git操作を行う際は必ずgit-workflow skillに従うこと
 
 ## シェルコマンド
 
