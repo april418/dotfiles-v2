@@ -48,7 +48,9 @@
 
 ## Git操作
 
-- git操作を行う際は必ずgit-workflow skillに従うこと
+- **【最重要】** あらゆる git 操作（ブランチ作成、コミット、push、pull、rebase、checkout 等）を行う前に、**必ず git-workflow skill を参照し、そのルールに厳密に従うこと**
+- git-workflow skill のルールを無視・省略した git 操作は一切許可しない
+- 判断に迷った場合も git-workflow skill の該当ルールを確認してから行動すること
 
 ## パッケージマネージャー操作
 
