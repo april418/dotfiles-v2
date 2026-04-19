@@ -42,6 +42,7 @@
     mode: "0755"
   loop:
     - frontend-design
+    - empirical-prompt-tuning
 
 - name: Download external skills
   ansible.builtin.get_url:
@@ -51,5 +52,7 @@
   loop:
     - url: https://raw.githubusercontent.com/anthropics/claude-code/main/plugins/frontend-design/skills/frontend-design/SKILL.md
       dest: frontend-design/SKILL.md
+    - url: https://raw.githubusercontent.com/mizchi/chezmoi-dotfiles/refs/heads/main/dot_claude/skills/empirical-prompt-tuning/SKILL.md
+      dest: empirical-prompt-tuning/SKILL.md
   loop_control:
     label: "{{ item.dest }}"
