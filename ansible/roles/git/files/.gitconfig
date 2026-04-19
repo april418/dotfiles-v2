@@ -16,6 +16,12 @@
   diff = auto
 [credential]
   helper = "cache --timeout=3600"
+[credential "https://github.com"]
+  helper =
+  helper = !gh auth git-credential
+[credential "https://gist.github.com"]
+  helper =
+  helper = !gh auth git-credential
 [alias]
   al = "!git config --get-regexp \"^alias\\.\" | sort | awk 'gsub(\"alias.\", \"\") split($0, array) {printf(\"\\033[36m%-10s\\033[0m alias for \\\"\", array[1]); for (i=2; i <= length(array); i++) if(i > 2) { printf(\"%s\", \" \" array[i]) } else { printf(\"%s\", array[i]) }; printf(\"\\\"\\n\")}'"
   b = branch
