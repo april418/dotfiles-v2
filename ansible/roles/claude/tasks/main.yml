@@ -1,4 +1,27 @@
 ---
+- name: Check if Claude CLI is already installed
+  ansible.builtin.stat:
+    path: "{{ ansible_facts['env'].HOME }}/.local/bin/claude"
+  register: claude_cli_bin
+
+- name: Download Claude CLI install script
+  ansible.builtin.get_url:
+    url: https://claude.ai/install.sh
+    dest: /tmp/claude_install.sh
+    mode: "0755"
+  when: not claude_cli_bin.stat.exists and ansible_facts['os_family'] != 'Windows'
+
+- name: Install Claude CLI
+  ansible.builtin.command:
+    cmd: bash /tmp/claude_install.sh
+  when: not claude_cli_bin.stat.exists and ansible_facts['os_family'] != 'Windows'
+  changed_when: true
+
+- name: Debug Claude CLI already installed
+  ansible.builtin.debug:
+    msg: "{{ ansible_facts['env'].HOME }}/.local/bin/claude already exists, skipping Claude CLI installation."
+  when: claude_cli_bin.stat.exists
+
 - name: Ensure .claude directory exists
   ansible.builtin.file:
     path: "{{ ansible_facts['env'].HOME }}/.claude"
