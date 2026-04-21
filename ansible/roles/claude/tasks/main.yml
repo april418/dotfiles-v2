@@ -58,6 +58,12 @@
     dest: "{{ ansible_facts['env'].HOME }}/.claude/skills/"
     mode: "0644"
 
+- name: Copy agents
+  ansible.builtin.copy:
+    src: files/agents/
+    dest: "{{ ansible_facts['env'].HOME }}/.claude/agents/"
+    mode: "0644"
+
 - name: Ensure external skill directories exist
   ansible.builtin.file:
     path: "{{ ansible_facts['env'].HOME }}/.claude/skills/{{ item }}"
