@@ -88,6 +88,7 @@
       "Bash(git remote:*)",
       "Bash(git rev-parse:*)",
       "Bash(git show:*)",
+      "Bash(git show-ref:*)",
       "Bash(git stash:*)",
       "Bash(git status:*)",
       "Bash(git switch:*)",
