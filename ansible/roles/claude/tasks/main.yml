@@ -81,7 +81,10 @@
   loop:
     - url: https://raw.githubusercontent.com/anthropics/claude-code/main/plugins/frontend-design/skills/frontend-design/SKILL.md
       dest: frontend-design/SKILL.md
-    - url: https://raw.githubusercontent.com/mizchi/skills/refs/heads/main/empirical-prompt-tuning/SKILL.md
+    # mizchi/skills は category 配下に再配置された (meta/empirical-prompt-tuning)。
+    # 同種の再配置やリネームでビルドが壊れないよう、main の追従ではなくコミット SHA で固定する。
+    # 更新時はこの SHA を新しいコミットへ差し替える。
+    - url: https://raw.githubusercontent.com/mizchi/skills/89c1b34018ba0d85a770c065ba22f83a8d004d34/meta/empirical-prompt-tuning/SKILL.md
       dest: empirical-prompt-tuning/SKILL.md
   loop_control:
     label: "{{ item.dest }}"
