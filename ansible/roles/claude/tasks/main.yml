@@ -79,7 +79,10 @@
     dest: "{{ ansible_facts['env'].HOME }}/.claude/skills/{{ item.dest }}"
     mode: "0644"
   loop:
-    - url: https://raw.githubusercontent.com/anthropics/claude-code/main/plugins/frontend-design/skills/frontend-design/SKILL.md
+    # anthropics/claude-code は頻繁にリリースされる。main 追従だとリポジトリ構成変更で
+    # ビルドが壊れるため、empirical-prompt-tuning と同様にコミット SHA で固定する。
+    # 固定先 SHA は release v2.1.160 (2026-06-02) の HEAD。更新時はこの SHA を差し替える。
+    - url: https://raw.githubusercontent.com/anthropics/claude-code/bdb04fc52421537f63bbcb9685e1c0905689f8f7/plugins/frontend-design/skills/frontend-design/SKILL.md
       dest: frontend-design/SKILL.md
     # mizchi/skills は category 配下に再配置された (meta/empirical-prompt-tuning)。
     # 同種の再配置やリネームでビルドが壊れないよう、main の追従ではなくコミット SHA で固定する。
