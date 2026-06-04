@@ -221,10 +221,35 @@ rebase 中にコンフリクトが発生した場合は、
 このスキルの対象外の操作は、ユーザーから明示的に要求された場合のみ行う。
 
 - PR の作成（`gh pr create` 等）
+- PR のマージ（`gh pr merge` 等）
 - タグの作成・push
 - リモートの追加・削除
 - submodule 操作
 - git config の変更
+
+### PR マージ時の戦略（明示要求があった場合のみ適用）
+
+ユーザーがマージを要求した場合は **必ず merge commit 形式** を使う。
+
+```bash
+gh pr merge <number> --merge
+```
+
+`--squash` / `--rebase` は使用しない。理由:
+
+- マージ履歴が残るため、後で「どの PR でこの変更が入ったか」を `git log --first-parent` で辿れる
+- 個別コミットの粒度（git-commit skill で revert 可能性最優先に設計したもの）を保てる
+- squash は粒度を潰し、rebase は merge commit のメタ情報（PR 番号への参照等）を失わせる
+
+ユーザーが明示的に `--squash` / `--rebase` を指示した場合のみ従う。
+`main` / `master` への force push 同様、リスクを警告した上で実行する。
+
+ルール 8（ローカルでの `git merge` 禁止）と矛盾しないこと:
+
+- **ローカルブランチの統合**: `git rebase`（ルール 8）
+- **リモート PR のマージ**: `gh pr merge --merge`（このルール）
+
+両者は対象が異なる。
 
 ## チェックリスト
 
@@ -236,4 +261,5 @@ git 操作を行う前に、以下を自問する:
 - [ ] 破壊的操作の場合、ユーザー承認を得たか？
 - [ ] 未コミット変更の扱いは明確か？
 - [ ] `git merge` ではなく rebase を使っているか？
+- [ ] PR マージ時は `--merge`（merge commit）を使っているか？
 - [ ] `git pull` に `--rebase` を付けているか？
