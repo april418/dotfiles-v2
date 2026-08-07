@@ -52,6 +52,14 @@
     dest: "{{ ansible_facts['env'].HOME }}/.config/ccstatusline/settings.json"
     mode: "0644"
 
+- name: Copy hooks
+  ansible.builtin.copy:
+    src: files/hooks/
+    dest: "{{ ansible_facts['env'].HOME }}/.claude/hooks/"
+    # フックは Claude Code から直接実行されるため実行権限が要る。
+    # 0644 だと起動できず、しかもフックが動かないことに気づけない。
+    mode: "0755"
+
 - name: Copy skills
   ansible.builtin.copy:
     src: files/skills/
