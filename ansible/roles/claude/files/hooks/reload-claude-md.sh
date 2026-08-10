@@ -25,9 +25,18 @@
 #
 # ## 出力量の上限
 #
-# additionalContext が大きすぎるとハーネスがファイルへ退避し、コンテキストには
-# 先頭 2,048 文字のプレビューしか載らない。**エラーにはならず、載ったように見える。**
-# 閾値は非公開だが、28,877 文字が退避された実績がある。余裕を見て 20,000 文字で切る。
+# additionalContext が 10,000 文字を超えるとハーネスがファイルへ退避し、
+# コンテキストには先頭 2,000 文字のプレビューしか載らない。
+# **エラーにはならず、載ったように見える。**
+#
+# 閾値は公開されていないが、本体のバンドルに定数として入っている。
+# バージョンが上がったら次で引き直す (2.1.200 で確認)。
+#
+#   $ grep -ao 'PHa=1e4.\{0,40\}' "$(readlink -f "$(which claude)")"
+#   → var PHa=1e4; ... async function CXe(e,t,n,r=PHa){if(e.length<=r)return e;
+#
+# 判定は `e.length` すなわち文字数であってバイト数ではない。`wc -c` で
+# 見積もると日本語 1 文字が 3 バイトなので 3 倍過大になる。`wc -m` を使う。
 #
 # 上限に達した節は捨てずにパスだけ出す。黙って落とすと、全部載ったものとして
 # 扱われる。
@@ -82,8 +91,8 @@ import importlib.util, json, os, pathlib
 CWD = pathlib.Path(os.environ["CWD"])
 TRANSCRIPT = os.environ.get("TRANSCRIPT") or ""
 
-# 全体の上限。冒頭「出力量の上限」を参照。
-MAX_TOTAL_CHARS = 20_000
+# 全体の上限。ハーネスの 10,000 に 1 割のマージンを取る。冒頭「出力量の上限」を参照。
+MAX_TOTAL_CHARS = 9_000
 
 # 「どのプロジェクトが作業中か」の判定は保存側と共有する。片方だけ基準が
 # 変わると、保存したのに復旧しない状態になり、しかもエラーが出ない。
@@ -124,7 +133,10 @@ for label, path in sections:
     if total + len(heading) + len(body) <= MAX_TOTAL_CHARS:
         section = heading + body
     else:
-        section = heading + "（上限を超えたため本文を省いた。Read で読むこと）"
+        section = heading + (
+            f"（{len(body):,} 文字あり上限を超えるため本文を省いた。"
+            "作業を始める前に Read すること）"
+        )
     parts.append(section)
     total += len(section)
 
