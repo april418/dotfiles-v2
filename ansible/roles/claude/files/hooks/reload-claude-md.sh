@@ -11,15 +11,26 @@
 # 発火する。そのため実装は SessionStart 側に置く。
 #   https://code.claude.com/docs/en/hooks.md
 #
-# 対象は 3 種類。
-#   - ユーザー全体の指示: ~/.claude/CLAUDE.md
-#   - プロジェクトの指示: .claude/CLAUDE.md
+# 対象は 2 種類。
 #   - セッション状態: ~/.claude/session-state/<cwd>.md
+#   - プロジェクトの指示: .claude/CLAUDE.md
 #
 # セッション状態には、圧縮で落ちる判断（採用案・却下案・却下理由）と作業ツリーの
 # 状態が入る。要約は「何を話したか」を残すが、案そのものは残して理由だけを落とす
 # ため、却下した案を実装し始める事故が起きる。
 #   https://qiita.com/hiranuma/items/60cd5dbf642e346f8be7
+#
+# **ユーザー全体の指示 (~/.claude/CLAUDE.md) は流さない。** ハーネスが compact 後の
+# コンテキストへ claudeMd ブロックとして全文を戻すため二重になる。
+#
+# ## 出力量の上限
+#
+# additionalContext が大きすぎるとハーネスがファイルへ退避し、コンテキストには
+# 先頭 2,048 文字のプレビューしか載らない。**エラーにはならず、載ったように見える。**
+# 閾値は非公開だが、28,877 文字が退避された実績がある。余裕を見て 20,000 文字で切る。
+#
+# 上限に達した節は捨てずにパスだけ出す。黙って落とすと、全部載ったものとして
+# 扱われる。
 #
 # ## プロジェクト指示の探し方
 #
@@ -65,15 +76,14 @@ HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$HOOK_DIR/session-state-path.sh"
 STATE="$(session_state_path "$CWD")"
 
-CWD="$CWD" TRANSCRIPT="$TRANSCRIPT" HOME_DIR="$HOME" STATE="$STATE" HOOK_DIR="$HOOK_DIR" python3 <<'PY'
+CWD="$CWD" TRANSCRIPT="$TRANSCRIPT" STATE="$STATE" HOOK_DIR="$HOOK_DIR" python3 <<'PY'
 import importlib.util, json, os, pathlib
 
 CWD = pathlib.Path(os.environ["CWD"])
 TRANSCRIPT = os.environ.get("TRANSCRIPT") or ""
-USER_MD = pathlib.Path(os.environ["HOME_DIR"]) / ".claude" / "CLAUDE.md"
 
-# 全体の上限。これを超える分は落とす (context を食い潰さないため)。
-MAX_TOTAL_CHARS = 120_000
+# 全体の上限。冒頭「出力量の上限」を参照。
+MAX_TOTAL_CHARS = 20_000
 
 # 「どのプロジェクトが作業中か」の判定は保存側と共有する。片方だけ基準が
 # 変わると、保存したのに復旧しない状態になり、しかもエラーが出ない。
@@ -101,18 +111,20 @@ parts = [
 ]
 total = len(parts[0])
 
-sections = [("ユーザーの全体指示", USER_MD)]
+# 状態を先頭に置く。上限に達したときに削られるのは後ろなので、最も小さく最も
+# 復元価値が高いものを先に通す。
+sections = [("このセッションの状態", STATE)]
 sections += [("このプロジェクトの指示", p) for p in project_mds]
-# 状態は最後に置く。指示より後に読ませたほうが、直前の作業として扱われる。
-sections.append(("このセッションの状態", STATE))
 
 for label, path in sections:
     body = read(path)
     if body is None:
         continue
-    section = f"\n# {label} ({path})\n\n{body}"
-    if total + len(section) > MAX_TOTAL_CHARS:
-        continue
+    heading = f"\n# {label} ({path})\n\n"
+    if total + len(heading) + len(body) <= MAX_TOTAL_CHARS:
+        section = heading + body
+    else:
+        section = heading + "（上限を超えたため本文を省いた。Read で読むこと）"
     parts.append(section)
     total += len(section)
 
