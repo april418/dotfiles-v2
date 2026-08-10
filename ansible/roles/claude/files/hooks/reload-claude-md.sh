@@ -11,9 +11,15 @@
 # 発火する。そのため実装は SessionStart 側に置く。
 #   https://code.claude.com/docs/en/hooks.md
 #
-# 対象は 2 種類。
+# 対象は 3 種類。
 #   - ユーザー全体の指示: ~/.claude/CLAUDE.md
 #   - プロジェクトの指示: .claude/CLAUDE.md
+#   - セッション状態: ~/.claude/session-state/<cwd>.md
+#
+# セッション状態には、圧縮で落ちる判断（採用案・却下案・却下理由）と作業ツリーの
+# 状態が入る。要約は「何を話したか」を残すが、案そのものは残して理由だけを落とす
+# ため、却下した案を実装し始める事故が起きる。
+#   https://qiita.com/hiranuma/items/60cd5dbf642e346f8be7
 #
 # ## プロジェクト指示の探し方
 #
@@ -54,25 +60,27 @@ CWD="$(extract cwd)"
 [ -n "$CWD" ] || CWD="$PWD"
 TRANSCRIPT="$(extract transcript_path)"
 
-CWD="$CWD" TRANSCRIPT="$TRANSCRIPT" HOME_DIR="$HOME" python3 <<'PY'
-import json, os, pathlib
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=./session-state-path.sh
+. "$HOOK_DIR/session-state-path.sh"
+STATE="$(session_state_path "$CWD")"
+
+CWD="$CWD" TRANSCRIPT="$TRANSCRIPT" HOME_DIR="$HOME" STATE="$STATE" HOOK_DIR="$HOOK_DIR" python3 <<'PY'
+import importlib.util, json, os, pathlib
 
 CWD = pathlib.Path(os.environ["CWD"])
 TRANSCRIPT = os.environ.get("TRANSCRIPT") or ""
 USER_MD = pathlib.Path(os.environ["HOME_DIR"]) / ".claude" / "CLAUDE.md"
 
-# 子を探す深さ。リポジトリ直下 (<child>/.claude/CLAUDE.md) と、その 1 つ下の
-# ネストまで見れば足りる。深くすると node_modules 等を掘って遅くなる。
-MAX_DEPTH = 3
-# transcript にこの回数以上現れたものだけ採る。実測の分布 (7797 / 1099 / 6 /
-# 3 / 0) はこの閾値で綺麗に割れる。
-MIN_MENTIONS = 10
-# 同時に流すプロジェクト指示の上限。
-MAX_PROJECTS = 3
 # 全体の上限。これを超える分は落とす (context を食い潰さないため)。
 MAX_TOTAL_CHARS = 120_000
 
-SKIP_DIRS = {"node_modules", ".git", "dist", "build", ".next", "vendor", "target"}
+# 「どのプロジェクトが作業中か」の判定は保存側と共有する。片方だけ基準が
+# 変わると、保存したのに復旧しない状態になり、しかもエラーが出ない。
+spec = importlib.util.spec_from_file_location(
+    "active_projects", os.path.join(os.environ["HOOK_DIR"], "active-projects.py"))
+active = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(active)
 
 
 def read(path):
@@ -82,81 +90,23 @@ def read(path):
         return None
 
 
-def walk_up():
-    """cwd から親へ遡って最初に見つかった .claude/CLAUDE.md。"""
-    for d in [CWD, *CWD.parents]:
-        candidate = d / ".claude" / "CLAUDE.md"
-        if candidate.is_file():
-            return candidate
-    return None
+project_mds = active.claude_md_files(CWD, TRANSCRIPT)
 
-
-def scan_children():
-    """cwd 配下の .claude/CLAUDE.md を集める。"""
-    found = []
-    base_depth = len(CWD.parts)
-    for root, dirs, files in os.walk(CWD):
-        rootp = pathlib.Path(root)
-        if len(rootp.parts) - base_depth >= MAX_DEPTH:
-            dirs[:] = []
-            continue
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
-        if rootp.name == ".claude" and "CLAUDE.md" in files:
-            found.append(rootp / "CLAUDE.md")
-    return found
-
-
-def count_mentions(paths):
-    """transcript に各プロジェクトのパスが何回現れるかを数える。
-
-    transcript は数十 MB になるのでブロック単位で読む。境界をまたぐ一致を
-    落とさないよう、前ブロックの末尾を繰り越す。
-    """
-    if not TRANSCRIPT or not os.path.isfile(TRANSCRIPT):
-        return {p: 0 for p in paths}
-
-    # <project-root>/ の形で数える。単なる名前だと MCP のツール名などが混ざる。
-    needles = {p: f"{p.parent.parent}/" for p in paths}
-    counts = {p: 0 for p in paths}
-    overlap = max((len(n) for n in needles.values()), default=0)
-    tail = ""
-    try:
-        with open(TRANSCRIPT, encoding="utf-8", errors="ignore") as f:
-            while True:
-                block = f.read(1 << 20)
-                if not block:
-                    break
-                chunk = tail + block
-                for p, needle in needles.items():
-                    counts[p] += chunk.count(needle)
-                tail = chunk[-overlap:] if overlap else ""
-    except Exception:
-        return {p: 0 for p in paths}
-    return counts
-
-
-project_mds = []
-up = walk_up()
-if up is not None:
-    project_mds.append(up)
-else:
-    children = scan_children()
-    if len(children) == 1:
-        project_mds = children
-    elif children:
-        counts = count_mentions(children)
-        ranked = sorted(children, key=lambda p: -counts[p])
-        project_mds = [p for p in ranked if counts[p] >= MIN_MENTIONS][:MAX_PROJECTS]
+STATE = pathlib.Path(os.environ["STATE"])
 
 parts = [
-    "会話の要約が行われた。要約には「何を話したか」しか残らないため、"
-    "従うべき指示を以下に再掲する。以降はこの内容に従うこと。"
+    "会話の要約が行われた。要約には「何を話したか」しか残らず、判断（採用案・"
+    "却下案・却下理由）と順序制約は落ちる。以下を正とし、要約の側は仮説として扱うこと。"
+    f"\n\n判断を下したら {STATE} の「判断ログ」節へ追記すること。"
 ]
 total = len(parts[0])
 
-for label, path in [("ユーザーの全体指示", USER_MD)] + [
-    ("このプロジェクトの指示", p) for p in project_mds
-]:
+sections = [("ユーザーの全体指示", USER_MD)]
+sections += [("このプロジェクトの指示", p) for p in project_mds]
+# 状態は最後に置く。指示より後に読ませたほうが、直前の作業として扱われる。
+sections.append(("このセッションの状態", STATE))
+
+for label, path in sections:
     body = read(path)
     if body is None:
         continue

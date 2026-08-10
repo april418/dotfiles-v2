@@ -175,6 +175,18 @@
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/save-session-state.sh",
+            "statusMessage": "セッション状態を保存しています"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "compact",
@@ -182,7 +194,7 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/reload-claude-md.sh",
-            "statusMessage": "CLAUDE.md を読み直しています"
+            "statusMessage": "CLAUDE.md とセッション状態を読み直しています"
           }
         ]
       }
