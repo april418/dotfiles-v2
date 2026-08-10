@@ -525,8 +525,18 @@ git fetch --prune origin
 git branch -vv | grep ': gone]'
 
 # ベースにマージ済みのローカルブランチをまとめて消す
-git branch --merged <base> | grep -v "^\*" | xargs -r git branch -d
+git branch --merged <base> | grep -vE "^\*|^\s*(main|master|develop)$" | xargs -r git branch -d
 ```
+
+**`grep -v "^\*"` だけでは足りない。** `git branch --merged <base>` の出力には
+**`<base>` 自身が含まれる**（自分自身にマージ済みだから）。`*` は現在いる
+ブランチにしか付かないので、作業ブランチ上でこれを流すとベースブランチごと
+消える。統合ブランチ名を明示的に除外すること。
+
+**実際の失敗**: この規則を書いた直後に自分で実行し、`master` を削除した。
+`feature/*` 上にいたため `*` はそちらに付いており、`master` が除外されな
+かった（2026-08-10）。`git branch master origin/master` で復旧できたが、
+**規則として書いたコマンドを検証せずに流した**のが誤りだった。
 
 `-d` は未マージのものを拒否するので安全で、ルール 6 の `-D`（未マージの
 強制削除）とは別物である。リモートブランチを個別に消す場合も、マージ済みが
