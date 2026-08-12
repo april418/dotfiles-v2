@@ -17,7 +17,7 @@ export LANG=C.UTF-8
 export EDITOR=vim
 
 # xtermを256色表示可能にする
-if [ "$TERM"="xterm" ]; then
+if [ "$TERM" = "xterm" ]; then
   export TERM="xterm-256color"
 fi
 
