@@ -25,6 +25,17 @@ MAX_PROJECTS = 3
 
 SKIP_DIRS = {"node_modules", ".git", "dist", "build", ".next", "vendor", "target"}
 
+# ユーザー全体の指示はハーネスが compact 後に戻すので流さない。$HOME まで遡ると
+# <dir>/.claude/CLAUDE.md の形に一致してしまうため、名前ではなくパスで除く。
+USER_CLAUDE_MD = pathlib.Path.home() / ".claude" / "CLAUDE.md"
+
+
+def _is_user_md(path):
+    try:
+        return path.resolve() == USER_CLAUDE_MD.resolve()
+    except OSError:
+        return False
+
 
 def count_mentions(transcript, roots):
     """transcript に各プロジェクトのパスが何回現れるかを数える。
@@ -81,13 +92,13 @@ def claude_md_files(cwd, transcript):
     """
     for d in [cwd, *cwd.parents]:
         candidate = d / ".claude" / "CLAUDE.md"
-        if candidate.is_file():
+        if candidate.is_file() and not _is_user_md(candidate):
             return [candidate]
 
     holders = [
         p.parent
         for p in _scan(cwd, marker_is_dir=False, marker="CLAUDE.md")
-        if p.name == ".claude"
+        if p.name == ".claude" and not _is_user_md(p / "CLAUDE.md")
     ]
     return [r / ".claude" / "CLAUDE.md" for r in _rank(holders, transcript)]
 
