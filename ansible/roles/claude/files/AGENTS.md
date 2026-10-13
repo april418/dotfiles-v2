@@ -533,7 +533,7 @@ stderr の指示に従って修正すること。フックを迂回しようと�
 
 ### 指示そのものの検証には `empirical-prompt-tuning` を使う
 
-**この CLAUDE.md や skill を書き換えたときは、`/empirical-prompt-tuning` で
+**このグローバル指示や skill を書き換えたときは、`/empirical-prompt-tuning` で
 検証できる。** 白紙のサブエージェントに実際に読ませて実行させ、
 どこで詰まったかを測る skill である。
 
