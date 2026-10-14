@@ -55,7 +55,7 @@ STATE="$(session_state_path "$CWD")"
 mkdir -p "$(dirname "$STATE")" 2>/dev/null || exit 0
 
 # 作業中のリポジトリだけを対象にする。親ディレクトリで起動すると候補が全部
-# ヒットするため（実測で 6 件）、復旧側と同じ基準で transcript から絞る。
+# ヒットするため（実測で 6 件）、transcript から絞る。
 REPOS="$(CWD="$CWD" TRANSCRIPT="$TRANSCRIPT" HOOK_DIR="$HOOK_DIR" python3 -c "
 import importlib.util, os, pathlib
 spec = importlib.util.spec_from_file_location(

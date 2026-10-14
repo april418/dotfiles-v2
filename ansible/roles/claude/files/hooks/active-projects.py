@@ -1,8 +1,4 @@
-"""cwd 配下のどのプロジェクトが「作業中」かを transcript から判定する。
-
-compact 関連のフック 2 本（保存側と復旧側）が同じ判定を必要とする。片方だけ
-基準が変わると、保存したのに復旧しない / 無関係なものが混ざる状態になり、
-しかもエラーが出ないので気づけない。ここに 1 本化する。
+"""cwd 配下のどのリポジトリが「作業中」かを transcript から判定する。
 
 複数リポジトリを束ねた親ディレクトリで起動すると候補が全部ヒットする
 （実測で 6 件）。transcript の出現回数で明確に差が出る（7797 / 1099 / 6 / 3 / 0）
@@ -24,39 +20,6 @@ MIN_RATIO = 0.01
 MAX_PROJECTS = 3
 
 SKIP_DIRS = {"node_modules", ".git", "dist", "build", ".next", "vendor", "target"}
-
-# ユーザー全体の指示はハーネスが compact 後に戻すので流さない。$HOME まで遡ると
-# <dir>/.claude/CLAUDE.md の形に一致してしまうため、名前ではなくパスで除く。
-USER_CLAUDE_MD = pathlib.Path.home() / ".claude" / "CLAUDE.md"
-
-
-def _is_user_md(path):
-    try:
-        return path.resolve() == USER_CLAUDE_MD.resolve()
-    except OSError:
-        return False
-
-
-# Claude Code は、これらが cwd 以上に 1 つでもあれば AGENTS.md を読まない。
-# /config の Project instructions の既定 (claude-md-or-agents-md) に合わせている。
-# https://code.claude.com/docs/en/memory#when-claude-code-reads-agents-md
-CLAUDE_MD_NAMES = ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md")
-AGENTS_MD_NAMES = ("AGENTS.md", ".claude/AGENTS.md")
-
-
-def _has_claude_md(d):
-    return any(
-        (d / n).is_file() and not _is_user_md(d / n) for n in CLAUDE_MD_NAMES
-    )
-
-
-def _own_files(d, agents_allowed):
-    claude_md = d / ".claude" / "CLAUDE.md"
-    if claude_md.is_file() and not _is_user_md(claude_md):
-        return [claude_md]
-    if not agents_allowed or _has_claude_md(d):
-        return []
-    return [d / n for n in AGENTS_MD_NAMES if (d / n).is_file()]
 
 
 def count_mentions(transcript, roots):
@@ -104,34 +67,6 @@ def _scan(cwd, marker_is_dir, marker):
             found.append(rootp)
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
     return found
-
-
-def instruction_files(cwd, transcript):
-    """作業中プロジェクトの指示ファイルを返す。
-
-    .claude/CLAUDE.md を返す。CLAUDE.md / .claude/CLAUDE.md / CLAUDE.local.md が
-    cwd 以上にもそのプロジェクトにも無い場合に限り、代わりに AGENTS.md と
-    .claude/AGENTS.md を返す。ルート直下の CLAUDE.md と CLAUDE.local.md は
-    AGENTS.md を抑止する判定にだけ使い、返さない。
-
-    cwd から親へ遡って見つかればそれを使う（cwd がリポジトリ内にある通常の
-    ケース）。見つからない場合だけ子を探す。
-    """
-    chain = [cwd, *cwd.parents]
-    agents_allowed = not any(_has_claude_md(d) for d in chain)
-    for d in chain:
-        files = _own_files(d, agents_allowed)
-        if files:
-            return files
-
-    holders = {
-        p.parent if p.name == ".claude" else p
-        for marker in ("CLAUDE.md", "AGENTS.md")
-        for p in _scan(cwd, marker_is_dir=False, marker=marker)
-    }
-    files = {h: _own_files(h, agents_allowed) for h in holders}
-    ranked = _rank([h for h in sorted(holders) if files[h]], transcript)
-    return [f for r in ranked for f in files[r]]
 
 
 def git_repos(cwd, transcript):

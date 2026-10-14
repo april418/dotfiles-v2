@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # ==================================================
-# compact 後にプロジェクトの指示とセッション状態をコンテキストへ戻す
+# compact 後にセッション状態をコンテキストへ戻す
 # ==================================================
-# 会話が長くなると context が要約され、指示ファイルに書いた規則が薄まる。
-# 要約は「何を話したか」を残すもので、「どう振る舞うか」の指示は落ちる。
+# 要約は「何を話したか」を残すが、案そのものは残して理由だけを落とすため、
+# 却下した案を実装し始める事故が起きる。圧縮の外側に置いたセッション状態
+# (~/.claude/session-state/<cwd>.md) を compact 直後に戻す。中身は判断
+# （採用案・却下案・却下理由）と作業ツリーの状態。
+#   https://qiita.com/hiranuma/items/60cd5dbf642e346f8be7
 #
 # **PostCompact ではこれを実現できない。** あのイベントはログや通知などの
 # 副作用専用で、hookSpecificOutput.additionalContext を受け付けない。
@@ -11,18 +14,13 @@
 # 発火する。そのため実装は SessionStart 側に置く。
 #   https://code.claude.com/docs/en/hooks.md
 #
-# 対象は 2 種類。
-#   - セッション状態: ~/.claude/session-state/<cwd>.md
-#   - プロジェクトの指示: .claude/CLAUDE.md。CLAUDE.md 系が無いプロジェクトでは
-#     AGENTS.md（Claude Code が AGENTS.md を読む条件に合わせる）
+# **指示ファイル (CLAUDE.md / AGENTS.md) は流さない。** ユーザー全体の指示と
+# cwd とその祖先の指示はハーネスが compact 後にディスクから読み直し、cwd の子に
+# ある指示は子のファイルを Read したときに載せ直す。流すと二重になる
+# (2.1.295 / 2.1.272 で実測。AGENTS.md は 2.1.277 以降)。
+#   https://code.claude.com/docs/en/context-window#what-survives-compaction
 #
-# セッション状態には、圧縮で落ちる判断（採用案・却下案・却下理由）と作業ツリーの
-# 状態が入る。要約は「何を話したか」を残すが、案そのものは残して理由だけを落とす
-# ため、却下した案を実装し始める事故が起きる。
-#   https://qiita.com/hiranuma/items/60cd5dbf642e346f8be7
-#
-# **ユーザー全体の指示 (~/.claude/CLAUDE.md) は流さない。** ハーネスが compact 後の
-# コンテキストへ claudeMd ブロックとして全文を戻すため二重になる。
+# ファイル名は役割と合っていないが、改名すると配置先に旧ファイルが残るので変えない。
 #
 # ## 出力量の上限
 #
@@ -39,19 +37,8 @@
 # 判定は `e.length` すなわち文字数であってバイト数ではない。`wc -c` で
 # 見積もると日本語 1 文字が 3 バイトなので 3 倍過大になる。`wc -m` を使う。
 #
-# 上限に達した節は捨てずにパスだけ出す。黙って落とすと、全部載ったものとして
+# 上限を超えたら本文を捨ててパスだけ出す。黙って落とすと、全部載ったものとして
 # 扱われる。
-#
-# ## プロジェクト指示の探し方
-#
-# **cwd から遡るだけでは足りない。** 複数リポジトリを束ねた親ディレクトリで
-# 起動すると、目的の指示ファイルは cwd の「子」にある。実際にこの構成で
-# 1 つも拾えなかった。
-#
-# 遡って見つからない場合は子を探すが、親に複数のリポジトリがあると全部
-# ヒットする (実測で 4 件 54KB)。無関係なものまで流すと context を無駄に
-# 食うため、**transcript にどれだけ現れたか**で作業中のものを選ぶ。
-# 実測ではこの差が明確に出た (7797 / 1099 / 6 / 3 / 0)。
 set -uo pipefail
 
 INPUT="$(cat)"
@@ -79,77 +66,45 @@ print(cur, end='')
 
 CWD="$(extract cwd)"
 [ -n "$CWD" ] || CWD="$PWD"
-TRANSCRIPT="$(extract transcript_path)"
 
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./session-state-path.sh
 . "$HOOK_DIR/session-state-path.sh"
 STATE="$(session_state_path "$CWD")"
 
-CWD="$CWD" TRANSCRIPT="$TRANSCRIPT" STATE="$STATE" HOOK_DIR="$HOOK_DIR" python3 <<'PY'
-import importlib.util, json, os, pathlib
+STATE="$STATE" python3 <<'PY'
+import json, os, pathlib
 
-CWD = pathlib.Path(os.environ["CWD"])
-TRANSCRIPT = os.environ.get("TRANSCRIPT") or ""
+STATE = pathlib.Path(os.environ["STATE"])
 
 # 全体の上限。ハーネスの 10,000 に 1 割のマージンを取る。冒頭「出力量の上限」を参照。
 MAX_TOTAL_CHARS = 9_000
 
-# 「どのプロジェクトが作業中か」の判定は保存側と共有する。片方だけ基準が
-# 変わると、保存したのに復旧しない状態になり、しかもエラーが出ない。
-spec = importlib.util.spec_from_file_location(
-    "active_projects", os.path.join(os.environ["HOOK_DIR"], "active-projects.py"))
-active = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(active)
+# 状態が無い・空なら黙って終わる。見出しだけを返すと「判断が無い」と読める
+# 文字列がコンテキストに入る。
+try:
+    body = STATE.read_text(encoding="utf-8")
+except Exception:
+    raise SystemExit(0)
+if not body.strip():
+    raise SystemExit(0)
 
-
-def read(path):
-    try:
-        return pathlib.Path(path).read_text(encoding="utf-8")
-    except Exception:
-        return None
-
-
-project_mds = active.instruction_files(CWD, TRANSCRIPT)
-
-STATE = pathlib.Path(os.environ["STATE"])
-
-parts = [
+lead = (
     "会話の要約が行われた。要約には「何を話したか」しか残らず、判断（採用案・"
     "却下案・却下理由）と順序制約は落ちる。以下を正とし、要約の側は仮説として扱うこと。"
     f"\n\n判断を下したら {STATE} の「判断ログ」節へ追記すること。"
-]
-total = len(parts[0])
-
-# 状態を先頭に置く。上限に達したときに削られるのは後ろなので、最も小さく最も
-# 復元価値が高いものを先に通す。
-sections = [("このセッションの状態", STATE)]
-sections += [("このプロジェクトの指示", p) for p in project_mds]
-
-for label, path in sections:
-    body = read(path)
-    if body is None:
-        continue
-    heading = f"\n# {label} ({path})\n\n"
-    if total + len(heading) + len(body) <= MAX_TOTAL_CHARS:
-        section = heading + body
-    else:
-        section = heading + (
-            f"（{len(body):,} 文字あり上限を超えるため本文を省いた。"
-            "作業を始める前に Read すること）"
-        )
-    parts.append(section)
-    total += len(section)
-
-# 見出しだけで本文が 1 つも無いなら黙って終わる。空の additionalContext を
-# 返すと「規則が無い」と読める文字列がコンテキストに入る。
-if len(parts) == 1:
-    raise SystemExit(0)
+)
+heading = f"\n\n# このセッションの状態 ({STATE})\n\n"
+if len(lead) + len(heading) + len(body) > MAX_TOTAL_CHARS:
+    body = (
+        f"（{len(body):,} 文字あり上限を超えるため本文を省いた。"
+        "作業を始める前に Read すること）"
+    )
 
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "SessionStart",
-        "additionalContext": "\n".join(parts),
+        "additionalContext": lead + heading + body,
     }
 }))
 PY
