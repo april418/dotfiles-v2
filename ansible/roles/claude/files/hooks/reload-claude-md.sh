@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==================================================
-# compact 後に CLAUDE.md をコンテキストへ戻す
+# compact 後にプロジェクトの指示とセッション状態をコンテキストへ戻す
 # ==================================================
-# 会話が長くなると context が要約され、CLAUDE.md に書いた規則が薄まる。
+# 会話が長くなると context が要約され、指示ファイルに書いた規則が薄まる。
 # 要約は「何を話したか」を残すもので、「どう振る舞うか」の指示は落ちる。
 #
 # **PostCompact ではこれを実現できない。** あのイベントはログや通知などの
@@ -13,7 +13,8 @@
 #
 # 対象は 2 種類。
 #   - セッション状態: ~/.claude/session-state/<cwd>.md
-#   - プロジェクトの指示: .claude/CLAUDE.md
+#   - プロジェクトの指示: .claude/CLAUDE.md。CLAUDE.md 系が無いプロジェクトでは
+#     AGENTS.md（Claude Code が AGENTS.md を読む条件に合わせる）
 #
 # セッション状態には、圧縮で落ちる判断（採用案・却下案・却下理由）と作業ツリーの
 # 状態が入る。要約は「何を話したか」を残すが、案そのものは残して理由だけを落とす
@@ -44,7 +45,7 @@
 # ## プロジェクト指示の探し方
 #
 # **cwd から遡るだけでは足りない。** 複数リポジトリを束ねた親ディレクトリで
-# 起動すると、目的の CLAUDE.md は cwd の「子」にある。実際にこの構成で
+# 起動すると、目的の指示ファイルは cwd の「子」にある。実際にこの構成で
 # 1 つも拾えなかった。
 #
 # 遡って見つからない場合は子を探すが、親に複数のリポジトリがあると全部
@@ -109,7 +110,7 @@ def read(path):
         return None
 
 
-project_mds = active.claude_md_files(CWD, TRANSCRIPT)
+project_mds = active.instruction_files(CWD, TRANSCRIPT)
 
 STATE = pathlib.Path(os.environ["STATE"])
 

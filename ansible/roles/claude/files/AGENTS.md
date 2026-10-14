@@ -393,7 +393,7 @@ grep -rn "checked" --include="*.ts" .        # 除外ではなく対象を指定
 | --- | --- |
 | `PreCompact` フック | 作業ツリーの状態（ブランチ / 未コミット / 直近コミット） |
 | **自分** | **判断ログ（採用案・却下案・却下理由・順序制約）** |
-| `SessionStart`（compact） | 上記と**プロジェクトの** CLAUDE.md を戻す |
+| `SessionStart`（compact） | 上記と**プロジェクトの**指示（`.claude/CLAUDE.md`、無ければ AGENTS.md）を戻す |
 
 **フックはモデルの判断を知らない。** シェルスクリプトが拾えるのは git の状態
 だけである。判断ログは自分で書かないと誰も書かない。
@@ -533,7 +533,7 @@ stderr の指示に従って修正すること。フックを迂回しようと�
 
 ### 指示そのものの検証には `empirical-prompt-tuning` を使う
 
-**この CLAUDE.md や skill を書き換えたときは、`/empirical-prompt-tuning` で
+**このグローバル指示や skill を書き換えたときは、`/empirical-prompt-tuning` で
 検証できる。** 白紙のサブエージェントに実際に読ませて実行させ、
 どこで詰まったかを測る skill である。
 

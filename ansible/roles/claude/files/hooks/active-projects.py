@@ -25,6 +25,39 @@ MAX_PROJECTS = 3
 
 SKIP_DIRS = {"node_modules", ".git", "dist", "build", ".next", "vendor", "target"}
 
+# ユーザー全体の指示はハーネスが compact 後に戻すので流さない。$HOME まで遡ると
+# <dir>/.claude/CLAUDE.md の形に一致してしまうため、名前ではなくパスで除く。
+USER_CLAUDE_MD = pathlib.Path.home() / ".claude" / "CLAUDE.md"
+
+
+def _is_user_md(path):
+    try:
+        return path.resolve() == USER_CLAUDE_MD.resolve()
+    except OSError:
+        return False
+
+
+# Claude Code は、これらが cwd 以上に 1 つでもあれば AGENTS.md を読まない。
+# /config の Project instructions の既定 (claude-md-or-agents-md) に合わせている。
+# https://code.claude.com/docs/en/memory#when-claude-code-reads-agents-md
+CLAUDE_MD_NAMES = ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md")
+AGENTS_MD_NAMES = ("AGENTS.md", ".claude/AGENTS.md")
+
+
+def _has_claude_md(d):
+    return any(
+        (d / n).is_file() and not _is_user_md(d / n) for n in CLAUDE_MD_NAMES
+    )
+
+
+def _own_files(d, agents_allowed):
+    claude_md = d / ".claude" / "CLAUDE.md"
+    if claude_md.is_file() and not _is_user_md(claude_md):
+        return [claude_md]
+    if not agents_allowed or _has_claude_md(d):
+        return []
+    return [d / n for n in AGENTS_MD_NAMES if (d / n).is_file()]
+
 
 def count_mentions(transcript, roots):
     """transcript に各プロジェクトのパスが何回現れるかを数える。
@@ -73,23 +106,32 @@ def _scan(cwd, marker_is_dir, marker):
     return found
 
 
-def claude_md_files(cwd, transcript):
-    """作業中プロジェクトの .claude/CLAUDE.md を返す。
+def instruction_files(cwd, transcript):
+    """作業中プロジェクトの指示ファイルを返す。
+
+    .claude/CLAUDE.md を返す。CLAUDE.md / .claude/CLAUDE.md / CLAUDE.local.md が
+    cwd 以上にもそのプロジェクトにも無い場合に限り、代わりに AGENTS.md と
+    .claude/AGENTS.md を返す。ルート直下の CLAUDE.md と CLAUDE.local.md は
+    AGENTS.md を抑止する判定にだけ使い、返さない。
 
     cwd から親へ遡って見つかればそれを使う（cwd がリポジトリ内にある通常の
     ケース）。見つからない場合だけ子を探す。
     """
-    for d in [cwd, *cwd.parents]:
-        candidate = d / ".claude" / "CLAUDE.md"
-        if candidate.is_file():
-            return [candidate]
+    chain = [cwd, *cwd.parents]
+    agents_allowed = not any(_has_claude_md(d) for d in chain)
+    for d in chain:
+        files = _own_files(d, agents_allowed)
+        if files:
+            return files
 
-    holders = [
-        p.parent
-        for p in _scan(cwd, marker_is_dir=False, marker="CLAUDE.md")
-        if p.name == ".claude"
-    ]
-    return [r / ".claude" / "CLAUDE.md" for r in _rank(holders, transcript)]
+    holders = {
+        p.parent if p.name == ".claude" else p
+        for marker in ("CLAUDE.md", "AGENTS.md")
+        for p in _scan(cwd, marker_is_dir=False, marker=marker)
+    }
+    files = {h: _own_files(h, agents_allowed) for h in holders}
+    ranked = _rank([h for h in sorted(holders) if files[h]], transcript)
+    return [f for r in ranked for f in files[r]]
 
 
 def git_repos(cwd, transcript):

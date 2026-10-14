@@ -28,9 +28,12 @@
     state: directory
     mode: "0700"
 
-- name: Copy CLAUDE.md
+- name: Copy AGENTS.md as CLAUDE.md
   ansible.builtin.copy:
-    src: files/CLAUDE.md
+    src: files/AGENTS.md
+    # Claude Code がユーザー全体の指示として読むのは ~/.claude/CLAUDE.md だけで、
+    # AGENTS.md はプロジェクト単位でしか読まない。~/.claude/AGENTS.md に置くと
+    # CLAUDE.md のあるリポジトリでは読まれない。
     dest: "{{ ansible_facts['env'].HOME }}/.claude/CLAUDE.md"
     mode: "0644"
 

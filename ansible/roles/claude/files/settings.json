@@ -194,7 +194,7 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/reload-claude-md.sh",
-            "statusMessage": "CLAUDE.md とセッション状態を読み直しています"
+            "statusMessage": "プロジェクトの指示とセッション状態を読み直しています"
           }
         ]
       }
