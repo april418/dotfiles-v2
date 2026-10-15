@@ -37,11 +37,37 @@
     dest: "{{ ansible_facts['env'].HOME }}/.claude/CLAUDE.md"
     mode: "0644"
 
-- name: Copy settings.json
+- name: Check if settings.json exists
+  ansible.builtin.stat:
+    path: "{{ ansible_facts['env'].HOME }}/.claude/settings.json"
+  register: claude_settings_stat
+
+- name: Read existing settings.json
+  ansible.builtin.slurp:
+    src: "{{ ansible_facts['env'].HOME }}/.claude/settings.json"
+  register: claude_settings_current
+  when: claude_settings_stat.stat.exists
+
+- name: Merge settings.json
   ansible.builtin.copy:
-    src: files/settings.json
+    # Claude Code は /config や /fast での選択もこのファイルに書き込むため、
+    # 上書きせず既存の内容にリポジトリ側を重ねる。
+    # 出力は Claude Code が書く形式（キー順を保持、非 ASCII はそのまま）に揃え、
+    # 中身が変わらなければ changed にならないようにする。
+    content: "{{ claude_settings_merged | to_nice_json(indent=2, sort_keys=False, ensure_ascii=False) }}\n"
     dest: "{{ ansible_facts['env'].HOME }}/.claude/settings.json"
     mode: "0644"
+  # リポジトリ側の値で置き換わって消えるもの（/permissions で足した規則など）を、
+  # --diff を付けずに流しても表示する。
+  diff: true
+  vars:
+    # 配列は和集合にせず置き換える。和集合だとリポジトリから消した allow 規則が
+    # 残り続け、書き換えたフックは旧エントリと二重に動く。
+    claude_settings_merged: >-
+      {{ (claude_settings_current.content | default('') | b64decode | trim or '{}')
+         | from_json
+         | combine(lookup('ansible.builtin.file', 'settings.json') | from_json,
+                   recursive=True, list_merge='replace') }}
 
 - name: Ensure ccstatusline config directory exists
   ansible.builtin.file:
