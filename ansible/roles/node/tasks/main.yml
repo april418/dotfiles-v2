@@ -14,6 +14,9 @@
 - name: Install nvm in non-Windows systems
   ansible.builtin.command:
     cmd: bash /tmp/nvm_install.sh
+  # PROFILE=/dev/null が無いと、install.sh が .bashrc などに読み込み行を書き足す（.zshenv と .bash_profile で読み込み済み）。
+  environment:
+    PROFILE: /dev/null
   when: not node_nvm_sh.stat.exists and ansible_facts['os_family'] != 'Windows'
   changed_when: true
 
