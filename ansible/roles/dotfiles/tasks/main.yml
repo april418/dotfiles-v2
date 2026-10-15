@@ -1,0 +1,12 @@
+---
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Copy dotfiles-check
+  ansible.builtin.copy:
+    src: files/dotfiles-check
+    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/dotfiles-check"
+    mode: "0755"

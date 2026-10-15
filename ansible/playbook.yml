@@ -93,6 +93,7 @@
   roles:
     - bash
     - claude
+    - dotfiles
     - fonts
     - git
     - motd
@@ -103,3 +104,10 @@
     - uv
     - vim
     - zsh
+
+  post_tasks:
+    # 全ロールの後に置く。途中で失敗した実行を適用済みとして記録しないため。
+    - name: Record applied dotfiles commit
+      ansible.builtin.include_role:
+        name: dotfiles
+        tasks_from: record
