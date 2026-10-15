@@ -116,7 +116,7 @@ def check_dotfiles():
     repo, applied = locate()
     result = {"label": label(repo), "where": repo, "notices": [], "warnings": [], "error": None}
     if repo is None:
-        result["error"] = "dotfiles の checkout が見つからない（DOTPATH か ~/.dotfiles に置く）"
+        result["error"] = "checkout が見つからない（DOTPATH か ~/.dotfiles に置く）"
         return result
 
     apply = f"ansible-playbook {shown(os.path.join(repo, 'ansible', 'playbook.yml'))} --connection=local"
@@ -222,7 +222,8 @@ def refresh(wait):
         write_json(REFRESH_FILE, {
             "repo": repo, "at": started, "error": "取得が完了しなかった", "failing_since": failing_since or started,
         })
-        error = fetch(repo) if repo else "dotfiles の checkout が見つからない"
+        # checkout が無いのは取得の失敗ではない。失敗として数えると、3 日後から「N 日取得できていない」と出る。
+        error = fetch(repo) if repo else None
         write_json(REFRESH_FILE, {
             "repo": repo, "at": time.time(), "error": error,
             "failing_since": (failing_since or started) if error else None,
@@ -289,7 +290,8 @@ def run_notify(fmt):
         if repo and needs_refresh(repo):
             spawn_refresh()
         result = check_dotfiles()
-        lines = [f"⚠ {result['label']}: {n['summary']}" for n in result["notices"]]
+        lines = [f"⚠ {result['label']}: {result['error']}"] if result["error"] else []
+        lines += [f"⚠ {result['label']}: {n['summary']}" for n in result["notices"]]
         lines += [f"⚠ {result['label']}: {w}" for w in result["warnings"]]
         failure = fetch_failure(repo)
         if failure:
