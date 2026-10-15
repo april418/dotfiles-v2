@@ -120,7 +120,7 @@
     # ファイルの再配置が多く、追従するとビルドが壊れる。更新と移動は dotfiles-check が知らせる。
     - url: https://raw.githubusercontent.com/anthropics/claude-code/dbdd79cebfae5891f5b0fab6f7773ea520d289a7/plugins/frontend-design/skills/frontend-design/SKILL.md
       dest: frontend-design/SKILL.md
-    - url: https://raw.githubusercontent.com/mizchi/skills/89c1b34018ba0d85a770c065ba22f83a8d004d34/meta/empirical-prompt-tuning/SKILL.md
+    - url: https://raw.githubusercontent.com/mizchi/skills/a41865b34b78f2675a6c73178377a5bcc1b492c6/empirical-prompt-tuning/SKILL.md
       dest: empirical-prompt-tuning/SKILL.md
   loop_control:
     label: "{{ item.dest }}"
