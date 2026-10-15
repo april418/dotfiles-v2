@@ -1,4 +1,5 @@
 ---
+# dotfiles-check: tags https://github.com/nvm-sh/nvm.git
 node_nvm_version: "v0.40.3"
 node_nvm_dir: "{{ ansible_facts['env'].XDG_CONFIG_HOME | default(ansible_facts['env'].HOME) }}/.nvm"
 node_versions:

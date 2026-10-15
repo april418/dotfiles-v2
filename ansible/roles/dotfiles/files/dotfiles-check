@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import calendar
 import concurrent.futures
+import difflib
 import fcntl
 import json
 import os
@@ -24,6 +26,7 @@ CACHE_DIR = os.path.join(
 APPLIED_FILE = os.path.join(STATE_DIR, "applied.json")
 REFRESH_FILE = os.path.join(CACHE_DIR, "refresh.json")
 TOOLS_FILE = os.path.join(CACHE_DIR, "tools.json")
+PINS_FILE = os.path.join(CACHE_DIR, "pins.json")
 LOCK_FILE = os.path.join(CACHE_DIR, "refresh.lock")
 DEFAULT_REPO = os.path.join(HOME, ".dotfiles")
 # .zshrc の ZINIT_HOME と同じ規則。
@@ -31,6 +34,7 @@ ZINIT_DIR = os.path.join(
     os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "zinit"
 )
 NVM_REPO_URL = "https://github.com/nvm-sh/nvm.git"
+GITHUB_API = "https://api.github.com"
 
 # 配置に効くのはこの下だけ。install など外側の変更で流すよう促すと、
 # Claude Code が ~/.claude/settings.json に書き足した設定を無駄に上書きさせる。
@@ -109,6 +113,36 @@ def run(args, timeout):
     return stdout, stderr
 
 
+def http_get(url, token=None):
+    """(HTTP の状態コード, 本文) を返す。通信できなければ FetchError を投げる。"""
+    # notify は通信しないので、遅い ssl などの import を取得のときまで遅らせる。
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(url, headers={"User-Agent": "dotfiles-check"})
+    if token:
+        # 通常のヘッダーはリダイレクト先が別のホストでも引き継がれる。トークンは最初の宛先にだけ送る。
+        request.add_unredirected_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, b""
+    except OSError as e:
+        raise FetchError(f"{url} に接続できない（{e}）")
+
+
+def quote_path(path):
+    from urllib.parse import quote
+
+    return quote(path)
+
+
+def github_token():
+    # GitHub Actions では渡される。手元では無くてよい（認証なしでも 1 時間に 60 回まで呼べる）。
+    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+
+
 def read_json(path):
     try:
         with open(path, encoding="utf-8") as f:
@@ -151,8 +185,9 @@ def find_tool(name):
     return None
 
 
-def notice(summary, short, commands):
-    return {"summary": summary, "short": short, "commands": commands}
+def notice(summary, short, commands, details=None):
+    """details は issue にだけ載せる補足（差分など）。"""
+    return {"summary": summary, "short": short, "commands": commands, "details": details}
 
 
 # ---------------------------------------------------------------- dotfiles 本体
@@ -194,7 +229,7 @@ def count(repo, revs, *paths):
 
 def check_dotfiles():
     repo, applied = locate()
-    result = {"label": label(repo), "where": repo, "notices": [], "warnings": [], "error": None}
+    result = {"label": label(repo), "where": repo, "notices": [], "warnings": [], "error": None, "remote": None}
     if repo is None:
         result["error"] = "checkout が見つからない（DOTPATH か ~/.dotfiles に置く）"
         return result
@@ -206,6 +241,7 @@ def check_dotfiles():
             (r for r in ("origin/main", "origin/master") if git(repo, "rev-parse", "--verify", "--quiet", r)),
             None,
         )
+    result["remote"] = remote
     behind = count(repo, f"HEAD..{remote}", DEPLOYED_PATH) if remote else None
     if behind is None:
         result["warnings"].append("origin の既定ブランチを特定できないため、リモートとは比べていない")
@@ -466,29 +502,371 @@ def find_tools():
     return found
 
 
-def check_tools():
-    entries = (read_json(TOOLS_FILE) or {}).get("tools") or {}
-    result = {"label": "ツール", "items": [], "failures": []}
-    for tool in find_tools():
-        entry = entries.get(tool.key)
+def evaluate_all(found, entries):
+    """取得の結果 entries で found をそれぞれ判定し、(項目, 長く続いている失敗) を返す。"""
+    items, failures = [], []
+    for obj in found:
+        if getattr(obj, "problem", None):
+            items.append({"label": obj.label, "notice": None, "skipped": None, "problem": obj.problem})
+            continue
+        entry = entries.get(obj.key)
         if not isinstance(entry, dict):
             continue
         data = entry.get("data") if isinstance(entry.get("data"), dict) else None
-        item = {"label": tool.label, "notice": None, "skipped": None, "problem": None}
+        item = {"label": obj.label, "notice": None, "skipped": None, "problem": None}
         if entry.get("error"):
             item["problem"] = f"最新版を取得できなかった（{entry['error']}）"
         try:
             if data is not None:
-                item["notice"] = tool.evaluate(data)
-                item["skipped"] = tool.skipped(data)
+                item["notice"] = obj.evaluate(data)
+                item["skipped"] = obj.skipped(data)
         except Exception as e:
-            # 1 つのツールの失敗で、ほかのツールや dotfiles 本体の通知まで消さない。
+            # 1 つの判定の失敗で、ほかの項目や dotfiles 本体の通知まで消さない。
             item["problem"] = f"判定できなかった（{type(e).__name__}: {e}）"
-        result["items"].append(item)
+        items.append(item)
         failure = long_failure(entry)
         if failure:
-            result["failures"].append(f"{tool.label} の最新版を {failure}")
-    return result
+            failures.append(f"{obj.label} の最新版を {failure}")
+    return items, failures
+
+
+def check_tools():
+    items, failures = evaluate_all(find_tools(), (read_json(TOOLS_FILE) or {}).get("tools") or {})
+    return {"label": "ツール", "items": items, "failures": failures}
+
+
+# ---------------------------------------------------------------- 固定バージョン
+#
+# ansible/ 配下と .github/workflows の YAML を走査して、版を固定している箇所を見つける。
+# 書き方は RAW_PIN・TAG_MARKER・USES_SHA の 3 つ。目印や SHA があるのに版を読めないものは、
+# 黙って落とさずに問題として出す。
+
+# 公開から日が浅い版は勧めない。pnpm の minimum-release-age と uv の exclude-newer（どちらも 1 週間）に
+# 揃える。raw とリリースの無いタグはコミットの日時で測るので、日時を偽った上流の乗っ取りまでは防げない。
+PIN_COOLDOWN = 7 * 24 * 60 * 60
+DIFF_MAX_LINES = 200
+
+RAW_PIN = re.compile(r"https://raw\.githubusercontent\.com/([\w.-]+)/([\w.-]+)/([0-9a-f]{40})/([^\s\"'#,\]}]+)")
+TAG_MARKER = re.compile(r"#\s*dotfiles-check:\s*tags\s+(\S+)")
+KEY_VALUE = re.compile(r"\s*([\w-]+):\s*[\"']?(v?\d+(?:\.\d+)+)[\"']?\s*(?:#.*)?$")
+USES_SHA = re.compile(r"uses:\s*[\"']?([\w.-]+)/([\w.-]+)((?:/[\w./-]+)?)@([0-9a-f]{40})[\"']?(.*)$")
+# Renovate の `# tag=vX.Y.Z` も読む。
+VERSION_COMMENT = re.compile(r"#\s*(?:tag=)?(v\d+(?:\.\d+)*)\b")
+GITHUB_URL = re.compile(r"https://github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
+
+
+def comment_start(line):
+    """YAML のコメントが始まる位置。コメントが無ければ行の長さ。"""
+    m = re.search(r"(?:^|\s)#", line)
+    return m.end() - 1 if m else len(line)
+
+
+def parse_time(text):
+    return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
+
+
+def github_api(path):
+    status, body = http_get(f"{GITHUB_API}{path}", token=github_token())
+    if status != 200:
+        raise FetchError(f"GitHub API の {path.split('?')[0]} が HTTP {status} を返した")
+    return json.loads(body)
+
+
+def settled_tag(owner, name, tags):
+    """tags のうち、公開から PIN_COOLDOWN を過ぎた最大の版とその公開日時を返す。どれも日が浅ければ (None, None)。"""
+    releases = {r["tag_name"]: r for r in github_api(f"/repos/{owner}/{name}/releases?per_page=100")}
+    lookups = 0
+    for tag in sorted(tags, key=version_key, reverse=True):
+        release = releases.get(tag)
+        if release is not None:
+            if release.get("draft") or release.get("prerelease"):
+                continue
+            published = release.get("published_at")
+        else:
+            # リリースを作らないリポジトリもある。その版のコミットの日時で代えるが、呼ぶ回数に上限を置く。
+            if lookups >= 5:
+                raise FetchError("公開から日が経った版を見つけられない（リリースの無い版を 5 件まで調べた）")
+            lookups += 1
+            published = github_api(f"/repos/{owner}/{name}/commits/{tag}")["commit"]["committer"]["date"]
+        if published and time.time() - parse_time(published) >= PIN_COOLDOWN:
+            return tag, published
+    return None, None
+
+
+def make_diff(old, new, old_name, new_name):
+    lines = list(difflib.unified_diff(
+        old.decode("utf-8", "replace").splitlines(), new.decode("utf-8", "replace").splitlines(),
+        old_name, new_name, lineterm="",
+    ))
+    if len(lines) > DIFF_MAX_LINES:
+        lines = lines[:DIFF_MAX_LINES] + [f"…（以下 {len(lines) - DIFF_MAX_LINES} 行を省略）"]
+    return "\n".join(lines)
+
+
+class Pin(Tool):
+    problem = None
+
+    def __init__(self, key, label, rel, line):
+        self.key = key
+        self.label = label
+        self.where = f"{rel}:{line}"
+
+
+class BrokenPin(Pin):
+    """固定しようとしているのに版を読めない箇所。"""
+
+    def __init__(self, rel, line, problem):
+        super().__init__(f"broken:{rel}:{line}", f"{rel}:{line}", rel, line)
+        self.problem = problem
+
+    def fetch(self):
+        return {}
+
+
+class RawPin(Pin):
+    """raw.githubusercontent.com の URL をコミット SHA で固定したもの。"""
+
+    def __init__(self, rel, line, m, occurrence):
+        self.owner, self.name, self.sha, self.file = m.groups()
+        # SHA は更新で変わるので、キーには含めない。
+        super().__init__(
+            f"raw:{rel}:{self.owner}/{self.name}/{self.file}#{occurrence}",
+            os.path.basename(os.path.dirname(self.file)) or self.file, rel, line,
+        )
+
+    def raw_url(self, ref, file=None):
+        return f"https://raw.githubusercontent.com/{self.owner}/{self.name}/{ref}/{file or self.file}"
+
+    def download(self, ref, file=None):
+        status, body = http_get(self.raw_url(ref, file))
+        if status != 200:
+            raise FetchError(f"{ref[:7]} のファイルを取得できない（HTTP {status}）")
+        return body
+
+    def settled_commit(self, head, file):
+        """既定ブランチで file を変えたコミットのうち、PIN_COOLDOWN を過ぎた最新のものの (SHA, 日時)。"""
+        until = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - PIN_COOLDOWN))
+        found = github_api(
+            f"/repos/{self.owner}/{self.name}/commits?sha={head}&path={quote_path(file)}&until={until}&per_page=1"
+        )
+        return (found[0]["sha"], found[0]["commit"]["committer"]["date"]) if found else (None, None)
+
+    def fetch(self):
+        out = run(["git", "ls-remote", f"https://github.com/{self.owner}/{self.name}.git", "HEAD"], FETCH_TIMEOUT)[0]
+        if not out.strip():
+            raise FetchError("既定ブランチの HEAD を取得できない")
+        head = out.split()[0]
+        if http_get(self.raw_url(head))[0] == 404:
+            return self.fetch_moved(head)
+        # 既定ブランチの HEAD は毎日動くので勧めない。そのファイルを変えたコミットのうち、日が経ったものを勧める。
+        suggested, date = self.settled_commit(head, self.file)
+        if suggested is None or suggested == self.sha:
+            return {"pinned": self.sha, "suggested": None}
+        # 日の浅い版をすでに固定しているなら、古いほうへ戻すことになるので勧めない。
+        pinned_date = github_api(f"/repos/{self.owner}/{self.name}/commits/{self.sha}")["commit"]["committer"]["date"]
+        if parse_time(pinned_date) >= parse_time(date):
+            return {"pinned": self.sha, "suggested": None}
+        old, new = self.download(self.sha), self.download(suggested)
+        if old == new:
+            return {"pinned": self.sha, "suggested": None}
+        return {
+            "pinned": self.sha, "suggested": suggested, "date": date,
+            "diff": make_diff(old, new, f"{self.sha[:7]}/{self.file}", f"{suggested[:7]}/{self.file}"),
+        }
+
+    def fetch_moved(self, head):
+        moved = self.candidates(head)
+        data = {"pinned": self.sha, "moved": moved, "suggested": None}
+        if not moved:
+            return data
+        # 移動先でも日の浅いコミットは勧めない。HEAD を本文に入れると、上流に push があるたびに issue が変わる。
+        suggested, date = self.settled_commit(head, moved[0])
+        if suggested is None:
+            return data
+        old, new = self.download(self.sha), self.download(suggested, moved[0])
+        data.update(
+            suggested=suggested, date=date,
+            diff=make_diff(old, new, f"{self.sha[:7]}/{self.file}", f"{suggested[:7]}/{moved[0]}"),
+        )
+        return data
+
+    def candidates(self, head):
+        """既定ブランチから、同じ「親ディレクトリ/ファイル名」を持つパスを探す。"""
+        try:
+            tree = github_api(f"/repos/{self.owner}/{self.name}/git/trees/{head}?recursive=1")
+        except FetchError:
+            return []
+        tail = "/".join(self.file.split("/")[-2:])
+        paths = [e.get("path", "") for e in tree.get("tree", [])]
+        return [path for path in paths if path == tail or path.endswith("/" + tail)][:3]
+
+    def skipped(self, data):
+        if data.get("pinned") != self.sha:
+            return "取得の後に固定先が変わったため、次の取得で確かめる"
+        return None
+
+    def evaluate(self, data):
+        if data.get("pinned") != self.sha:
+            return None
+        if "moved" in data:
+            moved, suggested = data["moved"], data.get("suggested")
+            # 移動から日が浅い。固定先は SHA なので、待っても壊れない。
+            if moved and not suggested:
+                return None
+            summary = f"{self.label} の固定先のパスが既定ブランチに無い"
+            if moved:
+                summary += f"（移動先の候補: {'、'.join(moved)}）"
+                commands = [
+                    f"{self.where} の URL を {self.raw_url(suggested, moved[0])} にする（{data['date'][:10]} のコミット）"
+                ]
+            else:
+                commands = [f"移動先を確かめて {self.where} の URL を直す"]
+            return notice(summary, f"{self.label}（パスが移動）", commands, details=data.get("diff"))
+        suggested = data.get("suggested")
+        if not suggested:
+            return None
+        return notice(
+            f"{self.label} に更新がある（{self.sha[:7]} → {suggested[:7]}、{data['date'][:10]} のコミット）",
+            self.label,
+            [
+                f"{self.where} の SHA を {suggested} にする",
+                f"変更の履歴: https://github.com/{self.owner}/{self.name}/commits/{suggested}/{self.file}",
+            ],
+            details=data.get("diff"),
+        )
+
+
+class TagPin(Pin):
+    """`# dotfiles-check: tags <URL>` の次の行で固定した版。"""
+
+    def __init__(self, rel, line, url, m):
+        self.url = url
+        self.name, self.current = m.groups()
+        super().__init__(f"tag:{rel}:{self.name}:{url}", self.name, rel, line)
+
+    def fetch(self):
+        out = run(["git", "ls-remote", "--tags", "--refs", self.url], FETCH_TIMEOUT)[0]
+        tags = set(re.findall(r"refs/tags/(v?\d+(?:\.\d+)+)$", out, re.MULTILINE))
+        if not tags:
+            raise FetchError("版のタグが見つからない")
+        github = GITHUB_URL.match(self.url)
+        if not github:
+            return {"latest": max(tags, key=version_key), "published": None}
+        latest, published = settled_tag(*github.groups(), tags)
+        return {"latest": latest, "published": published}
+
+    def evaluate(self, data):
+        latest = data.get("latest")
+        if latest is None or version_key(self.current) >= version_key(latest):
+            return None
+        summary = f"{self.name} {self.current} → {latest}"
+        when = f"（{data['published'][:10]} 公開）" if data.get("published") else "（公開日は確かめていない）"
+        return notice(summary + when, summary, [f"{self.where} の {self.name} を {latest} にする"])
+
+
+class ActionPin(Pin):
+    """ワークフローで `uses: owner/repo@<SHA> # vX.Y.Z` と固定した action。"""
+
+    def __init__(self, rel, line, m, occurrence):
+        self.owner, self.name, self.sub, self.sha, rest = m.groups()
+        version = VERSION_COMMENT.search(rest)
+        self.current = version.group(1) if version else None
+        label = f"{self.owner}/{self.name}{self.sub}"
+        super().__init__(f"action:{rel}:{label}#{occurrence}", label, rel, line)
+        if self.current is None:
+            self.problem = "SHA で固定しているが、版のコメント（# vX.Y.Z）が無いため確かめられない"
+
+    def fetch(self):
+        if self.problem:
+            return {}
+        out = run(["git", "ls-remote", "--tags", f"https://github.com/{self.owner}/{self.name}.git"], FETCH_TIMEOUT)[0]
+        commits = {}
+        for line in out.splitlines():
+            sha, _, ref = line.partition("\t")
+            m = re.fullmatch(r"refs/tags/(v\d+\.\d+\.\d+)(\^\{\})?", ref)
+            # 注釈付きタグはタグ自身の SHA と、^{} の付いたコミットの SHA が並ぶ。uses にはコミットを書く。
+            if m and (m.group(2) or m.group(1) not in commits):
+                commits[m.group(1)] = sha
+        if not commits:
+            raise FetchError("版のタグが見つからない")
+        latest, published = settled_tag(self.owner, self.name, commits)
+        return {"latest": latest, "published": published, "sha": commits.get(latest), "tags": commits}
+
+    def evaluate(self, data):
+        latest, tags = data.get("latest"), data.get("tags") or {}
+        # タグが別のコミットへ付け替えられた（tj-actions/changed-files の乗っ取りと同じ形）か、コメントの
+        # 書き間違い。どちらでも付け替え先へ上げてはいけないので、手順は確かめ方だけにする。
+        if self.current in tags and tags[self.current] != self.sha:
+            commit = f"https://github.com/{self.owner}/{self.name}/commit"
+            return notice(
+                f"{self.label} のコメントの {self.current} が、固定した SHA とは別のコミットを指している"
+                "（タグの付け替えか、コメントの書き間違い）",
+                f"{self.label}（タグと SHA が不一致）",
+                [f"確かめるまで上げない。固定中: {commit}/{self.sha}", f"いまの {self.current}: {commit}/{tags[self.current]}"],
+            )
+        if latest is None or self.sha == data.get("sha") or version_key(self.current) >= version_key(latest):
+            return None
+        summary = f"{self.label} {self.current} → {latest}"
+        target = f"{self.where} を {self.label}@{data['sha']} # {latest} にする"
+        return notice(f"{summary}（{data['published'][:10]} 公開）", summary, [target])
+
+
+def find_pins(repo):
+    files = []
+    for root, dirs, names in os.walk(os.path.join(repo, DEPLOYED_PATH)):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        files += [os.path.join(root, n) for n in names if n.endswith((".yml", ".yaml"))]
+    workflows = os.path.join(repo, ".github", "workflows")
+    if os.path.isdir(workflows):
+        files += [os.path.join(workflows, n) for n in os.listdir(workflows) if n.endswith((".yml", ".yaml"))]
+
+    found = []
+    for path in sorted(files):
+        rel = os.path.relpath(path, repo)
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        seen = {}
+
+        def occurrence(key):
+            seen[key] = seen.get(key, 0) + 1
+            return seen[key]
+
+        for i, text in enumerate(lines):
+            # コメントに残した古い URL などを固定として拾わない。
+            code_end = comment_start(text)
+            for m in RAW_PIN.finditer(text[:code_end]):
+                owner, name, _, file = m.groups()
+                found.append(RawPin(rel, i + 1, m, occurrence(f"raw:{owner}/{name}/{file}")))
+            uses = USES_SHA.search(text)
+            if uses and uses.start() < code_end:
+                found.append(ActionPin(rel, i + 1, uses, occurrence(f"action:{uses.group(1)}/{uses.group(2)}{uses.group(3)}")))
+            marker = TAG_MARKER.search(text)
+            if marker:
+                target = KEY_VALUE.match(lines[i + 1]) if i + 1 < len(lines) else None
+                found.append(
+                    TagPin(rel, i + 2, marker.group(1), target) if target
+                    else BrokenPin(rel, i + 1, '目印の次の行から版を読めない（key: "vX.Y.Z" の形で書く）')
+                )
+    return found
+
+
+def check_pins(repo, remote=None):
+    section = {"label": "固定バージョン", "items": [], "failures": [], "note": None}
+    if repo is None:
+        section["note"] = "checkout が見つからないため確かめていない"
+        return section
+    if remote and count(repo, f"HEAD..{remote}", DEPLOYED_PATH, ".github/workflows"):
+        # 古いファイルを見て直すよう勧めると、上流で直した変更とぶつかる。
+        section["note"] = "checkout が origin より遅れているため、取り込んでから確かめる"
+        return section
+    cache = read_json(PINS_FILE) or {}
+    # キーは checkout からの相対パスなので、別の checkout の結果でも当てはまってしまう。
+    entries = (cache.get("pins") or {}) if cache.get("repo") == repo else {}
+    section["items"], section["failures"] = evaluate_all(find_pins(repo), entries)
+    return section
 
 
 # ---------------------------------------------------------------- 取得
@@ -540,7 +918,7 @@ def needs_refresh(repo):
 
 
 def refresh(wait):
-    """リモートを取得し、結果を REFRESH_FILE と TOOLS_FILE に残す。dotfiles の取得に失敗したら理由を返す。
+    """リモートを取得し、結果を REFRESH_FILE・TOOLS_FILE・PINS_FILE に残す。dotfiles の取得に失敗したら理由を返す。
 
     wait が偽なら、別のプロセスが取得中か、取得が要らなくなっていれば何もせずに None を返す。
     wait が真なら、lock を待つ間に別のプロセスが取得を済ませれば、それを使って None を返す。
@@ -569,9 +947,11 @@ def refresh(wait):
         })
 
         tools = find_tools()
+        pins = find_pins(repo) if repo else []
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             dotfiles = pool.submit(attempt, lambda: fetch_dotfiles(repo)) if repo else None
             fetched = {tool.key: pool.submit(attempt, tool.fetch) for tool in tools}
+            fetched_pins = {pin.key: pool.submit(attempt, pin.fetch) for pin in pins}
         # checkout が無いのは取得の失敗ではない。失敗として数えると毎時の再試行と「N 日取得できていない」になる。
         error = dotfiles.result()[1] if dotfiles else None
 
@@ -579,6 +959,13 @@ def refresh(wait):
         write_json(TOOLS_FILE, {
             "at": time.time(),
             "tools": {key: next_state(old.get(key), *future.result(), started) for key, future in fetched.items()},
+        })
+        old_pins = read_json(PINS_FILE) or {}
+        old = (old_pins.get("pins") or {}) if old_pins.get("repo") == repo else {}
+        write_json(PINS_FILE, {
+            "repo": repo,
+            "at": time.time(),
+            "pins": {key: next_state(old.get(key), *future.result(), started) for key, future in fetched_pins.items()},
         })
         write_json(REFRESH_FILE, {
             "repo": repo, "at": time.time(), "error": error,
@@ -627,7 +1014,7 @@ def run_check():
     tools = check_tools()
     updates = unknown = False
 
-    print(f"{dotfiles['label']} ({shown(dotfiles['where']) if dotfiles['where'] else '不明'})")
+    print(f"dotfiles ({shown(dotfiles['where']) if dotfiles['where'] else '不明'})")
     if dotfiles["error"]:
         print(f"  ✗ 判定できない: {dotfiles['error']}")
         unknown = True
@@ -644,10 +1031,23 @@ def run_check():
         if not dotfiles["notices"]:
             print("  ? ローカルで分かる範囲では差分が無い" if unknown else "  ✓ 最新")
 
-    print(tools["label"])
-    if not tools["items"]:
-        print("  - 確かめられるツールが入っていない")
-    for item in tools["items"]:
+    pins = check_pins(dotfiles["where"], dotfiles["remote"])
+    for section, empty in ((tools, "確かめられるツールが入っていない"), (pins, "固定している版が無い")):
+        found_updates, found_unknown = print_items(section, empty)
+        updates |= found_updates
+        unknown |= found_unknown
+    return updates, unknown
+
+
+def print_items(section, empty):
+    """節を表示し、(更新があるか, 判定できなかったものがあるか) を返す。"""
+    updates = unknown = False
+    print(section["label"])
+    if section.get("note"):
+        print(f"  - {section['note']}")
+    elif not section["items"]:
+        print(f"  - {empty}")
+    for item in section["items"]:
         if item["problem"]:
             print(f"  ! {item['label']}: {item['problem']}")
             unknown = True
@@ -676,12 +1076,12 @@ def run_notify(fmt):
         failure = fetch_failure(repo)
         if failure:
             lines.append(f"⚠ {dotfiles['label']}: {failure}")
-        tools = check_tools()
-        shorts = [item["notice"]["short"] for item in tools["items"] if item["notice"]]
-        if shorts:
-            # シェルを開くたびに出るので、ツールは 1 行にまとめる。
-            lines.append(f"⚠ ツールの更新: {'、'.join(shorts)}")
-        lines += [f"⚠ ツール: {f}" for f in tools["failures"]]
+        for section in (check_tools(), check_pins(repo, dotfiles["remote"])):
+            shorts = [item["notice"]["short"] for item in section["items"] if item["notice"]]
+            if shorts:
+                # シェルを開くたびに出るので、節ごとに 1 行にまとめる。
+                lines.append(f"⚠ {section['label']}の更新: {'、'.join(shorts)}")
+            lines += [f"⚠ {section['label']}: {f}" for f in section["failures"]]
     except Exception as e:
         # 黙ると利用者は dotfiles-check を実行する理由が無く、壊れたまま気づけない。
         lines = [f"⚠ dotfiles-check notify が失敗した（{type(e).__name__}）"]
@@ -697,11 +1097,91 @@ def run_notify(fmt):
     return 0
 
 
+def run_pins(repo, fmt):
+    """終了コードは手動実行と同じ。固定が 1 つも見つからなければ 2 を返す。"""
+    pins = find_pins(repo)
+    # 走査が壊れて 0 件になったのを「すべて最新」と取り違えると、issue が閉じたまま気づけない。
+    if not pins:
+        print(f"{repo} に固定している版が見つからない", file=sys.stderr)
+        return 2
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        fetched = {pin.key: pool.submit(attempt, pin.fetch) for pin in pins}
+    entries = {key: next_state(None, *future.result(), time.time()) for key, future in fetched.items()}
+    items, _ = evaluate_all(pins, entries)
+    updates = any(item["notice"] for item in items)
+    unknown = any(item["problem"] for item in items)
+    if fmt == "markdown":
+        # 取得の失敗の理由は毎回変わりうるので本文には書かず、実行ログに残す。
+        for item in items:
+            if item["problem"]:
+                print(f"{item['label']}: {item['problem']}", file=sys.stderr)
+        print_pins_markdown(items)
+    else:
+        print_items({"label": "固定バージョン", "items": items}, "固定している版が無い")
+    return 1 if updates else 2 if unknown else 0
+
+
+def md(text):
+    """issue の表に入れても崩れず、上流から来た文字列が HTML やメンションとして解釈されない形にする。"""
+    return (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("|", "\\|").replace("@", "&#64;")
+    )
+
+
+def fence(text):
+    """text の中のどのバッククォートの並びより長いコードブロックの区切り。"""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    return "`" * max(3, longest + 1)
+
+
+# issue の本文の上限は 65,536 文字。本文は環境変数でジョブ間を渡すので、1 つの値の上限（Linux で 128 KiB）にも収める。
+MARKDOWN_MAX_CHARS = 60_000
+MARKDOWN_MAX_BYTES = 120_000
+
+
+def print_pins_markdown(items):
+    parts = ["dotfiles-check が固定している版を確かめた結果。直したら、次の定期実行でこの issue は閉じる。\n"]
+    found = [item for item in items if item["notice"]]
+    if found:
+        rows = ["| 対象 | 状態 | 直し方 |", "| --- | --- | --- |"]
+        for item in found:
+            steps = "<br>".join(md(command) for command in item["notice"]["commands"])
+            rows.append(f"| {md(item['label'])} | {md(item['notice']['summary'])} | {steps} |")
+        parts.append("\n".join(rows))
+    problems = [item for item in items if item["problem"]]
+    if problems:
+        lines = ["\n確かめられなかったもの:\n"]
+        for item in problems:
+            problem = item["problem"]
+            if problem.startswith("最新版を取得できなかった"):
+                problem = "最新版を取得できなかった（理由は実行ログにある）"
+            lines.append(f"- {md(item['label'])}: {md(problem)}")
+        parts.append("\n".join(lines))
+    current = [md(item["label"]) for item in items if not item["notice"] and not item["problem"]]
+    if current:
+        parts.append(f"\n最新のもの: {'、'.join(current)}")
+
+    text = "\n".join(parts)
+    for item in found:
+        details = item["notice"].get("details")
+        if not details:
+            continue
+        mark = fence(details)
+        block = f"\n\n<details><summary>{md(item['label'])} の差分</summary>\n\n{mark}diff\n{details}\n{mark}\n\n</details>"
+        omitted = f"\n\n{md(item['label'])} の差分は長いため省いた。直し方の行のリンクから確かめる。"
+        text += block if fits(text + block) else omitted
+    print(text)
+
+
+def fits(text):
+    return len(text) <= MARKDOWN_MAX_CHARS and len(text.encode("utf-8")) <= MARKDOWN_MAX_BYTES
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="dotfiles-check",
         description=(
-            "dotfiles と、それが入れたツールの更新を確かめる。引数なしで実行すると、リモートを取得して"
+            "dotfiles と、それが入れたツール・固定している版の更新を確かめる。引数なしで実行すると、リモートを取得して"
             "結果と更新手順を表示する。終了コードは 0 = 更新なし、1 = 更新あり、2 = 判定できないものがあった。"
             "更新ありと判定できないものが両方あれば 1 を返す。standalone 以外の uv など、確かめなかったものは数えない。"
         ),
@@ -718,6 +1198,9 @@ def main():
         help="claude は Claude Code の SessionStart フック向けの JSON を出す",
     )
     sub.add_parser("refresh", help="リモートを取得する。notify がバックグラウンドで起動する")
+    pins = sub.add_parser("pins", help="キャッシュを使わずに固定バージョンだけを確かめる。GitHub Actions から呼ぶ")
+    pins.add_argument("--repo", default=".", help="走査するリポジトリ")
+    pins.add_argument("--format", choices=["text", "markdown"], default="text")
     args = parser.parse_args()
 
     if args.command == "notify":
@@ -725,6 +1208,13 @@ def main():
     if args.command == "refresh":
         refresh(wait=False)
         return 0
+    if args.command == "pins":
+        try:
+            return run_pins(os.path.abspath(args.repo), args.format)
+        except Exception:
+            # 1 は「更新あり」なので、想定外の失敗で issue を作らないよう区別する。
+            traceback.print_exc()
+            return 2
     try:
         updates, unknown = run_check()
     except Exception:

@@ -1,0 +1,91 @@
+name: Pinned versions
+
+on:
+  schedule:
+    # 毎週月曜 9:17（JST）。毎時 0 分は混み合って遅れやすい。
+    - cron: "17 0 * * 1"
+  workflow_dispatch:
+
+# 定期実行と手動実行が重なると、issue が 2 つできうる。
+concurrency:
+  group: pinned-versions
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 上流から取ってきたものを扱うジョブには、書き込みの権限を持たせない。
+    permissions:
+      contents: read
+    outputs:
+      status: ${{ steps.check.outputs.status }}
+      report: ${{ steps.check.outputs.report }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check pinned versions
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # 終了コードで issue の扱いを分けるので、失敗してもここでは止めない。
+          set +e
+          python3 ansible/roles/dotfiles/files/dotfiles-check pins --repo . --format markdown > report.md
+          status=$?
+          set -e
+          # 本文には上流のファイルの差分が入る。行頭の ::error:: などをワークフローのコマンドとして読ませない。
+          stop="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+          echo "::stop-commands::${stop}"
+          cat report.md
+          echo "::${stop}::"
+          delimiter="EOF_$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+          {
+            echo "status=${status}"
+            echo "report<<${delimiter}"
+            cat report.md
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
+
+  issue:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      LABEL: pinned-versions
+      STATUS: ${{ needs.check.outputs.status }}
+      REPORT: ${{ needs.check.outputs.report }}
+    steps:
+      - name: Update the tracking issue
+        run: |
+          printf '%s\n' "$REPORT" > report.md
+          gh label create "$LABEL" --color FBCA04 --description "固定バージョンの更新" --force
+          number="$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number // empty')"
+          case "$STATUS" in
+            0)
+              if [ -n "$number" ]; then
+                gh issue close "$number" --comment "固定バージョンはすべて最新になった。"
+              fi
+              ;;
+            1)
+              if [ -z "$number" ]; then
+                gh issue create --title "固定バージョンの更新" --label "$LABEL" --body-file report.md
+              elif [ "$(gh issue view "$number" --json body --jq .body | tr -d '\r')" != "$(tr -d '\r' < report.md)" ]; then
+                gh issue edit "$number" --body-file report.md
+                # 本文の書き換えだけでは気づけないので、変わったことをコメントでも知らせる。
+                gh issue comment "$number" --body "更新の内容が変わったので、本文を書き換えた。"
+              fi
+              ;;
+            *)
+              echo "::error::固定バージョンを判定できなかった（終了コード ${STATUS}）"
+              exit 1
+              ;;
+          esac
