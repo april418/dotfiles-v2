@@ -1,7 +1,13 @@
 ---
 # dotfiles-check: tags https://github.com/nvm-sh/nvm.git
 node_nvm_version: "v0.40.3"
-node_nvm_dir: "{{ ansible_facts['env'].XDG_CONFIG_HOME | default(ansible_facts['env'].HOME) }}/.nvm"
+# install.sh の nvm_default_install_dir と nvm_install_dir に合わせる。ずれると nvm.sh の stat が外れ、
+# 適用のたびに install.sh が既存の clone を node_nvm_version へ戻す。
+node_nvm_default_dir: >-
+  {{ ansible_facts['env'].XDG_CONFIG_HOME ~ '/nvm'
+     if ansible_facts['env'].XDG_CONFIG_HOME | default('') | length > 0
+     else ansible_facts['env'].HOME ~ '/.nvm' }}
+node_nvm_dir: "{{ ansible_facts['env'].NVM_DIR | default(node_nvm_default_dir, true) }}"
 node_versions:
   - 22
   - 24
