@@ -1,2 +1,3 @@
 ---
-zsh_zinit_home: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share') }}/zinit/zinit.git"
+# .zshrc の ZINIT_HOME と同じ規則で決める。XDG_DATA_HOME が空文字のときも既定値に倒す。
+zsh_zinit_home: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/zinit/zinit.git"
