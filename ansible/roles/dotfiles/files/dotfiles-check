@@ -627,7 +627,7 @@ def run_check():
     tools = check_tools()
     updates = unknown = False
 
-    print(f"{dotfiles['label']} ({shown(dotfiles['where']) if dotfiles['where'] else '不明'})")
+    print(f"dotfiles ({shown(dotfiles['where']) if dotfiles['where'] else '不明'})")
     if dotfiles["error"]:
         print(f"  ✗ 判定できない: {dotfiles['error']}")
         unknown = True
