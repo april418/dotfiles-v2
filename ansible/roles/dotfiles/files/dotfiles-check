@@ -1,0 +1,348 @@
+#!/usr/bin/env python3
+import argparse
+import fcntl
+import json
+import os
+import shlex
+import subprocess
+import sys
+import time
+import traceback
+
+HOME = os.path.expanduser("~")
+STATE_DIR = os.path.join(
+    os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state"), "dotfiles"
+)
+CACHE_DIR = os.path.join(
+    os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"), "dotfiles"
+)
+# ansible/roles/dotfiles/tasks/record.yml が書く。
+APPLIED_FILE = os.path.join(STATE_DIR, "applied.json")
+REFRESH_FILE = os.path.join(CACHE_DIR, "refresh.json")
+LOCK_FILE = os.path.join(CACHE_DIR, "refresh.lock")
+DEFAULT_REPO = os.path.join(HOME, ".dotfiles")
+
+# 配置に効くのはこの下だけ。install など外側の変更で流すよう促すと、
+# Claude Code が ~/.claude/settings.json に書き足した設定を無駄に上書きさせる。
+DEPLOYED_PATH = "ansible"
+
+REFRESH_INTERVAL = 24 * 60 * 60
+# 失敗したら早めに再試行する。24 時間待つと、オフラインで起動した日はその日の分を丸ごと取りこぼす。
+RETRY_INTERVAL = 60 * 60
+# 取得の失敗がこれだけ続いたら通知する。黙っていると古い ref のまま「最新」に見える。
+FETCH_FAILURE_NOTICE_AFTER = 3 * 24 * 60 * 60
+FETCH_TIMEOUT = 60
+
+# 認証を求められてもプロンプトを出さずに失敗させる。バックグラウンドで止まったままになるため。
+GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
+
+def git(repo, *args):
+    """成功したら stdout を返す。失敗したら None。"""
+    try:
+        p = subprocess.run(
+            ["git", "-C", repo, *args],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=GIT_ENV,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
+def read_json(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def write_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def shown(path):
+    """コマンド例にそのまま貼れる形にする。"""
+    if path.startswith(HOME + os.sep):
+        # ~ はクォートの内側に入れると展開されない。
+        return "~/" + shlex.quote(path[len(HOME) + 1:])
+    return shlex.quote(path)
+
+
+def label(repo):
+    if repo and os.path.realpath(repo) != os.path.realpath(DEFAULT_REPO):
+        return f"dotfiles ({shown(repo)})"
+    return "dotfiles"
+
+
+def locate():
+    """(checkout のルート, 適用記録) を返す。
+
+    適用記録が別の checkout のものなら None にする。見つからなければ (None, None)。
+    """
+    applied = read_json(APPLIED_FILE)
+    if applied and not (isinstance(applied.get("repo"), str) and isinstance(applied.get("commit"), str)):
+        applied = None
+    candidates = [applied["repo"]] if applied else []
+    if os.environ.get("DOTPATH"):
+        candidates.append(os.environ["DOTPATH"])
+    candidates.append(DEFAULT_REPO)
+    for candidate in candidates:
+        if not os.path.isdir(candidate):
+            continue
+        top = git(candidate, "rev-parse", "--show-toplevel")
+        if top:
+            if applied and os.path.realpath(applied["repo"]) != os.path.realpath(top):
+                applied = None
+            return top, applied
+    return None, None
+
+
+def count(repo, revs):
+    out = git(repo, "rev-list", "--count", "--no-merges", revs, "--", DEPLOYED_PATH)
+    return int(out) if out is not None else None
+
+
+def check_dotfiles():
+    repo, applied = locate()
+    result = {"label": label(repo), "where": repo, "notices": [], "warnings": [], "error": None}
+    if repo is None:
+        result["error"] = "dotfiles の checkout が見つからない（DOTPATH か ~/.dotfiles に置く）"
+        return result
+
+    apply = f"ansible-playbook {shown(os.path.join(repo, 'ansible', 'playbook.yml'))} --connection=local"
+    remote = git(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    if remote is None:
+        remote = next(
+            (r for r in ("origin/main", "origin/master") if git(repo, "rev-parse", "--verify", "--quiet", r)),
+            None,
+        )
+    behind = count(repo, f"HEAD..{remote}") if remote else None
+    if behind is None:
+        result["warnings"].append("origin の既定ブランチを特定できないため、リモートとは比べていない")
+
+    if behind:
+        branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+        if branch == remote.split("/", 1)[1]:
+            result["notices"].append({
+                "summary": f"{remote} より {behind} コミット遅れている",
+                # 配置用の checkout にローカルのコミットがあれば、書き換えずに止める。
+                "commands": [f"git -C {shown(repo)} pull --ff-only origin {branch}", apply],
+            })
+        else:
+            # 作業ブランチで取り込み方を決めつけると、rebase などを勧めることになるため手順は出さない。
+            result["notices"].append({
+                "summary": f"{remote} より {behind} コミット遅れている（{branch or 'detached HEAD'} を checkout 中）",
+                "commands": [],
+            })
+        return result
+
+    if applied is None:
+        result["notices"].append({"summary": "適用したコミットの記録が無い", "commands": [apply]})
+        return result
+
+    # 配置先の中身とは比べない。Claude Code が ~/.claude/settings.json を書き換えるため、常にずれて見える。
+    commit = applied["commit"]
+    if git(repo, "cat-file", "-e", f"{commit}^{{commit}}") is None:
+        result["notices"].append({"summary": "適用したコミットが checkout に無い", "commands": [apply]})
+        return result
+    trees = git(repo, "rev-parse", f"{commit}:{DEPLOYED_PATH}", f"HEAD:{DEPLOYED_PATH}")
+    if trees is None or len(set(trees.split())) > 1:
+        unapplied = count(repo, f"{commit}..HEAD")
+        summary = f"取り込み済みの {unapplied} コミットが未適用" if unapplied else "checkout と適用済みの内容が違う"
+        result["notices"].append({"summary": summary, "commands": [apply]})
+    return result
+
+
+def fetch(repo):
+    """失敗したら理由を返す。"""
+    try:
+        p = subprocess.run(
+            # 自動のメンテナンスを止める。利用者が同じ checkout で作業中だとロックを奪い合う。
+            # --no-auto-maintenance は git 2.29 からなので、古い git でも無視される設定で渡す。
+            ["git", "-C", repo, "-c", "maintenance.auto=false", "-c", "gc.auto=0", "fetch", "--quiet", "origin"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=FETCH_TIMEOUT,
+            env=GIT_ENV,
+        )
+    except subprocess.TimeoutExpired:
+        return f"{FETCH_TIMEOUT} 秒でタイムアウトした"
+    except OSError as e:
+        return str(e)
+    if p.returncode == 0:
+        return None
+    lines = [line.strip() for line in p.stderr.splitlines() if line.strip()]
+    # 最終行は複数行のメッセージの続き（"and the repository exists." など）になりがち。
+    reason = next((line for line in lines if line.startswith(("fatal:", "error:"))), lines[0] if lines else None)
+    return reason or f"git fetch が {p.returncode} で終了した"
+
+
+def needs_refresh(repo):
+    state = read_json(REFRESH_FILE)
+    try:
+        age = time.time() - float(state["at"])
+    except (TypeError, KeyError, ValueError):
+        return True
+    if state.get("repo") != repo:
+        return True
+    return age < 0 or age >= (RETRY_INTERVAL if state.get("error") else REFRESH_INTERVAL)
+
+
+def refresh(wait):
+    """リモートを取得し、結果を REFRESH_FILE に残す。失敗したら理由を返す。
+
+    wait が偽なら、別のプロセスが取得中か、取得が要らなくなっていれば何もせずに None を返す。
+    """
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    with open(LOCK_FILE, "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return None
+        repo, _ = locate()
+        # lock を待つ間に、先に起動した refresh が取得を済ませていることがある。
+        if not wait and not needs_refresh(repo):
+            return None
+        previous = read_json(REFRESH_FILE) or {}
+        failing_since = previous.get("failing_since") if previous.get("repo") == repo else None
+        started = time.time()
+        # 取得前に試行を記録する。並んで起動した notify が同じ取得を重ねて始めないため。
+        # 途中で落ちたときは失敗扱いになり、RETRY_INTERVAL 後に再試行される。
+        write_json(REFRESH_FILE, {
+            "repo": repo, "at": started, "error": "取得が完了しなかった", "failing_since": failing_since or started,
+        })
+        error = fetch(repo) if repo else "dotfiles の checkout が見つからない"
+        write_json(REFRESH_FILE, {
+            "repo": repo, "at": time.time(), "error": error,
+            "failing_since": (failing_since or started) if error else None,
+        })
+        return error
+
+
+def fetch_failure(repo):
+    """取得の失敗が FETCH_FAILURE_NOTICE_AFTER 以上続いていれば、その要約を返す。"""
+    state = read_json(REFRESH_FILE)
+    if not state or state.get("repo") != repo or not state.get("error"):
+        return None
+    try:
+        elapsed = time.time() - float(state["failing_since"])
+    except (TypeError, KeyError, ValueError):
+        return None
+    if elapsed < FETCH_FAILURE_NOTICE_AFTER:
+        return None
+    return f"{int(elapsed // (24 * 60 * 60))} 日リモートを取得できていない（{state['error']}）"
+
+
+def spawn_refresh():
+    # 出力を親から切り離す。継承すると、フックの stdout のパイプや p10k の一時ファイルを
+    # 取得が終わるまで握り続ける。
+    subprocess.Popen(
+        [sys.executable, os.path.abspath(__file__), "refresh"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
+
+
+def run_check():
+    repo, _ = locate()
+    fetch_error = refresh(wait=True) if repo else None
+    result = check_dotfiles()
+
+    print(f"{result['label']} ({shown(result['where']) if result['where'] else '不明'})")
+    if result["error"]:
+        print(f"  ✗ 判定できない: {result['error']}")
+        return 2
+    if fetch_error:
+        print(f"  ! リモートを取得できなかったため、前回取得した状態で判定した: {fetch_error}")
+    for warning in result["warnings"]:
+        print(f"  ! {warning}")
+    if result["notices"]:
+        for notice in result["notices"]:
+            print(f"  ✗ {notice['summary']}")
+            for command in notice["commands"]:
+                print(f"      {command}")
+        return 1
+    if fetch_error or result["warnings"]:
+        print("  ? ローカルで分かる範囲では差分が無い")
+        return 2
+    print("  ✓ 最新")
+    return 0
+
+
+def run_notify(fmt):
+    try:
+        repo, _ = locate()
+        if repo and needs_refresh(repo):
+            spawn_refresh()
+        result = check_dotfiles()
+        lines = [f"⚠ {result['label']}: {n['summary']}" for n in result["notices"]]
+        lines += [f"⚠ {result['label']}: {w}" for w in result["warnings"]]
+        failure = fetch_failure(repo)
+        if failure:
+            lines.append(f"⚠ {result['label']}: {failure}")
+    except Exception as e:
+        # 黙ると利用者は dotfiles-check を実行する理由が無く、壊れたまま気づけない。
+        lines = [f"⚠ dotfiles-check notify が失敗した（{type(e).__name__}）"]
+    if not lines:
+        return 0
+    lines.append("  詳細と更新手順は dotfiles-check で表示する")
+    text = "\n".join(lines)
+    if fmt == "claude":
+        # stdout の素のテキストは Claude のコンテキストに入る。systemMessage は利用者にだけ見える。
+        print(json.dumps({"systemMessage": text}, ensure_ascii=False))
+    else:
+        print(text)
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="dotfiles-check",
+        description=(
+            "dotfiles の更新を確かめる。引数なしで実行すると、リモートを取得して結果と更新手順を表示する。"
+            "終了コードは 0 = 更新なし、1 = 更新あり、2 = 判定できなかった。"
+        ),
+    )
+    sub = parser.add_subparsers(dest="command")
+    notify = sub.add_parser(
+        "notify",
+        help="前回取得した状態から通知を出す。取得から時間が経っていればバックグラウンドで取得し直す",
+    )
+    notify.add_argument(
+        "--format",
+        choices=["text", "claude"],
+        default="text",
+        help="claude は Claude Code の SessionStart フック向けの JSON を出す",
+    )
+    sub.add_parser("refresh", help="リモートを取得する。notify がバックグラウンドで起動する")
+    args = parser.parse_args()
+
+    if args.command == "notify":
+        return run_notify(args.format)
+    if args.command == "refresh":
+        refresh(wait=False)
+        return 0
+    try:
+        return run_check()
+    except Exception:
+        # 1 は「更新あり」の意味なので、想定外の失敗をそれと区別する。
+        traceback.print_exc()
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

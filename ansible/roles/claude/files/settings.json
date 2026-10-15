@@ -197,6 +197,15 @@
             "statusMessage": "セッション状態を読み直しています"
           }
         ]
+      },
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/dotfiles-check notify --format claude"
+          }
+        ]
       }
     ]
   }
