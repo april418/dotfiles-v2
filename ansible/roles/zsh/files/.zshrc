@@ -272,6 +272,20 @@ fi
 
 
 # ========================================
+#   dotfiles の更新通知
+# ========================================
+# .zshrc の本体で呼ぶとプロンプトを出さない zsh -ic でも動いて出力が混ざるため、最初の precmd で呼ぶ。
+# この時点の出力は p10k が instant prompt の後にまとめて出し直すので消えない。
+function _dotfiles_update_notice() {
+  add-zsh-hook -d precmd _dotfiles_update_notice
+  if (( $+commands[dotfiles-check] )); then
+    dotfiles-check notify
+  fi
+}
+add-zsh-hook precmd _dotfiles_update_notice
+
+
+# ========================================
 #   その他
 # ========================================
 # Ctrl-sでターミナルがロックされないようにする
