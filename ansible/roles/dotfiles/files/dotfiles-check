@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import concurrent.futures
 import fcntl
 import json
 import os
+import re
 import shlex
+import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -19,8 +23,14 @@ CACHE_DIR = os.path.join(
 # ansible/roles/dotfiles/tasks/record.yml が書く。
 APPLIED_FILE = os.path.join(STATE_DIR, "applied.json")
 REFRESH_FILE = os.path.join(CACHE_DIR, "refresh.json")
+TOOLS_FILE = os.path.join(CACHE_DIR, "tools.json")
 LOCK_FILE = os.path.join(CACHE_DIR, "refresh.lock")
 DEFAULT_REPO = os.path.join(HOME, ".dotfiles")
+# .zshrc の ZINIT_HOME と同じ規則。
+ZINIT_DIR = os.path.join(
+    os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "zinit"
+)
+NVM_REPO_URL = "https://github.com/nvm-sh/nvm.git"
 
 # 配置に効くのはこの下だけ。install など外側の変更で流すよう促すと、
 # Claude Code が ~/.claude/settings.json に書き足した設定を無駄に上書きさせる。
@@ -32,9 +42,27 @@ RETRY_INTERVAL = 60 * 60
 # 取得の失敗がこれだけ続いたら通知する。黙っていると古い ref のまま「最新」に見える。
 FETCH_FAILURE_NOTICE_AFTER = 3 * 24 * 60 * 60
 FETCH_TIMEOUT = 60
+# brew outdated は、メタデータが古ければ先に brew update を走らせる。
+BREW_TIMEOUT = 300
+
+# PATH が最小限の環境（launchd から起動された GUI アプリなど）でも見つけるため、既知の導入先も探す。
+KNOWN_BIN_DIRS = [
+    os.path.join(HOME, ".local", "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/home/linuxbrew/.linuxbrew/bin",
+]
 
 # 認証を求められてもプロンプトを出さずに失敗させる。バックグラウンドで止まったままになるため。
-GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+# 色は止める。FORCE_COLOR などを継承すると、出力から版を読み取るときにエスケープ列が混ざる。
+CHILD_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "NO_COLOR": "1"}
+# 自動のメンテナンスを止める。利用者が同じ checkout で作業中だとロックを奪い合う。
+# --no-auto-maintenance は git 2.29 からなので、古い git でも無視される設定で渡す。
+GIT_FETCH = ["-c", "maintenance.auto=false", "-c", "gc.auto=0", "fetch", "--quiet"]
+
+
+class FetchError(Exception):
+    pass
 
 
 def git(repo, *args):
@@ -46,11 +74,39 @@ def git(repo, *args):
             capture_output=True,
             text=True,
             timeout=10,
-            env=GIT_ENV,
+            env=CHILD_ENV,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
     return p.stdout.strip() if p.returncode == 0 else None
+
+
+def run(args, timeout):
+    """(stdout, stderr) を返す。起動できない・時間切れ・0 以外で終了したら FetchError を投げる。"""
+    try:
+        # 子の子まで止められるよう、別のプロセスグループで起動する。brew は brew update を子として走らせ、
+        # 直接の子だけを kill すると update のロックを握ったまま残る。
+        p = subprocess.Popen(
+            args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, env=CHILD_ENV, start_new_session=True,
+        )
+    except OSError as e:
+        raise FetchError(str(e))
+    try:
+        stdout, stderr = p.communicate(timeout=timeout)
+    except BaseException as e:
+        os.killpg(p.pid, signal.SIGKILL)
+        p.communicate()
+        if isinstance(e, subprocess.TimeoutExpired):
+            raise FetchError(f"{timeout} 秒でタイムアウトした")
+        raise
+    if p.returncode != 0:
+        lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+        # 最終行は複数行のメッセージの続き（"and the repository exists." など）になりがち。
+        # brew は "Error:" と大文字で始める。
+        reason = next((line for line in lines if re.match(r"(fatal|error):", line, re.IGNORECASE)), lines[0] if lines else None)
+        raise FetchError(reason or f"{os.path.basename(args[0])} が {p.returncode} で終了した")
+    return stdout, stderr
 
 
 def read_json(path):
@@ -76,6 +132,30 @@ def shown(path):
         # ~ はクォートの内側に入れると展開されない。
         return "~/" + shlex.quote(path[len(HOME) + 1:])
     return shlex.quote(path)
+
+
+def version_key(text):
+    """'v0.40.8' や '0.12.14' を大小比較できる形にする。数字を含まなければ None。"""
+    numbers = re.findall(r"\d+", text or "")
+    return tuple(int(n) for n in numbers) if numbers else None
+
+
+def find_tool(name):
+    found = shutil.which(name)
+    if found:
+        return found
+    for directory in KNOWN_BIN_DIRS:
+        path = os.path.join(directory, name)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+def notice(summary, short, commands):
+    return {"summary": summary, "short": short, "commands": commands}
+
+
+# ---------------------------------------------------------------- dotfiles 本体
 
 
 def label(repo):
@@ -107,8 +187,8 @@ def locate():
     return None, None
 
 
-def count(repo, revs):
-    out = git(repo, "rev-list", "--count", "--no-merges", revs, "--", DEPLOYED_PATH)
+def count(repo, revs, *paths):
+    out = git(repo, "rev-list", "--count", "--no-merges", revs, "--", *paths)
     return int(out) if out is not None else None
 
 
@@ -116,7 +196,7 @@ def check_dotfiles():
     repo, applied = locate()
     result = {"label": label(repo), "where": repo, "notices": [], "warnings": [], "error": None}
     if repo is None:
-        result["error"] = "dotfiles の checkout が見つからない（DOTPATH か ~/.dotfiles に置く）"
+        result["error"] = "checkout が見つからない（DOTPATH か ~/.dotfiles に置く）"
         return result
 
     apply = f"ansible-playbook {shown(os.path.join(repo, 'ansible', 'playbook.yml'))} --connection=local"
@@ -126,66 +206,326 @@ def check_dotfiles():
             (r for r in ("origin/main", "origin/master") if git(repo, "rev-parse", "--verify", "--quiet", r)),
             None,
         )
-    behind = count(repo, f"HEAD..{remote}") if remote else None
+    behind = count(repo, f"HEAD..{remote}", DEPLOYED_PATH) if remote else None
     if behind is None:
         result["warnings"].append("origin の既定ブランチを特定できないため、リモートとは比べていない")
 
     if behind:
         branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+        summary = f"{remote} より {behind} コミット遅れている"
         if branch == remote.split("/", 1)[1]:
-            result["notices"].append({
-                "summary": f"{remote} より {behind} コミット遅れている",
-                # 配置用の checkout にローカルのコミットがあれば、書き換えずに止める。
-                "commands": [f"git -C {shown(repo)} pull --ff-only origin {branch}", apply],
-            })
+            # 配置用の checkout にローカルのコミットがあれば、書き換えずに止める。
+            commands = [f"git -C {shown(repo)} pull --ff-only origin {branch}", apply]
         else:
             # 作業ブランチで取り込み方を決めつけると、rebase などを勧めることになるため手順は出さない。
-            result["notices"].append({
-                "summary": f"{remote} より {behind} コミット遅れている（{branch or 'detached HEAD'} を checkout 中）",
-                "commands": [],
-            })
+            summary += f"（{branch or 'detached HEAD'} を checkout 中）"
+            commands = []
+        result["notices"].append(notice(summary, summary, commands))
         return result
 
     if applied is None:
-        result["notices"].append({"summary": "適用したコミットの記録が無い", "commands": [apply]})
+        summary = "適用したコミットの記録が無い"
+        result["notices"].append(notice(summary, summary, [apply]))
         return result
 
     # 配置先の中身とは比べない。Claude Code が ~/.claude/settings.json を書き換えるため、常にずれて見える。
     commit = applied["commit"]
     if git(repo, "cat-file", "-e", f"{commit}^{{commit}}") is None:
-        result["notices"].append({"summary": "適用したコミットが checkout に無い", "commands": [apply]})
+        summary = "適用したコミットが checkout に無い"
+        result["notices"].append(notice(summary, summary, [apply]))
         return result
     trees = git(repo, "rev-parse", f"{commit}:{DEPLOYED_PATH}", f"HEAD:{DEPLOYED_PATH}")
     if trees is None or len(set(trees.split())) > 1:
-        unapplied = count(repo, f"{commit}..HEAD")
+        unapplied = count(repo, f"{commit}..HEAD", DEPLOYED_PATH)
         summary = f"取り込み済みの {unapplied} コミットが未適用" if unapplied else "checkout と適用済みの内容が違う"
-        result["notices"].append({"summary": summary, "commands": [apply]})
+        result["notices"].append(notice(summary, summary, [apply]))
     return result
 
 
-def fetch(repo):
-    """失敗したら理由を返す。"""
-    try:
-        p = subprocess.run(
-            # 自動のメンテナンスを止める。利用者が同じ checkout で作業中だとロックを奪い合う。
-            # --no-auto-maintenance は git 2.29 からなので、古い git でも無視される設定で渡す。
-            ["git", "-C", repo, "-c", "maintenance.auto=false", "-c", "gc.auto=0", "fetch", "--quiet", "origin"],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=FETCH_TIMEOUT,
-            env=GIT_ENV,
-        )
-    except subprocess.TimeoutExpired:
-        return f"{FETCH_TIMEOUT} 秒でタイムアウトした"
-    except OSError as e:
-        return str(e)
-    if p.returncode == 0:
+def fetch_dotfiles(repo):
+    run(["git", "-C", repo, *GIT_FETCH, "origin"], FETCH_TIMEOUT)
+
+
+# ---------------------------------------------------------------- ツール
+
+
+class Tool:
+    """更新を確かめるツール。
+
+    fetch はネットワークを使ってよく、refresh だけが呼ぶ。返した dict が evaluate と skipped に渡る。
+    evaluate と skipped はシェルやセッションを開くたびに呼ばれるので、手元の状態だけで速く判定する。
+    更新した直後に古い通知が残らないよう、入っている版などは毎回読み直す。
+    """
+
+    def skipped(self, data):
+        """確かめなかった理由。確かめたなら None。"""
         return None
-    lines = [line.strip() for line in p.stderr.splitlines() if line.strip()]
-    # 最終行は複数行のメッセージの続き（"and the repository exists." など）になりがち。
-    reason = next((line for line in lines if line.startswith(("fatal:", "error:"))), lines[0] if lines else None)
-    return reason or f"git fetch が {p.returncode} で終了した"
+
+
+class Uv(Tool):
+    key = "uv"
+    label = "uv"
+
+    def __init__(self, path):
+        self.path = path
+        # self update できるのは standalone のインストーラーで入れたものだけ。brew や pip で入れたものの
+        # 失敗の文言はビルドごとに違うので、インストーラーが残すレシートの導入先で見分ける。
+        config = os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config")
+        prefix = (read_json(os.path.join(config, "uv", "uv-receipt.json")) or {}).get("install_prefix")
+        self.standalone = isinstance(prefix, str) and (
+            os.path.realpath(prefix) == os.path.realpath(os.path.dirname(path))
+        )
+
+    def fetch(self):
+        if not self.standalone:
+            return {"unsupported": True}
+        try:
+            stdout, stderr = run([self.path, "self", "update", "--dry-run"], FETCH_TIMEOUT)
+        except FetchError as e:
+            # レシートと実体が食い違うときに出る。毎回の失敗として扱うと通知が出続ける。
+            if "Self-update is only available" in str(e):
+                return {"unsupported": True}
+            raise
+        m = re.search(r"Would update uv from v?(\S+) to v?(\S+)", stdout + stderr)
+        if m:
+            return {"latest": m.group(2)}
+        # 読めなかったものまで最新と扱うと、文言が変わったときに黙って「最新」と言い続ける。
+        if re.search(r"You're (on the latest version of uv|already on version)", stdout + stderr):
+            return {"latest": None}
+        raise FetchError("uv self update --dry-run の出力を解釈できない")
+
+    def skipped(self, data):
+        if data.get("unsupported"):
+            return "standalone のインストーラーで入れたものではないため確かめていない（入れたパッケージマネージャーで更新する）"
+        return None
+
+    def evaluate(self, data):
+        if data.get("unsupported") or not data.get("latest"):
+            return None
+        try:
+            m = re.match(r"uv (\S+)", run([self.path, "--version"], 10)[0])
+        except FetchError:
+            return None
+        installed = m.group(1) if m else None
+        if version_key(installed) is None or version_key(installed) >= version_key(data["latest"]):
+            return None
+        summary = f"uv {installed} → {data['latest']}"
+        return notice(summary, summary, ["uv self update"])
+
+
+class Nvm(Tool):
+    key = "nvm"
+    label = "nvm"
+
+    def __init__(self, directory):
+        self.directory = directory
+        self.is_git = os.path.isdir(os.path.join(directory, ".git"))
+
+    @staticmethod
+    def locate():
+        # .zshenv の NVM_DIR と同じ規則。
+        directory = os.environ.get("NVM_DIR") or (
+            os.path.join(os.environ["XDG_CONFIG_HOME"], "nvm") if os.environ.get("XDG_CONFIG_HOME")
+            else os.path.join(HOME, ".nvm")
+        )
+        return directory if os.path.isfile(os.path.join(directory, "nvm.sh")) else None
+
+    def fetch(self):
+        args = ["git", "-C", self.directory, "ls-remote", "--tags", "--refs", "origin"] if self.is_git \
+            else ["git", "ls-remote", "--tags", "--refs", NVM_REPO_URL]
+        tags = re.findall(r"refs/tags/(v\d+\.\d+\.\d+)$", run(args, FETCH_TIMEOUT)[0], re.MULTILINE)
+        if not tags:
+            raise FetchError("リリースのタグが見つからない")
+        return {"latest": max(tags, key=version_key)}
+
+    def evaluate(self, data):
+        package = read_json(os.path.join(self.directory, "package.json")) or {}
+        installed = package.get("version")
+        latest = data.get("latest")
+        if version_key(installed) is None or version_key(latest) is None or version_key(installed) >= version_key(latest):
+            return None
+        if self.is_git:
+            # install.sh は --depth=1 で clone する。README の fetch --tags だと全タグの履歴まで取りに行くので、
+            # install.sh と同じく要るタグだけを取る。
+            commands = [
+                f"git -C {shown(self.directory)} fetch --depth=1 origin tag {latest}",
+                f"git -C {shown(self.directory)} checkout {latest}",
+            ]
+        else:
+            # PROFILE=/dev/null が無いと、install.sh が .zshrc に読み込み行を書き足す（.zshenv で読み込み済み）。
+            commands = [f"curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/{latest}/install.sh | PROFILE=/dev/null bash"]
+        summary = f"nvm {installed} → {latest.lstrip('v')}"
+        return notice(summary, summary, commands)
+
+
+class GitTool(Tool):
+    """git で clone して更新するもの（zinit 本体とプラグイン）。"""
+
+    def __init__(self, key, label, path, update):
+        self.key = key
+        self.label = label
+        self.path = path
+        self.update = update
+
+    @staticmethod
+    def locate():
+        found = []
+        core = os.path.join(ZINIT_DIR, "zinit.git")
+        if os.path.isdir(os.path.join(core, ".git")):
+            found.append(GitTool("zinit", "zinit", core, "zinit self-update"))
+        plugins = os.path.join(ZINIT_DIR, "plugins")
+        for entry in sorted(os.listdir(plugins)) if os.path.isdir(plugins) else []:
+            path = os.path.join(plugins, entry)
+            # zinit はプラグイン user/repo を user---repo に置く。_local---zinit は git の clone ではない。
+            if "---" not in entry or not os.path.isdir(os.path.join(path, ".git")):
+                continue
+            user, repo = entry.split("---", 1)
+            found.append(GitTool(f"zinit:{user}/{repo}", repo, path, f"zinit update {user}/{repo}"))
+        return found
+
+    def fetch(self):
+        run(["git", "-C", self.path, *GIT_FETCH], FETCH_TIMEOUT)
+        return {}
+
+    def skipped(self, data):
+        # ver ice などで固定していると追跡ブランチが無く、遅れを数えられない。
+        if git(self.path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}") is None:
+            return "追跡ブランチが無いため確かめていない"
+        return None
+
+    def evaluate(self, data):
+        behind = git(self.path, "rev-list", "--count", "--no-merges", "HEAD..@{upstream}")
+        if not behind or behind == "0":
+            return None
+        return notice(f"{self.label} に {behind} コミットの更新がある", f"{self.label}（{behind} コミット）", [self.update])
+
+
+class Brew(Tool):
+    key = "brew"
+    label = "Homebrew"
+
+    def __init__(self, path):
+        self.path = path
+
+    def fetch(self):
+        prefix = run([self.path, "--prefix"], FETCH_TIMEOUT)[0].strip()
+        try:
+            # 自動更新の経過は stderr に出るので、stdout だけを読む。
+            outdated = json.loads(run([self.path, "outdated", "--json=v2"], BREW_TIMEOUT)[0])
+        except ValueError:
+            raise FetchError("brew outdated の出力を JSON として読めない")
+        packages = []
+        for kind, items in (("Cellar", outdated.get("formulae", [])), ("Caskroom", outdated.get("casks", []))):
+            for item in items:
+                # brew upgrade は pin したものを上げないので、通知しても手順が無い。
+                if item.get("pinned"):
+                    continue
+                # tap の formula は user/tap/name で出るが、Cellar のディレクトリは name だけ。
+                name = item["name"].rsplit("/", 1)[-1]
+                packages.append({
+                    "name": name,
+                    "dir": os.path.join(prefix, kind, name),
+                    "installed": item.get("installed_versions") or [],
+                })
+        return {"packages": packages}
+
+    @staticmethod
+    def still_outdated(package):
+        # 上げると版ごとのディレクトリが増える。取得時の current_version より新しい版に上がることもあるので、
+        # 取得時に入っていた版以外があるかで見る。Caskroom には .metadata もある。
+        try:
+            versions = [v for v in os.listdir(package["dir"]) if not v.startswith(".")]
+        except OSError:
+            return False
+        return bool(versions) and all(v in package["installed"] for v in versions)
+
+    def evaluate(self, data):
+        remaining = [p["name"] for p in data.get("packages", []) if self.still_outdated(p)]
+        if not remaining:
+            return None
+        names = "、".join(remaining[:5]) + (f" ほか {len(remaining) - 5} 件" if len(remaining) > 5 else "")
+        return notice(
+            f"Homebrew の {len(remaining)} パッケージに更新がある（{names}）",
+            f"Homebrew（{len(remaining)} 件）",
+            ["brew upgrade"],
+        )
+
+
+def find_tools():
+    found = []
+    uv = find_tool("uv")
+    if uv:
+        found.append(Uv(uv))
+    nvm = Nvm.locate()
+    if nvm:
+        found.append(Nvm(nvm))
+    found += GitTool.locate()
+    brew = find_tool("brew")
+    if brew:
+        found.append(Brew(brew))
+    return found
+
+
+def check_tools():
+    entries = (read_json(TOOLS_FILE) or {}).get("tools") or {}
+    result = {"label": "ツール", "items": [], "failures": []}
+    for tool in find_tools():
+        entry = entries.get(tool.key)
+        if not isinstance(entry, dict):
+            continue
+        data = entry.get("data") if isinstance(entry.get("data"), dict) else None
+        item = {"label": tool.label, "notice": None, "skipped": None, "problem": None}
+        if entry.get("error"):
+            item["problem"] = f"最新版を取得できなかった（{entry['error']}）"
+        try:
+            if data is not None:
+                item["notice"] = tool.evaluate(data)
+                item["skipped"] = tool.skipped(data)
+        except Exception as e:
+            # 1 つのツールの失敗で、ほかのツールや dotfiles 本体の通知まで消さない。
+            item["problem"] = f"判定できなかった（{type(e).__name__}: {e}）"
+        result["items"].append(item)
+        failure = long_failure(entry)
+        if failure:
+            result["failures"].append(f"{tool.label} の最新版を {failure}")
+    return result
+
+
+# ---------------------------------------------------------------- 取得
+
+
+def long_failure(state):
+    """失敗が FETCH_FAILURE_NOTICE_AFTER 以上続いていれば「N 日…（理由）」を返す。"""
+    if not state.get("error"):
+        return None
+    try:
+        elapsed = time.time() - float(state["failing_since"])
+    except (TypeError, KeyError, ValueError):
+        return None
+    if elapsed < FETCH_FAILURE_NOTICE_AFTER:
+        return None
+    return f"{int(elapsed // (24 * 60 * 60))} 日確かめられていない（{state['error']}）"
+
+
+def attempt(fetch):
+    """(結果, 失敗の理由) を返す。"""
+    try:
+        return fetch(), None
+    except FetchError as e:
+        return None, str(e)
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def next_state(previous, data, error, started):
+    previous = previous if isinstance(previous, dict) else {}
+    failing_since = previous.get("failing_since") or started
+    return {
+        # 失敗したときは前回の結果を残す。dotfiles 本体が古い ref で判定を続けるのと揃える。
+        "data": data if error is None else previous.get("data"),
+        "error": error,
+        "failing_since": failing_since if error else None,
+    }
 
 
 def needs_refresh(repo):
@@ -200,29 +540,46 @@ def needs_refresh(repo):
 
 
 def refresh(wait):
-    """リモートを取得し、結果を REFRESH_FILE に残す。失敗したら理由を返す。
+    """リモートを取得し、結果を REFRESH_FILE と TOOLS_FILE に残す。dotfiles の取得に失敗したら理由を返す。
 
     wait が偽なら、別のプロセスが取得中か、取得が要らなくなっていれば何もせずに None を返す。
+    wait が真なら、lock を待つ間に別のプロセスが取得を済ませれば、それを使って None を返す。
     """
     os.makedirs(CACHE_DIR, exist_ok=True)
+    requested = time.time()
     with open(LOCK_FILE, "w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             return None
         repo, _ = locate()
-        # lock を待つ間に、先に起動した refresh が取得を済ませていることがある。
+        previous = read_json(REFRESH_FILE) or {}
+        same_repo = previous.get("repo") == repo
         if not wait and not needs_refresh(repo):
             return None
-        previous = read_json(REFRESH_FILE) or {}
-        failing_since = previous.get("failing_since") if previous.get("repo") == repo else None
+        if wait and same_repo and not previous.get("error") and isinstance(previous.get("at"), (int, float)) \
+                and previous["at"] >= requested:
+            return None
+        failing_since = previous.get("failing_since") if same_repo else None
         started = time.time()
         # 取得前に試行を記録する。並んで起動した notify が同じ取得を重ねて始めないため。
         # 途中で落ちたときは失敗扱いになり、RETRY_INTERVAL 後に再試行される。
         write_json(REFRESH_FILE, {
             "repo": repo, "at": started, "error": "取得が完了しなかった", "failing_since": failing_since or started,
         })
-        error = fetch(repo) if repo else "dotfiles の checkout が見つからない"
+
+        tools = find_tools()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            dotfiles = pool.submit(attempt, lambda: fetch_dotfiles(repo)) if repo else None
+            fetched = {tool.key: pool.submit(attempt, tool.fetch) for tool in tools}
+        # checkout が無いのは取得の失敗ではない。失敗として数えると毎時の再試行と「N 日取得できていない」になる。
+        error = dotfiles.result()[1] if dotfiles else None
+
+        old = (read_json(TOOLS_FILE) or {}).get("tools") or {}
+        write_json(TOOLS_FILE, {
+            "at": time.time(),
+            "tools": {key: next_state(old.get(key), *future.result(), started) for key, future in fetched.items()},
+        })
         write_json(REFRESH_FILE, {
             "repo": repo, "at": time.time(), "error": error,
             "failing_since": (failing_since or started) if error else None,
@@ -231,17 +588,11 @@ def refresh(wait):
 
 
 def fetch_failure(repo):
-    """取得の失敗が FETCH_FAILURE_NOTICE_AFTER 以上続いていれば、その要約を返す。"""
     state = read_json(REFRESH_FILE)
-    if not state or state.get("repo") != repo or not state.get("error"):
+    if not state or state.get("repo") != repo:
         return None
-    try:
-        elapsed = time.time() - float(state["failing_since"])
-    except (TypeError, KeyError, ValueError):
-        return None
-    if elapsed < FETCH_FAILURE_NOTICE_AFTER:
-        return None
-    return f"{int(elapsed // (24 * 60 * 60))} 日リモートを取得できていない（{state['error']}）"
+    failure = long_failure(state)
+    return f"リモートを {failure}" if failure else None
 
 
 def spawn_refresh():
@@ -257,43 +608,80 @@ def spawn_refresh():
     )
 
 
-def run_check():
-    repo, _ = locate()
-    fetch_error = refresh(wait=True) if repo else None
-    result = check_dotfiles()
+# ---------------------------------------------------------------- 表示
 
-    print(f"{result['label']} ({shown(result['where']) if result['where'] else '不明'})")
-    if result["error"]:
-        print(f"  ✗ 判定できない: {result['error']}")
-        return 2
-    if fetch_error:
-        print(f"  ! リモートを取得できなかったため、前回取得した状態で判定した: {fetch_error}")
-    for warning in result["warnings"]:
-        print(f"  ! {warning}")
-    if result["notices"]:
-        for notice in result["notices"]:
-            print(f"  ✗ {notice['summary']}")
-            for command in notice["commands"]:
-                print(f"      {command}")
-        return 1
-    if fetch_error or result["warnings"]:
-        print("  ? ローカルで分かる範囲では差分が無い")
-        return 2
-    print("  ✓ 最新")
-    return 0
+
+def print_notice(found):
+    print(f"  ✗ {found['summary']}")
+    for command in found["commands"]:
+        print(f"      {command}")
+
+
+def run_check():
+    """結果を表示し、(更新があるか, 判定できなかったものがあるか) を返す。"""
+    if sys.stderr.isatty():
+        # brew outdated が brew update を走らせると数十秒かかり、その間は何も表示されない。
+        print("リモートと各ツールの最新版を取得している…", file=sys.stderr)
+    fetch_error = refresh(wait=True)
+    dotfiles = check_dotfiles()
+    tools = check_tools()
+    updates = unknown = False
+
+    print(f"{dotfiles['label']} ({shown(dotfiles['where']) if dotfiles['where'] else '不明'})")
+    if dotfiles["error"]:
+        print(f"  ✗ 判定できない: {dotfiles['error']}")
+        unknown = True
+    else:
+        if fetch_error:
+            print(f"  ! リモートを取得できなかったため、前回取得した状態で判定した: {fetch_error}")
+            unknown = True
+        for warning in dotfiles["warnings"]:
+            print(f"  ! {warning}")
+            unknown = True
+        for found in dotfiles["notices"]:
+            print_notice(found)
+            updates = True
+        if not dotfiles["notices"]:
+            print("  ? ローカルで分かる範囲では差分が無い" if unknown else "  ✓ 最新")
+
+    print(tools["label"])
+    if not tools["items"]:
+        print("  - 確かめられるツールが入っていない")
+    for item in tools["items"]:
+        if item["problem"]:
+            print(f"  ! {item['label']}: {item['problem']}")
+            unknown = True
+        if item["notice"]:
+            print_notice(item["notice"])
+            updates = True
+        elif item["problem"]:
+            # 前回の結果は残しているが、確かめていない理由や ✓ まで出すと今回も確かめたように読める。
+            continue
+        elif item["skipped"]:
+            print(f"  - {item['label']}: {item['skipped']}")
+        else:
+            print(f"  ✓ {item['label']}")
+    return updates, unknown
 
 
 def run_notify(fmt):
     try:
         repo, _ = locate()
-        if repo and needs_refresh(repo):
+        if needs_refresh(repo):
             spawn_refresh()
-        result = check_dotfiles()
-        lines = [f"⚠ {result['label']}: {n['summary']}" for n in result["notices"]]
-        lines += [f"⚠ {result['label']}: {w}" for w in result["warnings"]]
+        dotfiles = check_dotfiles()
+        lines = [f"⚠ {dotfiles['label']}: {dotfiles['error']}"] if dotfiles["error"] else []
+        lines += [f"⚠ {dotfiles['label']}: {n['summary']}" for n in dotfiles["notices"]]
+        lines += [f"⚠ {dotfiles['label']}: {w}" for w in dotfiles["warnings"]]
         failure = fetch_failure(repo)
         if failure:
-            lines.append(f"⚠ {result['label']}: {failure}")
+            lines.append(f"⚠ {dotfiles['label']}: {failure}")
+        tools = check_tools()
+        shorts = [item["notice"]["short"] for item in tools["items"] if item["notice"]]
+        if shorts:
+            # シェルを開くたびに出るので、ツールは 1 行にまとめる。
+            lines.append(f"⚠ ツールの更新: {'、'.join(shorts)}")
+        lines += [f"⚠ ツール: {f}" for f in tools["failures"]]
     except Exception as e:
         # 黙ると利用者は dotfiles-check を実行する理由が無く、壊れたまま気づけない。
         lines = [f"⚠ dotfiles-check notify が失敗した（{type(e).__name__}）"]
@@ -313,8 +701,9 @@ def main():
     parser = argparse.ArgumentParser(
         prog="dotfiles-check",
         description=(
-            "dotfiles の更新を確かめる。引数なしで実行すると、リモートを取得して結果と更新手順を表示する。"
-            "終了コードは 0 = 更新なし、1 = 更新あり、2 = 判定できなかった。"
+            "dotfiles と、それが入れたツールの更新を確かめる。引数なしで実行すると、リモートを取得して"
+            "結果と更新手順を表示する。終了コードは 0 = 更新なし、1 = 更新あり、2 = 判定できないものがあった。"
+            "更新ありと判定できないものが両方あれば 1 を返す。standalone 以外の uv など、確かめなかったものは数えない。"
         ),
     )
     sub = parser.add_subparsers(dest="command")
@@ -337,11 +726,12 @@ def main():
         refresh(wait=False)
         return 0
     try:
-        return run_check()
+        updates, unknown = run_check()
     except Exception:
         # 1 は「更新あり」の意味なので、想定外の失敗をそれと区別する。
         traceback.print_exc()
         return 2
+    return 1 if updates else 2 if unknown else 0
 
 
 if __name__ == "__main__":
