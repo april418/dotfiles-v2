@@ -17,6 +17,8 @@
   # UV_NO_MODIFY_PATH が無いと、インストーラが .profile や .bashrc などに ~/.local/bin/env の読み込み行を書き足しうる（.zshenv と .bash_profile で PATH に追加済み）。
   environment:
     UV_NO_MODIFY_PATH: "1"
+    # インストーラは XDG_BIN_HOME や XDG_DATA_HOME から導入先を決めるため、上の stat と同じ ~/.local/bin に固定する。
+    UV_INSTALL_DIR: "{{ ansible_facts['env'].HOME }}/.local/bin"
   when: not uv_bin.stat.exists and ansible_facts['os_family'] != 'Windows'
   changed_when: true
 
