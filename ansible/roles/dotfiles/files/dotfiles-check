@@ -1064,36 +1064,67 @@ def print_items(section, empty):
     return updates, unknown
 
 
-def run_notify(fmt):
+# p10k の見た目に揃える。.p10k.zsh の POWERLEVEL9K_BACKGROUND（236）と区切り（ / ）、
+# .zshrc の SPROMPT や補完のメッセージで使っている色とアイコンと同じものを使う。
+PL_BG = "\033[48;5;236m"
+PL_END = "\033[0m\033[38;5;236m\033[0m"
+PL_SEP = " \033[38;5;244m\033[38;5;007m "
+PL_DEFAULT = "\033[38;5;007m"
+PL_COLORS = {"warn": "\033[38;5;003m", "error": "\033[38;5;001m", "update": "\033[38;5;014m", "info": "\033[38;5;245m"}
+PL_ICONS = {"dotfiles": "", "tools": "", "pins": "", "warn": "", "info": ""}
+NOTIFY_FOOTER = "詳細と更新手順は dotfiles-check で表示する"
+
+
+def notify_rows(repo, dotfiles):
+    """通知に出す行を (アイコン, 色, 見出し, 項目) の並びで返す。"""
+    label = dotfiles["label"]
+    rows = [("warn", "error", label, [dotfiles["error"]])] if dotfiles["error"] else []
+    rows += [("dotfiles", "warn", label, [n["summary"]]) for n in dotfiles["notices"]]
+    rows += [("warn", "warn", label, [w]) for w in dotfiles["warnings"]]
+    failure = fetch_failure(repo)
+    if failure:
+        rows.append(("warn", "error", label, [failure]))
+    for icon, section in (("tools", check_tools()), ("pins", check_pins(repo, dotfiles["remote"]))):
+        shorts = [item["notice"]["short"] for item in section["items"] if item["notice"]]
+        if shorts:
+            # シェルを開くたびに出るので、節ごとに 1 行にまとめる。
+            rows.append((icon, "update", f"{section['label']}の更新", shorts))
+        rows += [("warn", "error", section["label"], [f]) for f in section["failures"]]
+    return rows
+
+
+def render_plain(rows):
+    lines = [f"⚠ {title}: {'、'.join(items)}" for _, _, title, items in rows]
+    return "\n".join(lines + [f"  {NOTIFY_FOOTER}"])
+
+
+def render_powerline(rows):
+    """Nerd Font（fonts ロールが入れる MesloLGS NF）の記号と 256 色で描く。"""
+    lines = []
+    for icon, color, title, items in rows:
+        body = PL_SEP.join(item.replace(" → ", "  ") for item in items)
+        lines.append(f"{PL_BG}{PL_COLORS[color]} {PL_ICONS[icon]} {PL_DEFAULT}{title}{PL_SEP}{body} {PL_END}")
+    lines.append(f"{PL_BG}{PL_COLORS['info']} {PL_ICONS['info']} {NOTIFY_FOOTER} {PL_END}")
+    return "\n".join(lines)
+
+
+def run_notify(fmt, style="plain"):
     try:
         repo, _ = locate()
         if needs_refresh(repo):
             spawn_refresh()
-        dotfiles = check_dotfiles()
-        lines = [f"⚠ {dotfiles['label']}: {dotfiles['error']}"] if dotfiles["error"] else []
-        lines += [f"⚠ {dotfiles['label']}: {n['summary']}" for n in dotfiles["notices"]]
-        lines += [f"⚠ {dotfiles['label']}: {w}" for w in dotfiles["warnings"]]
-        failure = fetch_failure(repo)
-        if failure:
-            lines.append(f"⚠ {dotfiles['label']}: {failure}")
-        for section in (check_tools(), check_pins(repo, dotfiles["remote"])):
-            shorts = [item["notice"]["short"] for item in section["items"] if item["notice"]]
-            if shorts:
-                # シェルを開くたびに出るので、節ごとに 1 行にまとめる。
-                lines.append(f"⚠ {section['label']}の更新: {'、'.join(shorts)}")
-            lines += [f"⚠ {section['label']}: {f}" for f in section["failures"]]
+        rows = notify_rows(repo, check_dotfiles())
     except Exception as e:
         # 黙ると利用者は dotfiles-check を実行する理由が無く、壊れたまま気づけない。
-        lines = [f"⚠ dotfiles-check notify が失敗した（{type(e).__name__}）"]
-    if not lines:
+        rows = [("warn", "error", "dotfiles-check", [f"notify が失敗した（{type(e).__name__}）"])]
+    if not rows:
         return 0
-    lines.append("  詳細と更新手順は dotfiles-check で表示する")
-    text = "\n".join(lines)
     if fmt == "claude":
         # stdout の素のテキストは Claude のコンテキストに入る。systemMessage は利用者にだけ見える。
-        print(json.dumps({"systemMessage": text}, ensure_ascii=False))
+        # Claude Code の画面は色を出さず、フォントに Nerd Font の記号があるとも限らないので文字だけで書く。
+        print(json.dumps({"systemMessage": render_plain(rows)}, ensure_ascii=False))
     else:
-        print(text)
+        print(render_powerline(rows) if style == "powerline" else render_plain(rows))
     return 0
 
 
@@ -1197,6 +1228,12 @@ def main():
         default="text",
         help="claude は Claude Code の SessionStart フック向けの JSON を出す",
     )
+    notify.add_argument(
+        "--style",
+        choices=["plain", "powerline"],
+        default="plain",
+        help="powerline は Nerd Font の記号と 256 色で描く（--format text のときだけ効く）",
+    )
     sub.add_parser("refresh", help="リモートを取得する。notify がバックグラウンドで起動する")
     pins = sub.add_parser("pins", help="キャッシュを使わずに固定バージョンだけを確かめる。GitHub Actions から呼ぶ")
     pins.add_argument("--repo", default=".", help="走査するリポジトリ")
@@ -1204,7 +1241,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "notify":
-        return run_notify(args.format)
+        return run_notify(args.format, args.style)
     if args.command == "refresh":
         refresh(wait=False)
         return 0

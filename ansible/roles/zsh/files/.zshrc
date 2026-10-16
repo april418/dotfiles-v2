@@ -279,7 +279,8 @@ fi
 function _dotfiles_update_notice() {
   add-zsh-hook -d precmd _dotfiles_update_notice
   if (( $+commands[dotfiles-check] )); then
-    dotfiles-check notify
+    # この時点の stdout は p10k の一時ファイルで端末ではないため、見た目は呼ぶ側で指定する。
+    dotfiles-check notify --style powerline
   fi
 }
 add-zsh-hook precmd _dotfiles_update_notice
