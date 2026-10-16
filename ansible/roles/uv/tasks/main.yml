@@ -14,6 +14,9 @@
 - name: Install uv
   ansible.builtin.command:
     cmd: sh /tmp/uv_install.sh
+  # UV_NO_MODIFY_PATH が無いと、インストーラが .profile や .bashrc などに ~/.local/bin/env の読み込み行を書き足しうる（.zshenv と .bash_profile で PATH に追加済み）。
+  environment:
+    UV_NO_MODIFY_PATH: "1"
   when: not uv_bin.stat.exists and ansible_facts['os_family'] != 'Windows'
   changed_when: true
 
