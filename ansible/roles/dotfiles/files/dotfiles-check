@@ -1130,7 +1130,7 @@ PL_SEP = " \033[38;5;244m\ue0b1\033[38;5;007m "
 PL_DEFAULT = "\033[38;5;007m"
 PL_COLORS = {
     "warn": "\033[38;5;003m", "error": "\033[38;5;001m", "update": "\033[38;5;014m", "info": "\033[38;5;245m",
-    "ok": "\033[38;5;002m",
+    "ok": "\033[38;5;002m", "progress": "\033[38;5;014m",
 }
 PL_ICONS = {
     "dotfiles": "\ue0a0", "tools": "\uf0ad", "pins": "\uf08d", "warn": "\uf071", "info": "\uf05a",
@@ -1164,7 +1164,7 @@ def render_plain(rows, footer=None):
         if color == "info":
             lines.append(f"  {title}")
             continue
-        mark = "✓" if color == "ok" else "⚠"
+        mark = {"ok": "✓", "progress": "▶"}.get(color, "⚠")
         lines.append(f"{mark} {title}: {'、'.join(items)}" if items else f"{mark} {title}")
     return "\n".join(lines)
 
@@ -1398,25 +1398,217 @@ def ask(groups, style, startup):
         signal.signal(signal.SIGTSTP, previous)
 
 
-def print_heading(text, icon, style):
-    if style == "powerline":
-        print(f"{PL_BG}{PL_COLORS['update']} {PL_ICONS[icon]} {PL_DEFAULT}{text} {PL_END}", flush=True)
-    else:
-        print(f"▶ {text}", flush=True)
+# 更新中は子の出力の末尾をこの行数だけ見せる。失敗したら、原因を追えるよう長めに残す。
+LIVE_LINES = 5
+FAILURE_LINES = 30
+# 改行の無い出力が延々と続いても、溜める量をこれで抑える。
+PARTIAL_MAX = 4096
+# 出力を消しても後から読めるよう、最後の update の全文をここに残す。
+UPDATE_LOG_FILE = os.path.join(CACHE_DIR, "update.log")
+ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[=>78]")
+# 認証のプロンプトを /dev/tty に直接書くうえ、エコーを切らないこともある（git の Username など）ので窓にしない。
+UNWINDOWED = {"sudo", "git"}
 
 
-def run_steps(steps):
-    """手順を順に実行する。失敗したら残りを飛ばし、その説明を返す。Ctrl-C なら子が終わってから KeyboardInterrupt を投げる。"""
+def printable(text):
+    """エスケープ列と制御文字を落とす。"""
+    import unicodedata
+
+    return "".join(c for c in ESCAPE.sub("", text).expandtabs(4) if unicodedata.category(c) not in ("Cc", "Cf"))
+
+
+def clip(text, width):
+    """端末の幅に収まるよう切る。全角は 2 桁と数える。"""
+    import unicodedata
+
+    out, used = [], 0
+    for c in text:
+        w = 0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1
+        if used + w > width:
+            return "".join(out[:-1]) + "…" if out else ""
+        out.append(c)
+        used += w
+    return "".join(out)
+
+
+def terminal_mode():
+    """入力の行編集とエコーの設定。端末でなければ None。"""
+    import termios
+
+    try:
+        return termios.tcgetattr(sys.stdin.fileno())[3] & (termios.ICANON | termios.ECHO)
+    except (termios.error, OSError, ValueError):
+        return None
+
+
+class Live:
+    """子の出力の末尾を数行だけ描き直す。終わったら erase で消す。
+
+    子が端末を使い始めたら（raw にする、エコーを切る、利用者が何か打つ）描き直しをやめて凍結し、
+    以降は子の出力をそのまま流す。凍結した窓や窓より下に何かが出たら dirty にする。dirty なら、
+    見出しの行を結果で置き換えられない。
+    """
+
+    def __init__(self, log=None):
+        import collections
+
+        self.tail = collections.deque(maxlen=FAILURE_LINES)
+        self.partial = ""
+        # 受け取った行の数と、そのうち画面に出した行の数。凍結するとき、間引いて出していない行を書き足す。
+        self.fed = self.shown = 0
+        self.drawn = 0
+        self.last_draw = 0.0
+        self.stale = False
+        self.dirty = False
+        self.frozen = False
+        self.line_open = False
+        self.mode = None
+        self.log = log
+        # 行数の少ない端末では、窓が画面からはみ出して戻れなくなる。
+        self.height = max(1, min(LIVE_LINES, (shutil.get_terminal_size().lines or 24) - 2))
+
+    def feed(self, text):
+        # つないでから行に分けて除く。chunk の境目で切れたエスケープ列が残らないようにする。
+        lines = (self.partial + text).split("\n")
+        for line in lines[:-1]:
+            # 進み具合の表示は \r で同じ行を書き直す。最後に書かれたものだけを残す。
+            self.tail.append(printable(line.rstrip("\r").rsplit("\r", 1)[-1]))
+            self.fed += 1
+        self.partial = lines[-1][-PARTIAL_MAX:]
+
+    def write(self, text):
+        sys.stdout.write(text)
+        sys.stdout.flush()
+
+    def interrupted(self):
+        """描き直すと表示を壊す状態なら凍結して真を返す。子が端末の設定を変えたか、利用者が何か打ったとき。"""
+        if self.mode is not None and terminal_mode() != self.mode:
+            # 孫が /dev/tty に直接書いたプロンプト（sudo の Password: など）の後ろに続けて書かない。
+            self.freeze(newline=True)
+        elif typed_ahead():
+            self.freeze()
+        return self.frozen
+
+    def draw(self, force=False):
+        if self.frozen or self.interrupted():
+            return
+        now = time.monotonic()
+        # brew などは大量に出すので、描き直しを間引いてちらつきを抑える。間引いた分は run が後で描く。
+        if not force and now - self.last_draw < 0.05:
+            self.stale = True
+            return
+        self.last_draw, self.stale = now, False
+        width = max((shutil.get_terminal_size().columns or 80) - 3, 10)
+        # 改行の無い行は描かない。入力待ちのプロンプトなら、打った文字が窓の下に出て戻る位置がずれる。
+        shown = list(self.tail)[-self.height:]
+        # 幅の数え違いがあっても折り返さないよう、描く間は自動の折り返しを止める。戻るのは描いた行数だけでよい。
+        lines = "".join(f"\033[2m  {clip(line, width)}\033[0m\r\n" for line in shown)
+        self.write(self.erase_sequence() + "\033[?7l" + lines + "\033[?7h")
+        self.drawn, self.shown = len(shown), self.fed
+
+    def erase_sequence(self):
+        sequence = f"\r\033[{self.drawn}A\033[J" if self.drawn else ""
+        self.drawn = 0
+        return sequence
+
+    def erase(self):
+        self.write(self.erase_sequence())
+
+    def freeze(self, newline=False):
+        """描き直しをやめる。窓は消さない（子や孫が端末に直接書いたプロンプトを消さないため）。
+
+        間引いてまだ出していない行（プロンプトの直前の行やプロンプトそのもの）は、窓の下に書き足す。
+        子が端末を raw にしていても崩れないよう、行は \r\n で終える。
+        """
+        unseen = list(self.tail)[-(self.fed - self.shown):] if self.fed > self.shown else []
+        self.write(("\r\n" if newline else "") + "".join(f"\033[2m  {line}\033[0m\r\n" for line in unseen) + self.partial)
+        # 書き足した最後の行が改行で終わっていなければ、続く結果の行の前に改行が要る。
+        self.line_open = bool(self.partial)
+        self.frozen, self.dirty, self.drawn, self.shown, self.partial = True, True, 0, self.fed, ""
+
+    def keep(self):
+        """消さずに末尾を残す。失敗や中断のときに原因を見せるため。"""
+        if self.frozen:
+            # 子の出力はそのまま画面に出ている。
+            return
+        self.erase()
+        lines = list(self.tail) + ([printable(self.partial)] if self.partial else [])
+        self.write("".join(f"\033[2m  {line}\033[0m\r\n" for line in lines[-FAILURE_LINES:]))
+        self.dirty = True
+
+    def run(self, argv, env):
+        import codecs
+        import select
+
+        self.frozen, self.line_open, self.mode = False, False, terminal_mode()
+        # Python の子は、stdout がパイプだとプロンプトを溜めたまま入力を待つ（ansible の pause など）。
+        p = subprocess.Popen(argv, env={**env, "PYTHONUNBUFFERED": "1"}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        fd = p.stdout.fileno()
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        while True:
+            ready, _, _ = select.select([fd], [], [], 0.1)
+            if ready:
+                chunk = os.read(fd, 65536)
+                if not chunk:
+                    break
+                if self.log:
+                    # 途中で止められても、そこまでの出力が残るようにする。
+                    self.log.write(chunk)
+                    self.log.flush()
+                if self.frozen:
+                    sys.stdout.buffer.write(chunk)
+                    sys.stdout.buffer.flush()
+                    self.line_open = not chunk.endswith(b"\n")
+                    continue
+                self.feed(decoder.decode(chunk))
+                self.draw()
+                continue
+            if not self.frozen and not self.interrupted():
+                if self.partial:
+                    # 改行の無いまま止まった（シェルの read などのプロンプト）。
+                    self.freeze()
+                elif self.stale:
+                    # 出力が止まったときに最後の行が描かれないままにならないようにする。
+                    self.draw(force=True)
+            if p.poll() is not None:
+                # 子が残したバックグラウンドのプロセスがパイプを握っていると EOF が来ない。
+                break
+        p.stdout.close()
+        code = p.wait()
+        if self.line_open:
+            # 続けて出す結果の行が、子の最後の行に続かないようにする。
+            self.write("\r\n")
+        if not self.frozen:
+            self.draw(force=True)
+        return code
+
+
+def run_steps(steps, live=None, log=None):
+    """手順を順に実行する。失敗したら残りを飛ばし、その説明を返す。Ctrl-C なら子が終わってから KeyboardInterrupt を投げる。
+
+    live を渡すと、子の出力を末尾の数行だけ描く。渡さなければ端末にそのまま流す。log には全文を書く。
+    """
     # 色や認証のプロンプトは利用者に見せるので CHILD_ENV は使わない。
     env = {**os.environ, "DOTFILES_UPDATING": "1"}
     for display, argv in steps:
-        print(f"$ {display}", flush=True)
+        windowed = live is not None and os.path.basename(argv[0]) not in UNWINDOWED
+        if log:
+            log.write(f"$ {display}{'' if windowed or live is None else '（端末にそのまま出した）'}\n".encode())
+            log.flush()
+        if windowed:
+            live.feed(f"$ {display}\n")
+            live.draw(force=True)
+        else:
+            if live is not None:
+                live.erase()
+                live.dirty = True
+            print(f"$ {display}", flush=True)
         interrupted = []
         # Ctrl-C の後始末は子に任せる。既定のままだと subprocess が 0.25 秒で子を SIGKILL する。
         # SIG_IGN は exec 後も引き継がれて子が止まれなくなるので、何もしないハンドラにする（exec で既定に戻る）。
         previous = signal.signal(signal.SIGINT, lambda *_: interrupted.append(True))
         try:
-            code = subprocess.Popen(argv, env=env).wait()
+            code = live.run(argv, env) if windowed else subprocess.Popen(argv, env=env).wait()
         except OSError as e:
             return f"{display} を起動できない（{e}）"
         finally:
@@ -1424,6 +1616,8 @@ def run_steps(steps):
         if interrupted:
             raise KeyboardInterrupt
         if code != 0:
+            if windowed:
+                live.keep()
             return f"{display} が {code} で終了した"
     return None
 
@@ -1501,10 +1695,18 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
             print(render([("info", "info", f"{message}。dotfiles-check update でいつでも更新できる", [])], style))
         return 0
 
-    started, errors = set(), {}
+    results, updated, started, done = [], set(), 0, 0
+    # 端末でなければ（ログに落とすときなど）、出力を消さずにそのまま流す。カーソルを動かせない端末も同じ。
+    live_output, live = sys.stdout.isatty() and os.environ.get("TERM", "dumb") != "dumb", None
+
+    def show(row):
+        results.append(row)
+        print(render([row], style), flush=True)
+
     # 取得と同時に走らせない。取得の git fetch が ref を握っていると、pull は "cannot lock ref" で失敗する。
     # 質問の間は握らない。握ると、答えを待つシェルがある限り手動の dotfiles-check が待ち続ける。
-    with open(LOCK_FILE, "w") as fetching:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    with open(LOCK_FILE, "w") as fetching, open(UPDATE_LOG_FILE, "wb") as log:
         try:
             try:
                 fcntl.flock(fetching, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1512,34 +1714,46 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
                 print("バックグラウンドの取得が終わるのを待っている…", flush=True)
                 fcntl.flock(fetching, fcntl.LOCK_EX)
             for group in chosen:
-                started.add(group["id"])
-                print_heading(f"{group['title']} を更新する", group["icon"], style)
+                show((group["icon"], "progress", group["title"], ["更新する"]))
+                log.write(f"== {group['title']}\n".encode())
+                started += 1
+                live = Live(log) if live_output else None
                 # ツールは 1 つ失敗しても残りを上げる。
-                errors[group["id"]] = [e for e in (run_steps(n["steps"]) for n in group["notices"]) if e]
+                errors = [e for e in (run_steps(n["steps"], live, log) for n in group["notices"]) if e]
+                if errors:
+                    row = ("warn", "error", group["title"], errors)
+                elif group["id"] in {g["id"] for g in update_groups(check_dotfiles(), check_tools())}:
+                    # 手順が 0 で終わっても、判定が変わらなければ上がっていない。
+                    row = ("warn", "warn", group["title"], ["手順は終わったが、まだ更新が残っている"])
+                else:
+                    updated.add(group["id"])
+                    row = ("ok", "ok", group["title"], ["更新した"])
+                if live is not None:
+                    live.erase()
+                    if not live.dirty:
+                        # 出力を消したので、見出しの行を結果で置き換える。
+                        sys.stdout.write("\r\033[1A\033[2K")
+                show(row)
+                done += 1
         except KeyboardInterrupt:
+            if live is not None:
+                # 子が後始末で出したものを消さない。
+                live.keep()
             print()
-        after = update_groups(check_dotfiles(), check_tools())
-        sync_pending(after)
-    remaining = {g["id"] for g in after}
-    results = []
-    for group in chosen:
-        if group["id"] not in started:
-            results.append(("warn", "error", group["title"], ["中断したため実行していない"]))
-        elif group["id"] not in errors:
-            results.append(("warn", "error", group["title"], ["中断した"]))
-        elif errors[group["id"]]:
-            results.append(("warn", "error", group["title"], errors[group["id"]]))
-        elif group["id"] in remaining:
-            # 手順が 0 で終わっても、判定が変わらなければ上がっていない。
-            results.append(("warn", "warn", group["title"], ["手順は終わったが、まだ更新が残っている"]))
-        else:
-            results.append(("ok", "ok", group["title"], ["更新した"]))
-    if "dotfiles" in errors and not errors["dotfiles"]:
-        results.append(("info", "info", "このシェルは更新前の設定のまま。exec zsh で読み込み直す", []))
+            for i, group in enumerate(chosen[done:]):
+                show(("warn", "error", group["title"], ["中断した" if done + i < started else "中断したため実行していない"]))
+        sync_pending(update_groups(check_dotfiles(), check_tools()))
+    hints = []
+    if "dotfiles" in updated:
+        hints.append(("info", "info", "このシェルは更新前の設定のまま。exec zsh で読み込み直す", []))
     if startup and len(chosen) < len(groups) and ask_policy() == "changed":
-        results.append(("info", "info", "選ばなかったものは内容が変わるまで聞かない", []))
-    print(render(results, style))
-    failed = any(color != "ok" for _, color, _, _ in results if color != "info")
+        hints.append(("info", "info", "選ばなかったものは内容が変わるまで聞かない", []))
+    if live_output:
+        # 消した出力（brew の Caveats や playbook の RECAP など）を後から読めるようにする。
+        hints.append(("info", "info", f"出力の全文は {shown(UPDATE_LOG_FILE)} にある", []))
+    if hints:
+        print(render(hints, style))
+    failed = any(color not in ("ok", "progress") for _, color, _, _ in results)
     return 0 if startup else 1 if failed else 0
 
 
