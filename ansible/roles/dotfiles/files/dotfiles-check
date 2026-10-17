@@ -1067,11 +1067,11 @@ def print_items(section, empty):
 # p10k の見た目に揃える。.p10k.zsh の POWERLEVEL9K_BACKGROUND（236）と区切り（ / ）、
 # .zshrc の SPROMPT や補完のメッセージで使っている色とアイコンと同じものを使う。
 PL_BG = "\033[48;5;236m"
-PL_END = "\033[0m\033[38;5;236m\033[0m"
-PL_SEP = " \033[38;5;244m\033[38;5;007m "
+PL_END = "\033[0m\033[38;5;236m\ue0b0\033[0m"
+PL_SEP = " \033[38;5;244m\ue0b1\033[38;5;007m "
 PL_DEFAULT = "\033[38;5;007m"
 PL_COLORS = {"warn": "\033[38;5;003m", "error": "\033[38;5;001m", "update": "\033[38;5;014m", "info": "\033[38;5;245m"}
-PL_ICONS = {"dotfiles": "", "tools": "", "pins": "", "warn": "", "info": ""}
+PL_ICONS = {"dotfiles": "\ue0a0", "tools": "\uf0ad", "pins": "\uf08d", "warn": "\uf071", "info": "\uf05a"}
 NOTIFY_FOOTER = "詳細と更新手順は dotfiles-check で表示する"
 
 
@@ -1102,7 +1102,7 @@ def render_powerline(rows):
     """Nerd Font（fonts ロールが入れる MesloLGS NF）の記号と 256 色で描く。"""
     lines = []
     for icon, color, title, items in rows:
-        body = PL_SEP.join(item.replace(" → ", "  ") for item in items)
+        body = PL_SEP.join(item.replace(" → ", " \uf061 ") for item in items)
         lines.append(f"{PL_BG}{PL_COLORS[color]} {PL_ICONS[icon]} {PL_DEFAULT}{title}{PL_SEP}{body} {PL_END}")
     lines.append(f"{PL_BG}{PL_COLORS['info']} {PL_ICONS['info']} {NOTIFY_FOOTER} {PL_END}")
     return "\n".join(lines)
