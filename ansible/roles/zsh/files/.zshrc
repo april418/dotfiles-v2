@@ -138,8 +138,13 @@ zstyle ':completion:*:options' description yes
 # したがって，すべての マッチ種別を別々に表示させたいなら以下のようにする
 zstyle ':completion:*' group-name ''
 # ファイル補完候補に色を付ける
+# macOS の Homebrew は coreutils を g 接頭辞付きで入れるので gdircolors も探す。
 if [ -f ~/.dircolors ]; then
-  eval $(dircolors ~/.dircolors)
+  if (( $+commands[dircolors] )); then
+    eval $(dircolors ~/.dircolors)
+  elif (( $+commands[gdircolors] )); then
+    eval $(gdircolors ~/.dircolors)
+  fi
 fi
 if [ ! -z "$LS_COLORS" ]; then
   zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
