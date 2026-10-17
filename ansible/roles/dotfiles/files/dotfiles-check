@@ -1464,13 +1464,25 @@ def clip(text, width):
 
 
 def terminal_mode():
-    """入力の行編集とエコーの設定。端末でなければ None。"""
+    """(行編集, エコー, 出力の改行の変換) が有効か。端末でなければ None。"""
     import termios
 
     try:
-        return termios.tcgetattr(sys.stdin.fileno())[3] & (termios.ICANON | termios.ECHO)
+        attrs = termios.tcgetattr(sys.stdin.fileno())
     except (termios.error, OSError, ValueError):
         return None
+    return bool(attrs[3] & termios.ICANON), bool(attrs[3] & termios.ECHO), bool(attrs[1] & termios.OPOST)
+
+
+def awaiting_input(mode):
+    """子が端末の設定を変えた後の mode が、入力を待つときの形か。
+
+    ansible の pause は tty.setraw で出力の変換まで外し、sudo や getpass は行編集を残してエコーだけを切る。
+    Homebrew はサンドボックスの子を擬似端末で流す間、出力の変換を残したまま raw にする（入力の素通しで、
+    出力は Homebrew の stdout から来る）ので、これは入力待ちとみなさない。
+    """
+    line_editing, echo, output_processing = mode
+    return not output_processing or (line_editing and not echo)
 
 
 class Live:
@@ -1514,7 +1526,8 @@ class Live:
 
     def interrupted(self):
         """描き直すと表示を壊す状態なら凍結して真を返す。子が端末の設定を変えたか、利用者が何か打ったとき。"""
-        if self.mode is not None and terminal_mode() != self.mode:
+        now = terminal_mode() if self.mode is not None else None
+        if now is not None and now != self.mode and awaiting_input(now):
             # 孫が /dev/tty に直接書いたプロンプト（sudo の Password: など）の後ろに続けて書かない。
             self.freeze(newline=True)
         elif typed_ahead():
@@ -1596,8 +1609,9 @@ class Live:
                 self.draw()
                 continue
             if not self.frozen and not self.interrupted():
-                if self.partial:
-                    # 改行の無いまま止まった（シェルの read などのプロンプト）。
+                if printable(self.partial).strip():
+                    # 改行の無いまま止まった（シェルの read などのプロンプト）。色を戻すエスケープ列だけが
+                    # 改行の後ろに残ることがある（zinit など）ので、見える文字があるときだけにする。
                     self.freeze()
                 elif self.stale:
                     # 出力が止まったときに最後の行が描かれないままにならないようにする。
