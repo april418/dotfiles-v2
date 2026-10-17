@@ -243,6 +243,30 @@ def count(repo, revs, *paths):
     return int(out) if out is not None else None
 
 
+def ansible_playbook():
+    """プレイブックを流す ansible-playbook。install と同じく ~/.local/bin のものを先に使う。"""
+    path = os.path.join(HOME, ".local", "bin", "ansible-playbook")
+    return path if os.access(path, os.X_OK) else find_tool("ansible-playbook")
+
+
+def interpreter_problem(path):
+    """スクリプトの先頭行が指すインタープリターが無ければ、その説明を返す。"""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(1024).decode("utf-8", "replace").splitlines()
+    except OSError as e:
+        return f"{shown(path)} を読めない（{e.strerror}）"
+    if not head or not head[0].startswith("#!"):
+        return None
+    interpreter = head[0][2:].strip().split(" ")[0]
+    # pip はパスに空白があると sh を経由する起動行を書く（pipx の ~/Library/Application Support など）。
+    if os.path.basename(interpreter) == "sh" and len(head) > 1:
+        m = re.match(r"'{3}exec' \"([^\"]+)\"", head[1])
+        if m:
+            interpreter = m.group(1)
+    return None if os.path.exists(interpreter) else f"{shown(interpreter)} が無い"
+
+
 def check_dotfiles():
     repo, applied = locate()
     result = {"label": label(repo), "where": repo, "notices": [], "warnings": [], "error": None, "remote": None}
@@ -252,11 +276,19 @@ def check_dotfiles():
 
     playbook = os.path.join(repo, "ansible", "playbook.yml")
     apply = f"ansible-playbook {shown(playbook)} --connection=local"
-    apply_steps = [(apply, [find_tool("ansible-playbook") or "ansible-playbook", playbook, "--connection=local"])]
+    playbook_bin = ansible_playbook()
+    apply_steps = [(apply, [playbook_bin or "ansible-playbook", playbook, "--connection=local"])]
     if os.uname().sysname != "Darwin" and os.geteuid() != 0 and find_tool("sudo"):
         # install と同じく先に認証を済ませる。become は macOS 以外の作業にしか無く、
         # 認証が残っていないと ansible は聞かずに "Missing sudo password" で失敗する。
         apply_steps.insert(0, ("sudo -v", ["sudo", "-v"]))
+    # venv の Python が消える（Homebrew の cleanup が使われなくなった版を消すなど）と、コマンドはあっても起動しない。
+    # 子プロセスを起動せずに分かる範囲で、シェルを開くたびに確かめる。
+    problem = "見つからない" if playbook_bin is None else interpreter_problem(playbook_bin)
+    if problem:
+        result["warnings"].append(f"ansible-playbook が起動しない（{problem}）。{shown(os.path.join(repo, 'install'))} を流し直す")
+        # 流しても失敗するので、update の手順にしない。pull だけを済ませても配置はされない。
+        apply_steps = []
     remote = git(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
     if remote is None:
         remote = next(
@@ -275,7 +307,7 @@ def check_dotfiles():
             # 配置用の checkout にローカルのコミットがあれば、書き換えずに止める。
             pull = f"git -C {shown(repo)} pull --ff-only origin {branch}"
             commands = [pull, apply]
-            steps = [(pull, ["git", "-C", repo, "pull", "--ff-only", "origin", branch])] + apply_steps
+            steps = [(pull, ["git", "-C", repo, "pull", "--ff-only", "origin", branch])] + apply_steps if apply_steps else []
         else:
             # 作業ブランチで取り込み方を決めつけると、rebase などを勧めることになるため手順は出さない。
             summary += f"（{branch or 'detached HEAD'} を checkout 中）"
