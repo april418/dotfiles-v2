@@ -65,6 +65,12 @@ fi
 INDENT="    "
 
 DOTFILES_GIT="https://github.com/april418/dotfiles-v2.git"
+# ansible を動かす Python。ansible-core の制御ノードが対応する版にする（2.21 は 3.12〜3.14）。
+# OS の Python を使うと、Homebrew などが既定の版を上げて古い版を消したときに ansible が起動しなくなる。
+ANSIBLE_PYTHON="3.14"
+UV="$HOME/.local/bin/uv"
+# PATH の先にほかの ansible（Homebrew の formula など）があっても、uv で入れたものを使う。
+ANSIBLE_PLAYBOOK="$HOME/.local/bin/ansible-playbook"
 DOTFILES_HEADER='
 ====================================
 '
@@ -266,41 +272,73 @@ setup_python() {
   fi
 }
 
-setup_pipx() {
-  print_step "Checking pipx installation..."
+setup_uv() {
+  print_step "Checking uv installation..."
 
-  if is_exists pipx; then
-    local pipx_version=$(pipx --version)
-    print_info "pipx is installed. Version: $pipx_version"
-    print_success "pipx installation check completed successfully"
-  else
-    print_info "pipx is not installed."
-    print_step "Installing pipx..."
-    if $INSTALL_CMD pipx && pipx ensurepath; then
-      print_success "pipx installed successfully"
-    else
-      print_error "Failed to install pipx"
-      exit 1
-    fi
+  # uv ロールと同じ場所を見る。ここで入れたものをプレイブックが入れ直さないため。
+  if [ -x "$UV" ]; then
+    print_info "uv is installed. Version: $("$UV" --version | awk '{print $2}')"
+    print_success "uv installation check completed successfully"
+    return 0
   fi
+
+  print_info "uv is not installed."
+  print_step "Installing uv..."
+  if ! is_exists curl && ! $INSTALL_CMD curl; then
+    print_error "Failed to install curl"
+    exit 1
+  fi
+  # パイプで sh に渡すと、取得に失敗しても sh が空の入力で 0 を返すので、いったんファイルに落とす。
+  local script
+  script="$(mktemp)"
+  # uv ロールと同じく、rc ファイルを書き換えさせず、導入先を ~/.local/bin に固定する。
+  if curl -LsSf -o "$script" https://astral.sh/uv/install.sh \
+      && UV_NO_MODIFY_PATH=1 UV_INSTALL_DIR="$HOME/.local/bin" sh "$script" && [ -x "$UV" ]; then
+    rm -f "$script"
+    print_success "uv installed successfully"
+  else
+    rm -f "$script"
+    print_error "Failed to install uv"
+    exit 1
+  fi
+}
+
+# ansible-playbook が起動し、ANSIBLE_PYTHON で動いているかを見る。入っているかだけでは、
+# venv の Python が消えて起動しない状態を見逃す。
+ansible_python() {
+  "$ANSIBLE_PLAYBOOK" --version 2>/dev/null | sed -n 's/^ *python version = \([0-9]*\.[0-9]*\).*/\1/p'
 }
 
 setup_ansible() {
   print_step "Checking ansible installation..."
 
-  if is_exists ansible; then
-    local ansible_version=$(ansible --version | head -n 1 | awk '{print $2}')
-    print_info "Ansible is installed. Version: $ansible_version"
+  local current
+  current="$(ansible_python)"
+  if [ "$current" = "$ANSIBLE_PYTHON" ] && "$UV" tool list 2>/dev/null | grep -q '^ansible '; then
+    print_info "Ansible is installed. Version: $("$ANSIBLE_PLAYBOOK" --version | head -n 1)"
     print_success "Ansible installation check completed successfully"
+    return 0
+  fi
+
+  if [ -z "$current" ]; then
+    print_info "Ansible is not installed or does not start."
   else
-    print_info "Ansible is not installed."
-    print_step "Installing Ansible..."
-    if pipx install --include-deps --force ansible; then
-      print_success "Ansible installed successfully"
-    else
-      print_error "Failed to install Ansible"
-      exit 1
-    fi
+    print_info "Ansible runs on Python $current. Reinstalling it on Python $ANSIBLE_PYTHON with uv."
+  fi
+  # 以前の install は pipx で入れていた。残すと、同じ名前のコマンドを pipx と uv が取り合う。
+  if is_exists pipx && pipx list --short 2>/dev/null | grep -q '^ansible '; then
+    pipx uninstall ansible
+  fi
+  print_step "Installing Ansible..."
+  # Python は uv が自分の領域に置くものを使い、OS のパッケージの更新と切り離す。
+  # ansible は collection の集まりで、ansible-playbook などのコマンドは依存先の ansible-core が持つ。
+  # XDG_BIN_HOME などで導入先が変わらないよう、ANSIBLE_PLAYBOOK と同じ ~/.local/bin に固定する。
+  if UV_TOOL_BIN_DIR="$HOME/.local/bin" "$UV" tool install --force --managed-python --python "$ANSIBLE_PYTHON" --with-executables-from ansible-core ansible \
+      && [ "$(ansible_python)" = "$ANSIBLE_PYTHON" ]; then
+    print_success "Ansible installed successfully"
+  else
+    print_error "Failed to install Ansible"
+    exit 1
   fi
 }
 
@@ -388,7 +426,7 @@ run_ansible_playbook() {
 
   local ansible_path="$DOTPATH/ansible"
 
-  if ansible-playbook "$ansible_path/playbook.yml" --connection=local; then
+  if "$ANSIBLE_PLAYBOOK" "$ansible_path/playbook.yml" --connection=local; then
     print_success "Ansible playbook executed successfully"
   else
     print_error "Failed to execute ansible playbook"
@@ -408,7 +446,7 @@ if [ "$DISTRO_ID" = "macos" ]; then
 fi
 setup_bin_path
 setup_python
-setup_pipx
+setup_uv
 setup_ansible
 setup_git
 setup_dotfiles_path
