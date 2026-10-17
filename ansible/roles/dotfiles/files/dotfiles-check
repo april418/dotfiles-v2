@@ -1796,12 +1796,12 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
         hints.append(("info", "info", "このシェルは更新前の設定のまま。exec zsh で読み込み直す", []))
     if startup and len(chosen) < len(groups) and ask_policy() == "changed":
         hints.append(("info", "info", "選ばなかったものは内容が変わるまで聞かない", []))
-    if live_output:
-        # 消した出力（brew の Caveats や playbook の RECAP など）を後から読めるようにする。
+    failed = any(color not in ("ok", "progress") for _, color, _, _ in results)
+    if live_output and failed:
+        # 窓から消えた出力を、失敗や中断の原因を追うときに読めるようにする。
         hints.append(("info", "info", f"出力の全文は {shown(UPDATE_LOG_FILE)} にある", []))
     if hints:
         print(render(hints, style))
-    failed = any(color not in ("ok", "progress") for _, color, _, _ in results)
     return 0 if startup else 1 if failed else 0
 
 
