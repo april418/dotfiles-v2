@@ -1438,8 +1438,8 @@ PARTIAL_MAX = 4096
 # 出力を消しても後から読めるよう、最後の update の全文をここに残す。
 UPDATE_LOG_FILE = os.path.join(CACHE_DIR, "update.log")
 ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[=>78]")
-# 認証のプロンプトを /dev/tty に直接書くうえ、エコーを切らないこともある（git の Username など）ので窓にしない。
-UNWINDOWED = {"sudo", "git"}
+# パスワードのプロンプトを /dev/tty に直接書くので窓にしない。
+UNWINDOWED = {"sudo"}
 
 
 def printable(text):
@@ -1587,7 +1587,9 @@ class Live:
 
         self.frozen, self.line_open, self.mode = False, False, terminal_mode()
         # Python の子は、stdout がパイプだとプロンプトを溜めたまま入力を待つ（ansible の pause など）。
-        p = subprocess.Popen(argv, env={**env, "PYTHONUNBUFFERED": "1"}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        # git の認証のプロンプトはエコーを切らず入力待ちと見分けられないので、聞かずに失敗させる（失敗なら末尾が残る）。
+        env = {**env, "PYTHONUNBUFFERED": "1", "GIT_TERMINAL_PROMPT": "0"}
+        p = subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         fd = p.stdout.fileno()
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         while True:
