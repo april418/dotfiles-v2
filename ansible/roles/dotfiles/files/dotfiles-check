@@ -1438,8 +1438,8 @@ PARTIAL_MAX = 4096
 # 出力を消しても後から読めるよう、最後の update の全文をここに残す。
 UPDATE_LOG_FILE = os.path.join(CACHE_DIR, "update.log")
 ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[=>78]")
-# 認証のプロンプトを /dev/tty に直接書くうえ、エコーを切らないこともある（git の Username など）ので窓にしない。
-UNWINDOWED = {"sudo", "git"}
+# パスワードのプロンプトを /dev/tty に直接書くので窓にしない。
+UNWINDOWED = {"sudo"}
 
 
 def printable(text):
@@ -1464,13 +1464,25 @@ def clip(text, width):
 
 
 def terminal_mode():
-    """入力の行編集とエコーの設定。端末でなければ None。"""
+    """(行編集, エコー, 出力の改行の変換) が有効か。端末でなければ None。"""
     import termios
 
     try:
-        return termios.tcgetattr(sys.stdin.fileno())[3] & (termios.ICANON | termios.ECHO)
+        attrs = termios.tcgetattr(sys.stdin.fileno())
     except (termios.error, OSError, ValueError):
         return None
+    return bool(attrs[3] & termios.ICANON), bool(attrs[3] & termios.ECHO), bool(attrs[1] & termios.OPOST)
+
+
+def awaiting_input(mode):
+    """子が端末の設定を変えた後の mode が、入力を待つときの形か。
+
+    ansible の pause は tty.setraw で出力の変換まで外し、sudo や getpass は行編集を残してエコーだけを切る。
+    Homebrew はサンドボックスの子を擬似端末で流す間、出力の変換を残したまま raw にする（入力の素通しで、
+    出力は Homebrew の stdout から来る）ので、これは入力待ちとみなさない。
+    """
+    line_editing, echo, output_processing = mode
+    return not output_processing or (line_editing and not echo)
 
 
 class Live:
@@ -1514,7 +1526,8 @@ class Live:
 
     def interrupted(self):
         """描き直すと表示を壊す状態なら凍結して真を返す。子が端末の設定を変えたか、利用者が何か打ったとき。"""
-        if self.mode is not None and terminal_mode() != self.mode:
+        now = terminal_mode() if self.mode is not None else None
+        if now is not None and now != self.mode and awaiting_input(now):
             # 孫が /dev/tty に直接書いたプロンプト（sudo の Password: など）の後ろに続けて書かない。
             self.freeze(newline=True)
         elif typed_ahead():
@@ -1574,7 +1587,9 @@ class Live:
 
         self.frozen, self.line_open, self.mode = False, False, terminal_mode()
         # Python の子は、stdout がパイプだとプロンプトを溜めたまま入力を待つ（ansible の pause など）。
-        p = subprocess.Popen(argv, env={**env, "PYTHONUNBUFFERED": "1"}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        # git の認証のプロンプトはエコーを切らず入力待ちと見分けられないので、聞かずに失敗させる（失敗なら末尾が残る）。
+        env = {**env, "PYTHONUNBUFFERED": "1", "GIT_TERMINAL_PROMPT": "0"}
+        p = subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         fd = p.stdout.fileno()
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         while True:
@@ -1596,8 +1611,9 @@ class Live:
                 self.draw()
                 continue
             if not self.frozen and not self.interrupted():
-                if self.partial:
-                    # 改行の無いまま止まった（シェルの read などのプロンプト）。
+                if printable(self.partial).strip():
+                    # 改行の無いまま止まった（シェルの read などのプロンプト）。色を戻すエスケープ列だけが
+                    # 改行の後ろに残ることがある（zinit など）ので、見える文字があるときだけにする。
                     self.freeze()
                 elif self.stale:
                     # 出力が止まったときに最後の行が描かれないままにならないようにする。
@@ -1780,12 +1796,12 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
         hints.append(("info", "info", "このシェルは更新前の設定のまま。exec zsh で読み込み直す", []))
     if startup and len(chosen) < len(groups) and ask_policy() == "changed":
         hints.append(("info", "info", "選ばなかったものは内容が変わるまで聞かない", []))
-    if live_output:
-        # 消した出力（brew の Caveats や playbook の RECAP など）を後から読めるようにする。
+    failed = any(color not in ("ok", "progress") for _, color, _, _ in results)
+    if live_output and failed:
+        # 窓から消えた出力を、失敗や中断の原因を追うときに読めるようにする。
         hints.append(("info", "info", f"出力の全文は {shown(UPDATE_LOG_FILE)} にある", []))
     if hints:
         print(render(hints, style))
-    failed = any(color not in ("ok", "progress") for _, color, _, _ in results)
     return 0 if startup else 1 if failed else 0
 
 
