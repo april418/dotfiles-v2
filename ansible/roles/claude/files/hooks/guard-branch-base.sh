@@ -84,20 +84,26 @@ cat >&2 <<EOS
 コミットを新しいブランチが引き連れることになり、PR に無関係な変更が混ざります。
 ブランチ名も差分も正しく見えるため、マージするまで気づけません。
 
-対処:
+対処 (<base-ref> は、ベースがローカルにあれば <base>、リモートにしか無ければ
+origin/<base> です。ローカルにあるかは git show-ref --verify --quiet refs/heads/<base>
+の成否で分かります):
 
-  1. git-branch skill のルール 3 に従い、ベースを最新化する
-       git switch <base> && git pull --rebase origin <base>
+  1. git-branch skill のルール 3 の (a) でベースを選び、(b) に従って最新化する
+       ローカルにある:     git switch <base> && git pull --rebase origin <base>
+       リモートにしか無い: git fetch origin
 
   2. ベースを明示して派生する
-       git switch -c <new-branch> <base>
+       git switch -c <new-branch> <base-ref>
 
   3. 派生直後に確認する
-       git log --oneline <base>..HEAD    # 空であること
+       git branch --show-current            # <new-branch> であること
+       git log --oneline <base-ref>..HEAD   # 空であること
+
+リモートにしか無いベースは git switch <base> でローカルに作らず、origin/<base> のまま使います。
 
 未コミット変更がある場合は、1. の代わりに git-branch skill のルール 3 (b) 例外 1
-に従います (先にルール 7 で扱いを決めます。pull --rebase は未コミット変更があると
-動きません)。持ち込む場合も 2. で変更は保持されますが、変更のあるファイルの中身が
-現在の HEAD とベースで違うと、git は派生を拒否します (ブランチは作られません)。
+に従います (先にルール 7 で扱いを決めます。pull --rebase はステージ済みか未ステージの
+変更があると動きません)。持ち込む場合も 2. で変更は保持されますが、変更のあるファイルの
+中身が現在の HEAD とベースで違うと、git は派生を拒否します (ブランチは作られません)。
 EOS
 exit 2
