@@ -41,6 +41,7 @@ git コマンドを実行する、または実行しようとするあらゆる�
 | ローカル操作（`switch` / `cherry-pick` / `stash` / `fetch`） | **完遂してよい** |
 | コミット | `git-commit` スキルに委譲して実行してよい |
 | push（通常。追記のみで force を伴わない） | `git-push` スキルに委譲して実行してよい |
+| マージ済みのリモートブランチの削除（`git push origin --delete`） | **実行しない。**コマンドを示して終える（git-pr のルール 11） |
 | **ルール 6 の破壊的操作**（force push / `reset --hard` / `rebase` 等） | **実行しない。**選択肢を提示して終える |
 | `gh pr create` / `gh pr merge` / タグ push | **その操作自体をユーザーが名指ししている場合のみ**実行する |
 
