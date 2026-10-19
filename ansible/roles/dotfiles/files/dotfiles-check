@@ -1615,7 +1615,8 @@ FAILURE_LINES = 30
 PARTIAL_MAX = 4096
 # 出力を消しても後から読めるよう、最後の update の全文をここに残す。
 UPDATE_LOG_FILE = os.path.join(CACHE_DIR, "update.log")
-ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[=>78]")
+# 最後の選択肢は、ESC [ の後に終端が来ないもの（ansible の clear_line が書く ESC [ CR）の [ まで落とす。
+ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[=>78]|\x1b\[?")
 # パスワードのプロンプトを /dev/tty に直接書くので窓にしない。
 UNWINDOWED = {"sudo"}
 
@@ -1667,8 +1668,9 @@ class Live:
     """子の出力の末尾を数行だけ描き直す。終わったら erase で消す。
 
     子が端末を使い始めたら（raw にする、エコーを切る、利用者が何か打つ）描き直しをやめて凍結し、
-    以降は子の出力をそのまま流す。凍結した窓や窓より下に何かが出たら dirty にする。dirty なら、
-    見出しの行を結果で置き換えられない。
+    子の出力をそのまま流す。端末の設定で入力待ちと分かって凍結したときは、設定が戻ってから子が
+    出力を続けたら、プロンプトの下に窓を描き直す。凍結した窓や窓より下に何かが出たら dirty にする。
+    dirty なら、見出しの行を結果で置き換えられない。
     """
 
     def __init__(self, log=None):
@@ -1683,6 +1685,8 @@ class Live:
         self.stale = False
         self.dirty = False
         self.frozen = False
+        # 端末の設定で入力待ちと分かって凍結したか。改行の無いプロンプトや先打ちでは、入力の終わりが分からない。
+        self.prompted = False
         self.line_open = False
         self.mode = None
         self.log = log
@@ -1708,6 +1712,7 @@ class Live:
         if now is not None and now != self.mode and awaiting_input(now):
             # 孫が /dev/tty に直接書いたプロンプト（sudo の Password: など）の後ろに続けて書かない。
             self.freeze(newline=True)
+            self.prompted = True
         elif typed_ahead():
             self.freeze()
         return self.frozen
@@ -1749,6 +1754,25 @@ class Live:
         self.line_open = bool(self.partial)
         self.frozen, self.dirty, self.drawn, self.shown, self.partial = True, True, 0, self.fed, ""
 
+    def resume(self):
+        """子の出力を受け取ったときに呼ぶ。入力待ちで凍結していて入力が済んでいれば、窓に戻して真を返す。
+
+        真なら、受け取った出力は素通しせずに窓へ渡す。凍結より前の行は、失敗しても keep で出し直さない。
+        """
+        if not self.prompted or typed_ahead():
+            return False
+        now = terminal_mode()
+        if now is None or awaiting_input(now):
+            return False
+        # 凍結の前の行は画面に出ている。失敗したときに出し直さないよう、ここからの行だけを残す。
+        self.tail.clear()
+        if self.line_open:
+            # 窓は消すときに 1 行目の行頭から消す。凍結中に出た行の続きから描くと、その行ごと消える。
+            self.write("\r\n")
+        self.fed = self.shown = self.drawn = 0
+        self.frozen = self.prompted = self.line_open = self.stale = False
+        return True
+
     def keep(self):
         """消さずに末尾を残す。失敗や中断のときに原因を見せるため。"""
         if self.frozen:
@@ -1763,7 +1787,7 @@ class Live:
         import codecs
         import select
 
-        self.frozen, self.line_open, self.mode = False, False, terminal_mode()
+        self.frozen, self.prompted, self.line_open, self.mode = False, False, False, terminal_mode()
         # Python の子は、stdout がパイプだとプロンプトを溜めたまま入力を待つ（ansible の pause など）。
         # git の認証のプロンプトはエコーを切らず入力待ちと見分けられないので、聞かずに失敗させる（失敗なら末尾が残る）。
         env = {**env, "PYTHONUNBUFFERED": "1", "GIT_TERMINAL_PROMPT": "0"}
@@ -1780,7 +1804,10 @@ class Live:
                     # 途中で止められても、そこまでの出力が残るようにする。
                     self.log.write(chunk)
                     self.log.flush()
-                if self.frozen:
+                # 窓に戻すのは、端末の設定が戻った後に子が改行を含む出力をしたとき。getpass は設定を戻してから
+                # プロンプトの後の改行を /dev/tty に書き、ansible の pause は戻す直前に入力の行を消すエスケープ列を
+                # 改行なしで書く。どちらも素通しする前に窓を描くと、窓の位置がずれる。
+                if self.frozen and not (b"\n" in chunk and self.resume()):
                     sys.stdout.buffer.write(chunk)
                     sys.stdout.buffer.flush()
                     self.line_open = not chunk.endswith(b"\n")
