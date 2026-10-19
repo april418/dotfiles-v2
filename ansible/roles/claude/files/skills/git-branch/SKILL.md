@@ -77,7 +77,7 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
 - **「stash して進める」を選んだ場合**:
 
   ```bash
-  git stash push -u
+  git stash push -u -m "<元のブランチ>: <退避した変更の内容>"
   # ここで通常ケースの (b) を実施する（ローカル / リモートのみで分岐。ここには再掲しない）
   git switch -c <new-branch> <base-ref>   # (c) 派生。ベースを明示する
   ```
@@ -97,8 +97,9 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
 
   別件の stash は、自分で元のブランチへ戻って pop しない。戻ると、ユーザーが
   頼んだ新しいブランチにいない状態で作業を終えることになる。代わりに最終応答で、
-  どのブランチの何を `stash@{N}` に置いたかと、戻し方
-  （`git switch <元のブランチ>` → `git stash pop`）を伝える。
+  退避したときのメッセージと、戻し方（`git switch <元のブランチ>` →
+  `git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`）を伝える。
+  番号は後から stash が積まれるとずれるので、番号だけで伝えない。
   stash の `drop` / `clear` は git-workflow のルール 6 の要承認操作なので、放置は安全側である。
 
 - **「そのまま持ち込む」を選んだ場合**:
@@ -163,14 +164,15 @@ git log --oneline <base-ref>..HEAD
 | `git stash pop` の後 | **要る**（作業ツリーが変わる） |
 | `git rebase` の後 | **要る** |
 
-切り替えた先によって、確かめる相手が変わる。統合ブランチでは `<base-ref>..HEAD` が
+直前の操作によって、確かめる相手が変わる。統合ブランチでは `<base-ref>..HEAD` が
 必ず空になるので、確かめにならない。
 
-| 切り替えた先 | 確かめること |
+| 直前の操作 | 確かめること |
 | --- | --- |
-| 新しく切ったブランチ・作業中のブランチ | `git log --oneline <base-ref>..HEAD` がそのブランチの作業だけであること |
-| 統合ブランチ（pull の前後） | `git status -sb` の 1 行目に `[ahead N]` が無いこと（統合ブランチに自分のコミットは無いはず） |
-| 元の作業ブランチへ戻ったとき | `git branch --show-current` が戻り先であることと、`git log --oneline @{upstream}..HEAD` が push 前の自分のコミットだけであること（upstream が無ければ `<base-ref>..HEAD`） |
+| 新しいブランチを切った | `git log --oneline <base-ref>..HEAD` が空であること |
+| 同じブランチの上で rebase / stash pop をした | `git log --oneline <base-ref>..HEAD` がそのブランチの作業だけであること |
+| 統合ブランチへ切り替えた（pull の前後） | `git status -sb` の 1 行目のブランチ名が切り替え先で、`[ahead N]` が無いこと（統合ブランチに自分のコミットは無いはず） |
+| 別の作業ブランチへ切り替えた | `git branch --show-current` が切り替え先であることと、`git log --oneline @{upstream}..HEAD` が push 前の自分のコミットだけであること（upstream が無ければ `<base-ref>..HEAD`） |
 
 切り替えでも要るのは、**直前のコマンドが失敗していても気づけない**ため。
 たとえば未コミット変更があると `git switch <base>` は失敗するが、続けて
