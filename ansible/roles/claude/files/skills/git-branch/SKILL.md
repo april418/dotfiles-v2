@@ -1,6 +1,6 @@
 ---
 name: git-branch
-description: 作業ブランチを新しく切る・既存ブランチへ切り替える・ベースを pull する際の手順（ベースの選定、最新化、ベースを明示した派生、混入コミットの検証）と、未コミット変更がある場合の扱い。git switch -c / checkout -b / switch / pull / stash を実行する前に参照する。共通ルールは git-workflow skill にある。
+description: 作業ブランチを新しく切る・既存ブランチへ切り替える・ベースを pull する際の手順（ベースの選定、最新化、ベースを明示した派生、混入コミットの検証）と、未コミット変更がある場合の扱い。git switch -c / checkout -b / switch / pull / stash を実行する前と、rebase や stash pop をした後に参照する。共通ルールは git-workflow skill にある。
 ---
 
 # 概要

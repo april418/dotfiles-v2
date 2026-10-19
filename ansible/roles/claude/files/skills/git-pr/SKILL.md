@@ -108,6 +108,9 @@ git-workflow のルール 8（ローカルでの `git merge` 禁止）と矛盾�
 誰がマージしたかによらない。自分が `gh pr merge` したときも、ユーザーが
 「マージした」と伝えてきたときも、次の作業に入る前にこの手順を踏む。
 
+切り替える前に git-branch のルール 7（未コミット変更の扱い）を踏む。切り替えた後は、
+git-branch のルール 3 (d) の「切り替えた先」の表で確かめる。
+
 ```bash
 git switch <base>
 git pull --rebase origin <base>
