@@ -627,7 +627,7 @@ def evaluate_all(found, entries):
         items.append(item)
         failure = long_failure(entry)
         if failure:
-            failures.append(f"{obj.label} の最新版を {failure}")
+            failures.append({"label": obj.label, "days": failure[0], "error": failure[1]})
     return items, failures
 
 
@@ -974,7 +974,7 @@ def check_pins(repo, remote=None):
 
 
 def long_failure(state):
-    """失敗が FETCH_FAILURE_NOTICE_AFTER 以上続いていれば「N 日…（理由）」を返す。"""
+    """失敗が FETCH_FAILURE_NOTICE_AFTER 以上続いていれば (日数, 理由) を返す。"""
     if not state.get("error"):
         return None
     try:
@@ -983,7 +983,32 @@ def long_failure(state):
         return None
     if elapsed < FETCH_FAILURE_NOTICE_AFTER:
         return None
-    return f"{int(elapsed // (24 * 60 * 60))} 日確かめられていない（{state['error']}）"
+    return int(elapsed // (24 * 60 * 60)), state["error"]
+
+
+def brief(error):
+    """シェルを開くたびに出す通知に向けて、取得の失敗の理由を短くする。全文は dotfiles-check で見られる。"""
+    if "CERTIFICATE_VERIFY_FAILED" in error:
+        return "TLS の証明書を検証できない"
+    if "timed out" in error or "タイムアウト" in error:
+        return "タイムアウトした"
+    if "nodename nor servname" in error or "Name or service not known" in error:
+        return "ホスト名を解決できない"
+    text = re.sub(r"\s*https?://\S+\s*", " ", error).strip()
+    return text if len(text) <= 60 else text[:59] + "…"
+
+
+def summarize_failures(failures):
+    """長く続いている取得の失敗を 1 行にまとめる。"""
+    if len(failures) == 1:
+        f = failures[0]
+        return f"{f['label']} の最新版を {f['days']} 日確かめられていない（{brief(f['error'])}）"
+    reasons = {brief(f["error"]) for f in failures}
+    reason = reasons.pop() if len(reasons) == 1 else "理由は dotfiles-check で見る"
+    return (
+        f"{failures[0]['label']} ほか {len(failures) - 1} 件の最新版を "
+        f"{min(f['days'] for f in failures)} 日以上確かめられていない（{reason}）"
+    )
 
 
 def attempt(fetch):
@@ -1094,7 +1119,7 @@ def fetch_failure(repo):
     if not state or state.get("repo") != repo:
         return None
     failure = long_failure(state)
-    return f"リモートを {failure}" if failure else None
+    return f"リモートを {failure[0]} 日確かめられていない（{brief(failure[1])}）" if failure else None
 
 
 def spawn_refresh():
@@ -1213,7 +1238,8 @@ def notify_rows(repo, dotfiles, tools):
         if shorts:
             # シェルを開くたびに出るので、節ごとに 1 行にまとめる。
             rows.append((icon, "update", f"{section['label']}の更新", shorts))
-        rows += [("warn", "error", section["label"], [f]) for f in section["failures"]]
+        if section["failures"]:
+            rows.append(("warn", "error", section["label"], [summarize_failures(section["failures"])]))
     return rows
 
 
