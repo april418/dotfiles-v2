@@ -15,12 +15,12 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 ただし以下のいずれかに該当する場合は **3 箇所すべての確認を省略してよい**。
 
 - **非対話モード**: subagent 実行、CI、Auto Mode 等、ユーザーへの問い合わせができないコンテキスト
-- **明確な前提条件揃い**: 全チェック成功（または検出 0 件）+ 未コミット変更なし + tracking branch が一意に確定 + 単一の upstream 候補（origin 1 つ）
+- **明確な前提条件揃い**: 全チェック成功（または検出 0 件）+ 未コミット変更なし + push 先が一意に確定（Step 1 の表で push コマンドが決まる行に当たる。初回 push を含む）
 - **ユーザーが事前指示済み**: 直近のユーザー指示で push 実行が明示的に承認されている
 
 省略した場合の振る舞い:
 
-- **Step 1 で中止条件を検出した場合**（未コミット変更あり / push 対象 0 件 / tracking 不明 等）: push は実行せず、検出内容と次に取りうる方針（コミット / stash / 中断等）を最終応答で 3〜4 択で提示する
+- **Step 1 で中止条件を検出した場合**（未コミット変更あり / push 対象 0 件 / detached HEAD / upstream が `[gone]` / push 先の remote が決まらない 等）: push は実行せず、検出内容と次に取りうる方針（コミット / stash / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する
 - **Step 2 / Step 3 の承認**: 前提条件揃いの場合のみ省略可。最終応答（または Discretionary fill-ins 相当の箇所）に「どの判断で承認を省略したか」を 1 行で明記する
 
 なお、**チェックが 1 つでも失敗した場合は省略不可** — どのモードでも必ず失敗内容を報告し push を中止する。
@@ -38,14 +38,46 @@ git branch -vv --contains HEAD
 ```
 
 ```bash
-git log --oneline @{upstream}..HEAD 2>/dev/null || git log --oneline -5
+git branch --show-current
+```
+
+```bash
+git for-each-ref --format='%(upstream:short) %(upstream:track)' "refs/heads/$(git branch --show-current)"
+```
+
+```bash
+git remote
 ```
 
 以下を確認する:
 
 1. **未コミットの変更がないこと** — 未コミットの変更がある場合は `AskUserQuestion` でユーザーに報告し、先にコミットするか stash するか確認する。push は行わない。
-2. **push 先のリモート・ブランチ** — tracking branch がない場合は `AskUserQuestion` でユーザーに push 先を確認する。
-3. **push 対象のコミット** — upstream との差分コミット一覧をユーザーに表示する。push するコミットが 0 件の場合は「push するコミットがない」旨を伝えて終了する。
+2. **push 先のリモート・ブランチ** — まず `git branch --show-current` が空でないことを確かめる。
+   空なら detached HEAD で push するブランチが無いので、中止条件として扱う（`for-each-ref` は
+   `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。空でなければ
+   `for-each-ref` の出力と `git remote` の行数で決める。
+
+   | upstream（`for-each-ref` の出力） | `git remote` | push 先 |
+   | --- | --- | --- |
+   | 同名のリモートブランチ（`<remote>/<branch>`。`[ahead N]` / `[behind N]` / `[ahead N, behind N]` が続いてよい。`[gone]` は次の行） | — | `git push <remote> <branch>` |
+   | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る） |
+   | 空（upstream が無い）、または名前の違うブランチ | 1 行 | **初回 push として扱い、`git push -u <remote> <branch>` で確定とみなす** |
+   | 空、または名前の違うブランチ | 2 行以上 | `AskUserQuestion` でユーザーに push 先を確認する |
+   | — | 0 行 | push 先が無い。中止条件として扱う |
+
+   `origin/<base>` から切ったブランチは upstream が `origin/<base>` になる（名前の違う
+   ブランチ）。そのままでは引数なしの `git push` が名前の不一致で拒否され、`-u` を付けずに
+   push すると upstream がベースを指したまま残るので、初回 push として `-u` で付け替える。
+3. **push 対象のコミット** — 差分コミット一覧をユーザーに表示する。push するコミットが 0 件の場合は「push するコミットがない」旨を伝えて終了する。
+
+   ```bash
+   git log --oneline @{upstream}..HEAD               # upstream が同名のリモートブランチ
+   git log --oneline HEAD --not --remotes=<remote>   # 初回 push
+   ```
+
+   初回 push で `git log -5` のように件数で区切ると、自分のコミットが 0 件でもベースの
+   コミットが並び、0 件を判定できない。`--not --remotes=<remote>` はリモートのどのブランチにも
+   無いコミットだけを出す。
 
 ### Step 2: プロジェクトの品質チェックを自動検出・実行
 
@@ -146,7 +178,7 @@ git log --oneline @{upstream}..HEAD 2>/dev/null || git log --oneline -5
 git push <remote> <branch>
 ```
 
-#### 初回 push（tracking branch がない場合）
+#### 初回 push（Step 1 の表で初回 push と決めた場合）
 
 ```bash
 git push -u <remote> <branch>
