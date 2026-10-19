@@ -181,6 +181,7 @@ git log --oneline <base-ref>..HEAD
 | --- | --- |
 | `git switch -c` / `checkout -b`（派生） | **要る** |
 | `git switch <既存ブランチ>`（切り替え） | **要る** |
+| `git switch --detach <ref>` | **要る** |
 | `git switch -C`（切り直し） | **要る** |
 | `git stash pop` の後 | **要る**（作業ツリーが変わる） |
 | `git rebase` の後 | **要る** |
@@ -193,6 +194,7 @@ git log --oneline <base-ref>..HEAD
 | 新しいブランチを切った | `git branch --show-current` が新しいブランチであることと、`git log --oneline <base-ref>..HEAD` が空であること |
 | 同じブランチの上で rebase / stash pop をした | `git log --oneline <base-ref>..HEAD` がそのブランチの作業だけであること |
 | 統合ブランチへ切り替えた（pull の前後） | `git status -sb` の 1 行目のブランチ名が切り替え先で、`[ahead N]` が無いこと（統合ブランチに自分のコミットは無いはず） |
+| `origin/<base>` に detach した | `git branch --show-current` の出力が空で、`git rev-parse HEAD origin/<base>` の 2 行が同じであること |
 | 別の作業ブランチへ切り替えた | `git branch --show-current` が切り替え先であることと、`git log --oneline @{upstream}..HEAD` が push 前の自分のコミットだけであること（upstream が無ければ `<base-ref>..HEAD`） |
 
 切り替えでも要るのは、**直前のコマンドが失敗していても気づけない**ため。
@@ -232,12 +234,13 @@ git status --short
 
 | 現在のブランチ | 提示する選択肢 | 対話時の推奨 | 非対話時の既定 |
 | --- | --- | --- | --- |
-| 統合ブランチ（`develop` / `master` / `main`） | stash / そのまま持ち込む の **2 択** | そのまま持ち込む | **そのまま持ち込む** |
+| 統合ブランチ（`develop` / `master` / `main`）、または detach した HEAD | stash / そのまま持ち込む の **2 択** | そのまま持ち込む | **そのまま持ち込む** |
 | 作業ブランチ（`feature/*` / `hotfix/*`） | 3 択すべて | コミットしてから進める | **stash して進める** |
 
-統合ブランチでは「現在のブランチでコミットしてから進める」は**git-workflow のルール 2 違反に
-なるため提示しない**。統合ブランチにはコミットしないので、そこにある未コミット変更は
-新ブランチの作業に属するとみなす。残る 2 択のうち「そのまま持ち込む」が最短経路である。
+統合ブランチと detach した HEAD では「現在のブランチでコミットしてから進める」は
+**git-workflow のルール 2 違反になるため提示しない**。そこにはコミットしないので、そこにある
+未コミット変更は新ブランチの作業に属するとみなす。残る 2 択のうち「そのまま持ち込む」が
+最短経路である。
 
 作業ブランチ上の未コミット変更は、逆にそのブランチの作業の続きであることが多い。
 持ち込むと新ブランチに別件の変更が混ざるため、非対話では stash を既定にし、
@@ -278,9 +281,9 @@ stash して進める。未追跡ファイルだけなら pull は通るが、�
       `git log --oneline <base-ref>..HEAD` が**空である**ことを確認したか？
       （※空を期待してよいのは**派生直後だけ**。作業が進んだブランチでは
       空でないのが正常で、そこで空を期待すると誤検知する）
-- [ ] **HEAD が動く操作（派生・切り替え・切り直し・rebase・stash pop）の後に**
-      `git log --oneline <base-ref>..HEAD` を確認したか？
+- [ ] **HEAD が動く操作（派生・切り替え・detach・切り直し・rebase・stash pop）の後に**
+      (d) の「直前の操作」の表で確認したか？
       （直前のコマンドが失敗していても、次が成功して混在状態になることがある。
-      統合ブランチへ切り替えた後は `git status -sb` で見る）
+      統合ブランチへ切り替えた後は `git status -sb`、detach した後は `git rev-parse` で見る）
 - [ ] 未コミット変更の扱いは明確か？
       （別件を stash したなら、残した場所と戻し方を最終応答に書いたか）
