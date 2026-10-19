@@ -380,6 +380,38 @@ class Tool:
         """確かめなかった理由。確かめたなら None。"""
         return None
 
+    def remark(self, data):
+        """手動の dotfiles-check にだけ添える補足（待ち期間で見送っている版など）。無ければ None。"""
+        return None
+
+
+def release_cooldown(owner, name, tags, releases=None):
+    """ツールの取得の結果。settled は公開から PIN_COOLDOWN を過ぎた最大の版、newest はそれを含む最大の版。"""
+    if releases is None:
+        releases = github_api(f"/repos/{owner}/{name}/releases?per_page=100")
+    settled, _ = settled_tag(owner, name, tags, releases)
+    unreleased = {r.get("tag_name") for r in releases if r.get("draft") or r.get("prerelease")}
+    candidates = [t for t in tags if t not in unreleased]
+    if not candidates:
+        return {"settled": settled, "newest": None, "newest_published": None}
+    newest = max(candidates, key=version_key)
+    published = next((r.get("published_at") for r in releases if r.get("tag_name") == newest), None)
+    return {"settled": settled, "newest": newest, "newest_published": published}
+
+
+def waiting_remark(installed, data):
+    """待ち期間のために見送っている版があれば、その説明。"""
+    newest, settled = data.get("newest"), data.get("settled")
+    if not isinstance(newest, str) or version_key(installed) is None or version_key(installed) >= version_key(newest):
+        return None
+    if isinstance(settled, str) and version_key(settled) >= version_key(newest):
+        return None
+    try:
+        days = int((time.time() - parse_time(data["newest_published"])) // (24 * 60 * 60))
+    except (TypeError, KeyError, ValueError):
+        return f"{newest.lstrip('v')} は公開から {PIN_COOLDOWN // (24 * 60 * 60)} 日経つまで待っている"
+    return f"{newest.lstrip('v')} は公開から {days} 日のため待っている（{PIN_COOLDOWN // (24 * 60 * 60)} 日待つ）"
+
 
 class Uv(Tool):
     key = "uv"
@@ -398,40 +430,61 @@ class Uv(Tool):
     def fetch(self):
         if not self.standalone:
             return {"unsupported": True}
-        try:
-            stdout, stderr = run([self.path, "self", "update", "--dry-run"], FETCH_TIMEOUT)
-        except FetchError as e:
-            # レシートと実体が食い違うときに出る。毎回の失敗として扱うと通知が出続ける。
-            if "Self-update is only available" in str(e):
-                return {"unsupported": True}
-            raise
-        m = re.search(r"Would update uv from v?(\S+) to v?(\S+)", stdout + stderr)
-        if m:
-            return {"latest": m.group(2)}
-        # 読めなかったものまで最新と扱うと、文言が変わったときに黙って「最新」と言い続ける。
-        if re.search(r"You're (on the latest version of uv|already on version)", stdout + stderr):
-            return {"latest": None}
-        raise FetchError("uv self update --dry-run の出力を解釈できない")
+        # uv self update は uv の設定の exclude-newer を見ずに最新を入れるので、公開日時で選んで版を名指しする。
+        # 1 件に 40 を超えるアセットが付き、100 件だと 8 MB を超える。待ちを過ぎた版は直近の数十件にある。
+        releases = github_api("/repos/astral-sh/uv/releases?per_page=20")
+        tags = [r["tag_name"] for r in releases if re.fullmatch(r"\d+\.\d+\.\d+", str(r.get("tag_name")))
+                and not r.get("draft") and not r.get("prerelease")]
+        if not tags:
+            raise FetchError("uv のリリースが見つからない")
+        data = release_cooldown("astral-sh", "uv", tags, releases)
+        settled, installed = data["settled"], self.installed()
+        if settled and version_key(installed) and version_key(installed) < version_key(settled):
+            try:
+                # 勧める前に、その版へ上げられるかを uv に確かめさせる。
+                run([self.path, "self", "update", "--dry-run", settled], FETCH_TIMEOUT)
+            except FetchError as e:
+                # レシートと実体が食い違うときに出る。毎回の失敗として扱うと通知が出続ける。
+                if "Self-update is only available" in str(e):
+                    return {"unsupported": True}
+                raise
+        return data
 
     def skipped(self, data):
         if data.get("unsupported"):
             return "standalone のインストーラーで入れたものではないため確かめていない（入れたパッケージマネージャーで更新する）"
         return None
 
+    def installed(self):
+        # 判定と補足で 2 回呼ぶ。シェルを開くたびに流れるので、起動は 1 回にする。
+        if not hasattr(self, "_installed"):
+            try:
+                m = re.match(r"uv (\S+)", run([self.path, "--version"], 10)[0])
+            except FetchError:
+                m = None
+            self._installed = m.group(1) if m else None
+        return self._installed
+
     def evaluate(self, data):
-        if data.get("unsupported") or not data.get("latest"):
+        settled = data.get("settled")
+        if data.get("unsupported") or settled is None:
             return None
-        try:
-            m = re.match(r"uv (\S+)", run([self.path, "--version"], 10)[0])
-        except FetchError:
+        # 版はコマンドの引数になるので、リリースの版の形をしていなければ使わない。
+        if not isinstance(settled, str) or not re.fullmatch(r"\d+\.\d+\.\d+", settled):
+            raise ValueError(f"版として読めない（{settled!r}）")
+        installed = self.installed()
+        if version_key(installed) is None or version_key(installed) >= version_key(settled):
             return None
-        installed = m.group(1) if m else None
-        if version_key(installed) is None or version_key(installed) >= version_key(data["latest"]):
-            return None
-        summary = f"uv {installed} → {data['latest']}"
+        summary = f"uv {installed} → {settled}"
         # uv self update はインストーラを流し直す。UV_NO_MODIFY_PATH が無いとシェルの rc を書き換えうる（uv ロールと同じ）。
-        command = "UV_NO_MODIFY_PATH=1 uv self update"
-        return notice(summary, summary, [command], steps=[(command, ["/usr/bin/env", "UV_NO_MODIFY_PATH=1", self.path, "self", "update"])])
+        command = f"UV_NO_MODIFY_PATH=1 uv self update {settled}"
+        return notice(summary, summary, [command],
+                      steps=[(command, ["/usr/bin/env", "UV_NO_MODIFY_PATH=1", self.path, "self", "update", settled])])
+
+    def remark(self, data):
+        if data.get("unsupported") or not data.get("newest"):
+            return None
+        return waiting_remark(self.installed(), data)
 
 
 class Nvm(Tool):
@@ -457,12 +510,20 @@ class Nvm(Tool):
         tags = re.findall(r"refs/tags/(v\d+\.\d+\.\d+)$", run(args, FETCH_TIMEOUT)[0], re.MULTILINE)
         if not tags:
             raise FetchError("リリースのタグが見つからない")
-        return {"latest": max(tags, key=version_key)}
+        # 固定バージョンの node_nvm_version と同じく、公開から日の浅い版は勧めない。
+        return release_cooldown("nvm-sh", "nvm", tags)
+
+    def installed(self):
+        return (read_json(os.path.join(self.directory, "package.json")) or {}).get("version")
+
+    def remark(self, data):
+        return waiting_remark(self.installed(), data)
 
     def evaluate(self, data):
-        package = read_json(os.path.join(self.directory, "package.json")) or {}
-        installed = package.get("version")
-        latest = data.get("latest")
+        installed = self.installed()
+        latest = data.get("settled")
+        if latest is None:
+            return None
         # update はこの値をコマンドに埋めて実行するので、タグの形をしていなければ使わない。
         # 黙って捨てると最新に見えるので、判定できなかったものとして出す。
         if not isinstance(latest, str) or not re.fullmatch(r"v\d+\.\d+\.\d+", latest):
@@ -605,8 +666,11 @@ def find_tools():
     return found
 
 
-def evaluate_all(found, entries):
-    """取得の結果 entries で found をそれぞれ判定し、(項目, 長く続いている失敗) を返す。"""
+def evaluate_all(found, entries, remarks=False):
+    """取得の結果 entries で found をそれぞれ判定し、(項目, 長く続いている失敗) を返す。
+
+    remarks が真なら補足（Tool.remark）も作る。シェルを開くたびの通知では使わないので、手動の確認でだけ作る。
+    """
     items, failures = [], []
     for obj in found:
         if getattr(obj, "problem", None):
@@ -616,7 +680,7 @@ def evaluate_all(found, entries):
         if not isinstance(entry, dict):
             continue
         data = entry.get("data") if isinstance(entry.get("data"), dict) else None
-        item = {"key": obj.key, "label": obj.label, "notice": None, "skipped": None, "problem": None}
+        item = {"key": obj.key, "label": obj.label, "notice": None, "skipped": None, "problem": None, "remark": None}
         if entry.get("error"):
             item["problem"] = f"最新版を取得できなかった（{entry['error']}）"
         try:
@@ -626,6 +690,12 @@ def evaluate_all(found, entries):
         except Exception as e:
             # 1 つの判定の失敗で、ほかの項目や dotfiles 本体の通知まで消さない。
             item["problem"] = f"判定できなかった（{type(e).__name__}: {e}）"
+        if remarks and data is not None and not item["problem"]:
+            try:
+                item["remark"] = obj.remark(data)
+            except Exception as e:
+                # 補足が作れなくても、判定の結果はそのまま使える。
+                item["remark"] = f"補足を作れなかった（{type(e).__name__}: {e}）"
         items.append(item)
         failure = long_failure(entry)
         if failure:
@@ -633,8 +703,8 @@ def evaluate_all(found, entries):
     return items, failures
 
 
-def check_tools():
-    items, failures = evaluate_all(find_tools(), (read_json(TOOLS_FILE) or {}).get("tools") or {})
+def check_tools(remarks=False):
+    items, failures = evaluate_all(find_tools(), (read_json(TOOLS_FILE) or {}).get("tools") or {}, remarks)
     return {"label": "ツール", "items": items, "failures": failures}
 
 
@@ -675,9 +745,14 @@ def github_api(path):
     return json.loads(body)
 
 
-def settled_tag(owner, name, tags):
-    """tags のうち、公開から PIN_COOLDOWN を過ぎた最大の版とその公開日時を返す。どれも日が浅ければ (None, None)。"""
-    releases = {r["tag_name"]: r for r in github_api(f"/repos/{owner}/{name}/releases?per_page=100")}
+def settled_tag(owner, name, tags, releases=None):
+    """tags のうち、公開から PIN_COOLDOWN を過ぎた最大の版とその公開日時を返す。どれも日が浅ければ (None, None)。
+
+    releases は取得済みの GitHub のリリースの一覧。渡さなければ取りに行く。
+    """
+    if releases is None:
+        releases = github_api(f"/repos/{owner}/{name}/releases?per_page=100")
+    releases = {r["tag_name"]: r for r in releases}
     lookups = 0
     for tag in sorted(tags, key=version_key, reverse=True):
         release = releases.get(tag)
@@ -1153,7 +1228,7 @@ def run_check():
         print("リモートと各ツールの最新版を取得している…", file=sys.stderr)
     fetch_error = refresh(wait=True)
     dotfiles = check_dotfiles()
-    tools = check_tools()
+    tools = check_tools(remarks=True)
     updates = unknown = False
 
     print(f"dotfiles ({shown(dotfiles['where']) if dotfiles['where'] else '不明'})")
@@ -1205,6 +1280,8 @@ def print_items(section, empty):
             print(f"  - {item['label']}: {item['skipped']}")
         else:
             print(f"  ✓ {item['label']}")
+        if item.get("remark"):
+            print(f"  - {item['label']}: {item['remark']}")
     return updates, unknown
 
 
