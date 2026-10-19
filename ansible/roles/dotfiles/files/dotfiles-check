@@ -429,7 +429,9 @@ class Uv(Tool):
         if version_key(installed) is None or version_key(installed) >= version_key(data["latest"]):
             return None
         summary = f"uv {installed} → {data['latest']}"
-        return notice(summary, summary, ["uv self update"], steps=[("uv self update", [self.path, "self", "update"])])
+        # uv self update はインストーラを流し直す。UV_NO_MODIFY_PATH が無いとシェルの rc を書き換えうる（uv ロールと同じ）。
+        command = "UV_NO_MODIFY_PATH=1 uv self update"
+        return notice(summary, summary, [command], steps=[(command, ["/usr/bin/env", "UV_NO_MODIFY_PATH=1", self.path, "self", "update"])])
 
 
 class Nvm(Tool):
