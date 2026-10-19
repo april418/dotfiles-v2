@@ -550,18 +550,19 @@ class Nvm(Tool):
 class GitTool(Tool):
     """git で clone して更新するもの（zinit 本体とプラグイン）。"""
 
-    def __init__(self, key, label, path, args):
+    def __init__(self, key, label, path, spec=None):
+        """spec はプラグインの user/repo。zinit 本体なら None。"""
         self.key = key
         self.label = label
         self.path = path
-        self.args = args
+        self.spec = spec
 
     @staticmethod
     def locate():
         found = []
         core = os.path.join(ZINIT_DIR, "zinit.git")
         if os.path.isdir(os.path.join(core, ".git")):
-            found.append(GitTool("zinit", "zinit", core, ["self-update"]))
+            found.append(GitTool("zinit", "zinit", core))
         plugins = os.path.join(ZINIT_DIR, "plugins")
         for entry in sorted(os.listdir(plugins)) if os.path.isdir(plugins) else []:
             path = os.path.join(plugins, entry)
@@ -569,7 +570,7 @@ class GitTool(Tool):
             if "---" not in entry or not os.path.isdir(os.path.join(path, ".git")):
                 continue
             user, repo = entry.split("---", 1)
-            found.append(GitTool(f"zinit:{user}/{repo}", repo, path, ["update", f"{user}/{repo}"]))
+            found.append(GitTool(f"zinit:{user}/{repo}", repo, path, f"{user}/{repo}"))
         return found
 
     def fetch(self):
@@ -582,17 +583,55 @@ class GitTool(Tool):
             return "追跡ブランチが無いため確かめていない"
         return None
 
+    def settled(self):
+        """追跡ブランチのうち、コミットから PIN_COOLDOWN を過ぎた最新のコミット。
+
+        zinit はリリースを作らないのでコミットの日時で測る。日時は書き手が付けるので、偽られたら防げない。
+        """
+        # 判定と補足で呼ぶので、1 回だけ求める。
+        if not hasattr(self, "_settled"):
+            # 本流だけを辿る。枝のコミットは、取り込んだマージが待ちを過ぎるまで選ばない。選ぶと早送りできないか、
+            # 本流に一度も無かった状態に進めてしまう（本流の親が枝のコミットより古いとき）。
+            self._settled = git(self.path, "rev-list", "-1", "--first-parent", f"--before={int(time.time() - PIN_COOLDOWN)}", "@{upstream}")
+        return self._settled
+
     def evaluate(self, data):
-        behind = git(self.path, "rev-list", "--count", "--no-merges", "HEAD..@{upstream}")
+        target = self.settled()
+        behind = git(self.path, "rev-list", "--count", "--no-merges", f"HEAD..{target}") if target else None
         if not behind or behind == "0":
             return None
-        command = shlex.join(["zinit", *self.args])
-        # zinit はシェル関数なので、rc を読まない zsh に読み込んで呼ぶ。
-        run = ["zsh", "-fc", 'source "$1" && zinit "${@:2}"', "zsh", os.path.join(ZINIT_DIR, "zinit.git", "zinit.zsh"), *self.args]
+        # zinit update や self-update は追跡ブランチの先頭まで進め、出たばかりのコミットも入れる。
+        # git で決めたコミットまで進め、zinit が pull の後にするのと同じ compile を流す。
+        merge = f"git -C {shown(self.path)} merge --ff-only {target[:12]}"
+        steps = [(merge, ["git", "-C", self.path, "merge", "--ff-only", target])]
+        if os.path.isfile(os.path.join(self.path, ".gitmodules")):
+            # zinit は git pull --recurse-submodules で上げる。merge は submodule の作業ツリーを進めない。
+            submodule = f"git -C {shown(self.path)} submodule update --init --recursive"
+            steps.append((submodule, ["git", "-C", self.path, "submodule", "update", "--init", "--recursive"]))
+        if self.spec:
+            compile_display = f"zinit compile {self.spec}"
+            zinit_zsh = os.path.join(ZINIT_DIR, "zinit.git", "zinit.zsh")
+            # zinit はシェル関数なので、rc を読まない zsh に読み込んで呼ぶ。
+            steps.append((compile_display, ["zsh", "-fc", 'source "$1" && zinit compile "$2"', "zsh", zinit_zsh, self.spec]))
+        else:
+            # zinit self-update が pull の後に作り直す wordcode と同じもの（zinit-autoload.zsh の .zinit-self-update）。
+            # self-update は先に *.zwc を消すが、zcompile は上書きし、ソースより古い .zwc は zsh が使わないので消さない。
+            script = ('zcompile -U "$1/zinit.zsh" && zcompile -U "$1"/zinit-{side,install,autoload,additional}.zsh'
+                      ' && zcompile -U "$1/share/git-process-output.zsh"')
+            compile_display = f"zsh -fc {shlex.quote(script)} zsh {shown(self.path)}"
+            steps.append((compile_display, ["zsh", "-fc", script, "zsh", self.path]))
         return notice(
-            f"{self.label} に {behind} コミットの更新がある", f"{self.label}（{behind} コミット）", [command],
-            steps=[(command, run)], keys=[f"{self.key}@{git(self.path, 'rev-parse', '@{upstream}')}"],
+            f"{self.label} に {behind} コミットの更新がある", f"{self.label}（{behind} コミット）",
+            [display for display, _ in steps], steps=steps, keys=[f"{self.key}@{target}"],
         )
+
+    def remark(self, data):
+        target = self.settled()
+        young = git(self.path, "rev-list", "--count", "--no-merges", f"{target or 'HEAD'}..@{{upstream}}")
+        if not young or young == "0" or git(self.path, "merge-base", "--is-ancestor", "@{upstream}", "HEAD") is not None:
+            return None
+        # 枝のコミットは、取り込んだマージコミットが待ち期間を過ぎるまで待つ（追跡ブランチに入ったのはそのとき）。
+        return f"{young} コミットは {PIN_COOLDOWN // (24 * 60 * 60)} 日の待ち期間が過ぎるまで待っている"
 
 
 class Brew(Tool):
