@@ -79,16 +79,42 @@ untracked ファイルに `.env`、credentials、`node_modules`、一時ファ�
 省略した場合は、最終応答（または `Discretionary fill-ins` 相当の箇所）に
 「どの判断で承認を省略したか」を 1 行で明記する。
 
-### Step 2.5: 整形を最後に流す（省略不可）
+### Step 2.5: 整形を最後に流す（整形コマンドがあれば省略不可）
 
 **コミットの直前に、プロジェクトの整形コマンドを実行する。**
 
 ```bash
-# 例。プロジェクトに合わせる
+# 下の表の 1・2 で決まる例。プロジェクトに合わせる
 pnpm run fix        # prettier / eslint --fix
 cargo fmt
 ruff format .
 ```
+
+**整形コマンドは次の手がかりで、整形ツールごとに決める。** 対象のツールは 1〜3 の
+どこかに出てくるものすべて（スクリプトなら、その中身で呼んでいるもの）。ツールごとに
+上の行から見て、最初に当たった形で流す。`lint:fix` が eslint だけを呼び、CI が
+`prettier --check` を流しているなら、eslint は 1、prettier は 2 で流す。
+
+| 順 | 手がかり | 流すもの |
+| --- | --- | --- |
+| 1 | `package.json` の `format` / `fix` / `lint:fix`、`Makefile` / `Taskfile.yml` の `fmt` / `format` | そのスクリプト・ターゲット |
+| 2 | `.github/workflows/*.yml` の整形チェック | 書き込む形に直したもの（`prettier --check` → `prettier --write`、`cargo fmt --check` → `cargo fmt`、`ruff format --check` → `ruff format`） |
+| 3 | `.prettierrc*`、`pyproject.toml` の `[tool.ruff.format]` / `[tool.black]`、`.pre-commit-config.yaml` | そのツールを、コミットに入れるファイル（削除したものを除く）だけに流す（`prettier --write --ignore-unknown <files>` / `ruff format <files>` / `black <files>` / `pre-commit run --files <files>`） |
+
+2 で `--check` を外すだけにしない。`prettier <file>` は整形結果を標準出力に出すだけで
+ファイルを書き換えず、exit 0 で終わる。3 でリポジトリ全体に流さないのは、変更して
+いないファイルまで書き換わって差分が膨らむためである。prettier は扱えないファイルや
+存在しないファイルを渡すと exit 2 になるので、`--ignore-unknown` を付けて削除したものを
+除く。`pre-commit run` はフックがファイルを書き換えると exit 1 になる。もう一度流して
+exit 0 なら整形済みである。
+
+**手がかりが 1 つも無い、または手がかりのツールが入っていなくて流せないときは、
+`AskUserQuestion` で「整形せずにコミットする」か「整形コマンドを指定する」かを
+確認する。** 設定の無い整形ツールを自分で選んで流さない。
+Step 2 でコミット計画を確認するなら、同じ質問にまとめてよい。同じセッションの
+同じリポジトリで一度答えを得たら、次のコミットからは聞き直さない。
+非対話のときは流さずにコミットし、最終応答に整形していないことと理由（手がかりが
+無い / ツールが入っていない）を 1 行書く。
 
 整形を「作業の最初に一度やれば済むもの」として扱わない。**その後に 1 行でも
 編集すれば、未整形の箇所が生まれる。** 手元では気づかず、CI の lint で落ちる。
@@ -265,7 +291,7 @@ git stash drop
 
 ## 品質チェック
 
-- **最後の編集の後に整形コマンドを流したか**（Step 2.5）
+- **最後の編集の後に整形コマンドを流したか**（Step 2.5。整形コマンドが無ければ、ユーザーに確認したか。非対話なら、流していないことを最終応答に書いたか）
 - このコミットは単独で revert 可能か
 - 最小の論理単位になっているか
 - 変更の背景・意図が body に明確に書かれているか（自明な変更を除く）
