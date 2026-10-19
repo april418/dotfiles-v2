@@ -52,11 +52,11 @@ git ls-remote --exit-code --heads origin <候補>
 #### 通常ケース（作業ツリーが clean）
 
 ```bash
-# `<base-ref>` が `<base>` の場合（ローカルに存在）: 一旦 checkout してから rebase pull
+# `<base-ref>` が `<base>` の場合（ローカルにあり、ほかの worktree に無い）: 一旦 checkout してから rebase pull
 git switch <base>
 git pull --rebase origin <base>
 
-# `<base-ref>` が `origin/<base>` の場合（リモートのみ）: fetch して直接派生に使う
+# `<base-ref>` が `origin/<base>` の場合（リモートにしか無い、またはほかの worktree にある）: fetch して直接派生に使う
 git fetch origin
 ```
 
@@ -78,7 +78,7 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
 
   ```bash
   git stash push -u -m "<元のブランチ>: <退避した変更の内容>"
-  # ここで通常ケースの (b) を実施する（ローカル / リモートのみで分岐。ここには再掲しない）
+  # ここで通常ケースの (b) を実施する（<base-ref> で分岐。ここには再掲しない）
   git switch -c <new-branch> <base-ref>   # (c) 派生。ベースを明示する
   ```
 
