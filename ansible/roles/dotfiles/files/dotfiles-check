@@ -664,6 +664,11 @@ class Brew(Tool):
                 })
         return {"packages": packages}
 
+    def remark(self, data):
+        if not any(self.still_outdated(p) for p in data.get("packages", [])):
+            return None
+        return "Homebrew は版の公開日時を持たないので、待ち期間なしで上げる"
+
     @staticmethod
     def still_outdated(package):
         # 上げると版ごとのディレクトリが増える。取得時の current_version より新しい版に上がることもあるので、
@@ -1499,6 +1504,8 @@ def fits(text):
 
 
 UPDATE_GROUPS = [("dotfiles", "d", "dotfiles", "dotfiles"), ("tools", "t", "ツール", "tools"), ("brew", "b", "Homebrew", "tools")]
+# 質問の選択肢に添える。Homebrew は版の公開日時を持たず、ほかと違って待ち期間なしで上げる。
+UPDATE_NOTES = {"brew": "待ち期間なし"}
 
 
 def update_groups(dotfiles, tools):
@@ -1565,7 +1572,7 @@ def ask(groups, style, startup):
     """選ばれたグループを返す。n なら []、Enter や Ctrl-C など答えを得られなければ None。"""
     import termios
 
-    choices = [(g["letter"], g["title"]) for g in groups]
+    choices = [(g["letter"], g["title"] + (f"（{UPDATE_NOTES[g['id']]}）" if g["id"] in UPDATE_NOTES else "")) for g in groups]
     if len(groups) > 1:
         choices.append(("a", "すべて"))
     choices += [("n", "しない"), ("Enter", "あとで")]
