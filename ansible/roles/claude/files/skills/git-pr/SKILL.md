@@ -1,6 +1,6 @@
 ---
 name: git-pr
-description: PR の作成とマージに関するルール。gh pr create の前に含まれるコミットを説明文と突き合わせる手順、マージしてよいかの承認規律、merge commit 形式でのマージ、マージ直後のベース追従とマージ済みブランチの掃除。gh pr create / gh pr merge を実行する前と、PR がマージされた直後に参照する。共通ルールは git-workflow skill にある。
+description: PR の作成とマージに関するルール。gh pr create の前に含まれるコミットを説明文と突き合わせる手順、マージしてよいかの承認規律、merge commit 形式でのマージ、gh pr merge --delete-branch が worktree ごとにローカルで行うことと打つ前の確認、マージ直後のベース追従とマージ済みブランチの掃除。gh pr create / gh pr merge を実行する前と、PR がマージされた直後に参照する。共通ルールは git-workflow skill にある。
 ---
 
 # 概要
@@ -80,7 +80,8 @@ PR のマージは取り消しが難しく、CI/CD 経由でデプロイまで�
 gh pr merge <number> --merge --delete-branch
 ```
 
-`--delete-branch` はマージ済みのリモートブランチとローカルブランチを削除する。
+`--delete-branch` はマージ済みのリモートブランチを削除し、ローカルブランチも削除しようとする
+（ローカルでどこまでやるかは下の「`gh pr merge` を打つ前」の表）。
 マージ済みブランチを残すと、次に切るときに古いものを選ぶ余地が生まれる。
 削除してもマージコミットから復元できるので不可逆ではない。
 この削除はマージの名指しに含まれる。別に承認を取らない。
@@ -100,6 +101,58 @@ git-workflow のルール 8（ローカルでの `git merge` 禁止）と矛盾�
 - **リモート PR のマージ**: `gh pr merge --merge`（このルール）
 
 両者は対象が異なる。
+
+### `gh pr merge` を打つ前（省略不可）
+
+`--delete-branch` を付けると、gh はマージの後、リモートのブランチを消す前に、ローカルでも
+git を動かす。何をするかは、PR の head（作業ブランチ）をどの worktree がチェックアウトして
+いるかと、gh を打つ場所で決まる（gh v2.102.0 の `pkg/cmd/pr/merge/merge.go` の
+`deleteLocalBranch`）。`git worktree list` で各 worktree のブランチが分かり、1 行目が
+main worktree である。ローカルに `<head>` が無ければ、gh はローカルで何もしない。
+
+| head をチェックアウトしている worktree | gh を打つ場所 | gh がローカルで行うこと |
+| --- | --- | --- |
+| どこにも無い | どこでも | `git branch -D <head>` |
+| main worktree | その worktree | `git checkout <base>`（ローカルに無ければ `git checkout -b <base> --track origin/<base>`）→ `git pull --ff-only origin <base>` → `git branch -D <head>`。`<base>` がほかの worktree にあれば、警告を出して何もしない |
+| main worktree | linked worktree | 警告を出して何もしない |
+| linked worktree | その worktree | 警告を出して何もしない |
+| linked worktree | ほかの worktree | `git worktree remove -- <head の worktree>` → `git branch -D <head>` |
+
+打つ前に次の 3 つを確かめる。
+
+1. **head がほかの linked worktree にあるなら、その worktree で打つ。** ほかの worktree から
+   打つと、gh はその worktree を `git worktree remove` で消す。変更や未追跡ファイルがあれば
+   拒否されてローカルの削除を飛ばすが、無ければ `.gitignore` で無視されたファイルごと消える。
+   その worktree は、ほかのセッションの作業場所であることが多い。その worktree で打てば、
+   gh はローカルに触れない。移るのはそのコマンドの間だけにする。
+
+   ```bash
+   (cd <head の worktree> && gh pr merge <number> --merge --delete-branch)
+   ```
+
+   その worktree に残るブランチは、その worktree の持ち主が片付ける。最終応答に、残って
+   いることを書く。
+2. **push していないコミットが無いこと。** ローカルに `<head>` があれば、`git fetch origin`
+   の後に `git log --oneline origin/<head>..<head>` が空であることを確かめる。マージされるのは
+   リモートの head までで、gh の `git branch -D` はその先のコミットも消し、どのブランチからも
+   辿れなくなる。PR を番号で指定すると、gh はローカルとのずれを警告しない。空でなければ
+   マージせず、ユーザーに伝える。
+3. **自分の worktree で head をチェックアウトしているなら、未コミット変更が無いこと。**
+   `git status --short` に出力があれば、git-branch のルール 7 を踏む（選択肢は「表の例外」）。
+   コミットしても push しなければマージに入らず、2. の条件を満たさなくなる。持ち込むと、main worktree では
+   gh が `git checkout <base>` で変更を `<base>` へ移すか、checkout が拒否されて、リモートの
+   ブランチを消さないままエラーで止まる。linked worktree では gh は触れないが、直後の追従で
+   同じルール 7 を踏むので、ここで済ませる。stash は
+   `git stash push -u -m "<head>: <退避した変更の内容>"` で取る。gh がマージせずに止まったら、
+   head の上で `git stash list` からメッセージで探し、`git stash pop stash@{N}` で戻す。
+   マージまで進んだら、最終応答に、stash した変更がマージした PR に入っていないことも書く。
+
+stdout が端末でないと、gh はマージの成功もブランチの削除も出力せず、警告とエラーだけを出す
+（`infof` は `IsStdoutTTY()` のときだけ書く）。exit が 0 以外でも、マージは済んでいることがある。
+再実行せずに `gh pr view <number> --json state` で確かめる。`{"state":"MERGED"}` で、
+`git ls-remote --exit-code --heads origin <head>` が exit 0（head がリモートに残っている）なら、
+`git push origin --delete <head>` で消す。マージの名指しに含まれる削除なので、下の
+「リモートに残ったマージ済みブランチ」の、名指しがある場合に当たる。
 
 ### マージした直後にベースを最新へ戻す（省略不可）
 
@@ -197,7 +250,12 @@ git status -sb | head -1        # ## main...origin/main [behind N] が出てい�
 - [ ] PR をマージする場合、**その PR を名指しした明示要求**があるか？
       （曖昧な回答・URL 提示だけでは承認ではない。他人 author の PR は特に）
 - [ ] PR マージ時は `--merge --delete-branch` を使っているか？
-      （merge commit 形式で、リモートとローカルのブランチを同時に消す）
+      （merge commit 形式で、リモートのブランチを消す。ローカルは gh が飛ばすことがある）
+- [ ] **マージの前に** 3 つを確かめたか？
+      （head がほかの linked worktree にあるならそこで打つ。
+      `git log --oneline origin/<head>..<head>` が空。
+      自分の worktree が head をチェックアウトしているなら未コミット変更が無い）
+- [ ] gh の exit が 0 以外のとき、再実行せずに `gh pr view <number> --json state` を見たか？
 - [ ] **マージした後、ベースブランチへ戻して `pull --rebase` したか？**
       （作業ブランチに留まると手元が遅れ、次に切るブランチが古いベースを指す。
       ユーザーがマージした場合も同じ。未コミット変更は持ち込まない。
