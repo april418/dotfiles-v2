@@ -185,7 +185,7 @@ git log --oneline <base-ref>..HEAD
 
 | 直前の操作 | 確かめること |
 | --- | --- |
-| 新しいブランチを切った | `git log --oneline <base-ref>..HEAD` が空であること |
+| 新しいブランチを切った | `git branch --show-current` が新しいブランチであることと、`git log --oneline <base-ref>..HEAD` が空であること |
 | 同じブランチの上で rebase / stash pop をした | `git log --oneline <base-ref>..HEAD` がそのブランチの作業だけであること |
 | 統合ブランチへ切り替えた（pull の前後） | `git status -sb` の 1 行目のブランチ名が切り替え先で、`[ahead N]` が無いこと（統合ブランチに自分のコミットは無いはず） |
 | 別の作業ブランチへ切り替えた | `git branch --show-current` が切り替え先であることと、`git log --oneline @{upstream}..HEAD` が push 前の自分のコミットだけであること（upstream が無ければ `<base-ref>..HEAD`） |
@@ -258,7 +258,8 @@ git status --short
 
 - [ ] **ブランチを切る場合、`git switch -c <new> <base-ref>` とベースを明示したか？**
       （引数を省くと現在の HEAD から切られ、直前の作業ブランチのコミットを引き連れる）
-- [ ] **派生直後に** `git log --oneline <base-ref>..HEAD` が**空である**ことを確認したか？
+- [ ] **派生直後に** `git branch --show-current` が新しいブランチで、
+      `git log --oneline <base-ref>..HEAD` が**空である**ことを確認したか？
       （※空を期待してよいのは**派生直後だけ**。作業が進んだブランチでは
       空でないのが正常で、そこで空を期待すると誤検知する）
 - [ ] **HEAD が動く操作（派生・切り替え・切り直し・rebase・stash pop）の後に**
