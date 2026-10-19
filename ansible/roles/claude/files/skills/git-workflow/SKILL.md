@@ -133,6 +133,11 @@ git 操作についてはこの表が正本である。
 現在のブランチが統合ブランチのまま変更を加えようとしている場合、
 コミット前に `AskUserQuestion` で新しい作業ブランチを切るか確認する。
 
+detach した HEAD（git-pr のルール 11 のマージ直後の追従で `origin/<base>` に detach した後など）
+でもコミットしない。rebase / cherry-pick の途中で git が作るコミットは除く（ルール 4 の例外）。
+そのコミットはどのブランチにも載らず、別のブランチへ切り替えるとどのブランチからも
+辿れなくなる。先に作業ブランチを切る。
+
 ## 【重要】ベース参照 `<base-ref>` の定義
 
 **git-branch のルール 3 (b) (c) (d)、git-pr のルール 11、git-recovery のルール 10 は、
@@ -141,16 +146,31 @@ git 操作についてはこの表が正本である。
 
 | (a) で選んだベースの所在 | `<base-ref>` |
 | --- | --- |
-| ローカルに存在する（`refs/heads/<base>` がある） | `<base>` |
-| リモートのみに存在する | `origin/<base>` |
+| ローカルにあり（`refs/heads/<base>` がある）、ほかの worktree でチェックアウトされていない | `<base>` |
+| リモートにしか無い、またはほかの worktree でチェックアウトされている | `origin/<base>` |
+
+ほかの worktree でチェックアウトされているかは次のコマンドで分かる。出力が空か、
+今の worktree のパス（`git rev-parse --show-toplevel`）なら、されていない。
+
+```bash
+git for-each-ref --format='%(worktreepath)' refs/heads/<base>
+```
+
+ほかの worktree でチェックアウトされている `<base>` は、ここからは更新できない。
+`git switch <base>` も `git fetch origin <base>:<base>` も exit 128 で拒否される
+（`'<base>' is already used by worktree at '<path>'` / `refusing to fetch into branch`）。
 
 **一度決めたら最後まで同じものを使う。** 途中で `<base>` と `origin/<base>` を
-混ぜると、リモートのみのケースで `unknown revision` になって落ちる。
+混ぜると、リモートのみのケースで `unknown revision` になって落ちる。ほかの worktree に
+あるケースでは落ちずに、更新できない古い `<base>` を黙って使う。
 以降のコマンド例に出てくる `<base-ref>` はすべてこの値に置き換えて読むこと。
 
 **この分岐は観測結果に従うものであって、選択肢ではない。**
 リモートのみだったベースを、わざわざ `git switch <base>` でローカル化して
 「ローカルにある側」の手順に乗り換えない。`origin/<base>` のまま最後まで通せる。
+ほかの worktree にあるベースも `git switch --ignore-other-worktrees <base>` で切り替えない。
+同じブランチを 2 つの worktree でチェックアウトすると、片方でコミットしたとき、もう片方の
+index が新しい HEAD とずれ、そのコミットを打ち消す変更がステージされた状態になる。
 
 ## ルール 4: コミットは必ず `git-commit` スキルに委譲する
 
@@ -211,7 +231,7 @@ git 操作のうちコミット作成を行う場面では、**自前で `git co
 `git merge` は使用しない。ブランチの統合は rebase で行う。
 
 - `git pull` は常に `--rebase` を付ける
-- 作業ブランチをベースブランチに追従させる場合も `git rebase <base>` を使う
+- 作業ブランチをベースブランチに追従させる場合も `git rebase <base-ref>` を使う
 - `git merge` を使ってよいのはユーザーが明示的に指示した場合のみ
 
 ```bash
@@ -219,7 +239,7 @@ git 操作のうちコミット作成を行う場面では、**自前で `git co
 git pull --rebase origin <branch>
 
 # ベースブランチへの追従
-git rebase <base>
+git rebase <base-ref>
 ```
 
 コンフリクトが発生した場合の扱いは **git-recovery のルール 10** に集約する

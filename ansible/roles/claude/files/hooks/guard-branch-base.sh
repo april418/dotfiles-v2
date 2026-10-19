@@ -84,22 +84,25 @@ cat >&2 <<EOS
 コミットを新しいブランチが引き連れることになり、PR に無関係な変更が混ざります。
 ブランチ名も差分も正しく見えるため、マージするまで気づけません。
 
-対処 (<base-ref> は、ベースがローカルにあれば <base>、リモートにしか無ければ
-origin/<base> です。ローカルにあるかは git show-ref --verify --quiet refs/heads/<base>
-の成否で分かります):
+対処 (<base-ref> は、ベースがローカルにあり、ほかの worktree でチェックアウトされて
+いなければ <base>、それ以外は origin/<base> です。ローカルにあるかは
+git show-ref --verify --quiet refs/heads/<base> の成否で、ほかの worktree にあるかは
+git for-each-ref --format='%(worktreepath)' refs/heads/<base> の出力が空でないかで分かります):
 
   1. git-branch skill のルール 3 の (a) でベースを選び、(b) に従って最新化する
-       ローカルにある:     git switch <base> && git pull --rebase origin <base>
-       リモートにしか無い: git fetch origin
+       <base-ref> が <base>:        git switch <base> && git pull --rebase origin <base>
+       <base-ref> が origin/<base>: git fetch origin
 
-  2. ベースを明示して派生する
-       git switch -c <new-branch> <base-ref>
+  2. ベースを明示して派生する (--no-track は -c <new-branch> より後ろに置きます)
+       git switch -c <new-branch> <base-ref> --no-track
 
   3. 派生直後に確認する
        git branch --show-current            # <new-branch> であること
        git log --oneline <base-ref>..HEAD   # 空であること
 
 リモートにしか無いベースは git switch <base> でローカルに作らず、origin/<base> のまま使います。
+ほかの worktree にあるベースへの git switch <base> は exit 128 で失敗します。
+--ignore-other-worktrees で押し通さず、origin/<base> を使います。
 
 未コミット変更がある場合は、1. の代わりに git-branch skill のルール 3 (b) 例外 1
 に従います (先にルール 7 で扱いを決めます。pull --rebase はステージ済みか未ステージの

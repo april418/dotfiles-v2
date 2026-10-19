@@ -52,11 +52,11 @@ git ls-remote --exit-code --heads origin <候補>
 #### 通常ケース（作業ツリーが clean）
 
 ```bash
-# `<base-ref>` が `<base>` の場合（ローカルに存在）: 一旦 checkout してから rebase pull
+# `<base-ref>` が `<base>` の場合（ローカルにあり、ほかの worktree に無い）: 一旦 checkout してから rebase pull
 git switch <base>
 git pull --rebase origin <base>
 
-# `<base-ref>` が `origin/<base>` の場合（リモートのみ）: fetch して直接派生に使う
+# `<base-ref>` が `origin/<base>` の場合（リモートにしか無い、またはほかの worktree にある）: fetch して直接派生に使う
 git fetch origin
 ```
 
@@ -78,8 +78,8 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
 
   ```bash
   git stash push -u -m "<元のブランチ>: <退避した変更の内容>"
-  # ここで通常ケースの (b) を実施する（ローカル / リモートのみで分岐。ここには再掲しない）
-  git switch -c <new-branch> <base-ref>   # (c) 派生。ベースを明示する
+  # ここで通常ケースの (b) を実施する（<base-ref> で分岐。ここには再掲しない）
+  git switch -c <new-branch> <base-ref> --no-track   # (c) 派生。ベースを明示する
   ```
 
   この場合は (b) 取得・更新を **完遂** する。この後 **(d) の検証を必ず実施する**。
@@ -105,8 +105,8 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
 - **「そのまま持ち込む」を選んだ場合**:
 
   ```bash
-  git fetch origin                        # <base-ref> が origin/<base> の場合のみ
-  git switch -c <new-branch> <base-ref>   # (c) 派生。この経路でもベースを明示する
+  git fetch origin                                   # <base-ref> が origin/<base> の場合のみ
+  git switch -c <new-branch> <base-ref> --no-track   # (c) 派生。この経路でもベースを明示する
   ```
 
   git が派生を受け付ければ、未コミット変更（ステージ済み・未追跡を含む）は新ブランチへ
@@ -151,10 +151,15 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
 そのブランチのコミットを引き連れてしまう。
 
 ```bash
-git switch -c <new-branch> <base-ref>
+git switch -c <new-branch> <base-ref> --no-track
 ```
 
 `<base-ref>` は git-workflow の `<base-ref>` 定義表で決めた参照（`<base>` または `origin/<base>`）。
+
+`--no-track` を付ける。`<base-ref>` が `origin/<base>` だと、付けなければ新ブランチの
+upstream が `origin/<base>` になる。git-push skill は upstream があると初回 push に `-u` を
+付けず、`@{upstream}..HEAD` が push 済みのコミットも数え続ける。`--no-track` は `-c <new-branch>`
+より後ろに置く。前に置くと、ベースを書き忘れてもフック（`guard-branch-base.sh`）が止めない。
 
 ### (d) 検証（省略不可）
 
@@ -176,6 +181,7 @@ git log --oneline <base-ref>..HEAD
 | --- | --- |
 | `git switch -c` / `checkout -b`（派生） | **要る** |
 | `git switch <既存ブランチ>`（切り替え） | **要る** |
+| `git switch --detach <ref>` | **要る** |
 | `git switch -C`（切り直し） | **要る** |
 | `git stash pop` の後 | **要る**（作業ツリーが変わる） |
 | `git rebase` の後 | **要る** |
@@ -188,6 +194,7 @@ git log --oneline <base-ref>..HEAD
 | 新しいブランチを切った | `git branch --show-current` が新しいブランチであることと、`git log --oneline <base-ref>..HEAD` が空であること |
 | 同じブランチの上で rebase / stash pop をした | `git log --oneline <base-ref>..HEAD` がそのブランチの作業だけであること |
 | 統合ブランチへ切り替えた（pull の前後） | `git status -sb` の 1 行目のブランチ名が切り替え先で、`[ahead N]` が無いこと（統合ブランチに自分のコミットは無いはず） |
+| `origin/<base>` に detach した | `git branch --show-current` の出力が空で、`git rev-parse HEAD origin/<base>` の 2 行が同じであること |
 | 別の作業ブランチへ切り替えた | `git branch --show-current` が切り替え先であることと、`git log --oneline @{upstream}..HEAD` が push 前の自分のコミットだけであること（upstream が無ければ `<base-ref>..HEAD`） |
 
 切り替えでも要るのは、**直前のコマンドが失敗していても気づけない**ため。
@@ -227,12 +234,13 @@ git status --short
 
 | 現在のブランチ | 提示する選択肢 | 対話時の推奨 | 非対話時の既定 |
 | --- | --- | --- | --- |
-| 統合ブランチ（`develop` / `master` / `main`） | stash / そのまま持ち込む の **2 択** | そのまま持ち込む | **そのまま持ち込む** |
+| 統合ブランチ（`develop` / `master` / `main`）、または detach した HEAD | stash / そのまま持ち込む の **2 択** | そのまま持ち込む | **そのまま持ち込む** |
 | 作業ブランチ（`feature/*` / `hotfix/*`） | 3 択すべて | コミットしてから進める | **stash して進める** |
 
-統合ブランチでは「現在のブランチでコミットしてから進める」は**git-workflow のルール 2 違反に
-なるため提示しない**。統合ブランチにはコミットしないので、そこにある未コミット変更は
-新ブランチの作業に属するとみなす。残る 2 択のうち「そのまま持ち込む」が最短経路である。
+統合ブランチと detach した HEAD では「現在のブランチでコミットしてから進める」は
+**git-workflow のルール 2 違反になるため提示しない**。そこにはコミットしないので、そこにある
+未コミット変更は新ブランチの作業に属するとみなす。残る 2 択のうち「そのまま持ち込む」が
+最短経路である。
 
 作業ブランチ上の未コミット変更は、逆にそのブランチの作業の続きであることが多い。
 持ち込むと新ブランチに別件の変更が混ざるため、非対話では stash を既定にし、
@@ -246,13 +254,21 @@ git status --short
 拒否されたファイルは HEAD とベースで中身が違うので、新ブランチで pop すると衝突しうる
 （衝突しても stash は残る）。衝突したら git-recovery のルール 10 に従う。
 
-`git pull --rebase` を飛ばせない場面では「そのまま持ち込む」を提示しない。既定の設定の
-`git pull --rebase` は、ステージ済みか未ステージの変更があると exit 128 で拒否する。
-ルール 3 (b) 例外 1 は pull を飛ばして派生するので持ち込めるが、git-pr のルール 11 の
-マージ直後の追従は pull そのものが目的である。この場面では、作業ブランチならコミットと
-stash の 2 択で、推奨は stash である（マージ済みのブランチにコミットしても、その PR には
-入らない）。統合ブランチでは確認せずに stash して進める。非対話時はどちらのブランチでも
-stash して進める。未追跡ファイルだけなら pull は通るが、場合分けを増やさないよう区別しない。
+git-pr のルール 11 のマージ直後の追従では「そのまま持ち込む」を提示しない。`<base-ref>` が
+`<base>` なら、追従は `git pull --rebase` そのものが目的である。既定の設定の
+`git pull --rebase` は、ステージ済みか未ステージの変更があると exit 128 で拒否する
+（ルール 3 (b) 例外 1 は pull を飛ばして派生するので持ち込める）。`<base-ref>` が
+`origin/<base>` なら追従は `git switch --detach` で、git は変更を持ち込める。ただ、マージ済みの
+作業ブランチにある変更は、持ち込むと次に切るブランチへそのまま移る。この場面では、
+作業ブランチならコミットと stash の 2 択で、推奨は stash である（マージ済みのブランチに
+コミットしても、その PR には入らない）。統合ブランチと detach した HEAD では確認せずに
+stash して進める。非対話時はどれでも stash して進める。未追跡ファイルだけなら pull は通るが、
+場合分けを増やさないよう区別しない。
+
+git-pr のルール 11 のマージの前に踏む場合は、コミットも持ち込みも提示しない（理由は
+git-pr のルール 11 の「`gh pr merge` を打つ前」）。対話時は「stash してマージする」と
+「マージを止める」の 2 択で、推奨は stash してマージする。変更を PR に入れたいなら、
+ユーザーはマージを止めて PR を更新できる。非対話時は stash してマージする。
 
 ### 「安全な場合のみ」の判定
 
@@ -266,15 +282,16 @@ stash して進める。未追跡ファイルだけなら pull は通るが、�
 
 ## チェックリスト
 
-- [ ] **ブランチを切る場合、`git switch -c <new> <base-ref>` とベースを明示したか？**
-      （引数を省くと現在の HEAD から切られ、直前の作業ブランチのコミットを引き連れる）
+- [ ] **ブランチを切る場合、`git switch -c <new> <base-ref> --no-track` とベースを明示したか？**
+      （引数を省くと現在の HEAD から切られ、直前の作業ブランチのコミットを引き連れる。
+      `--no-track` が無いと、`origin/<base>` から切ったときに upstream が `origin/<base>` になる）
 - [ ] **派生直後に** `git branch --show-current` が新しいブランチで、
       `git log --oneline <base-ref>..HEAD` が**空である**ことを確認したか？
       （※空を期待してよいのは**派生直後だけ**。作業が進んだブランチでは
       空でないのが正常で、そこで空を期待すると誤検知する）
-- [ ] **HEAD が動く操作（派生・切り替え・切り直し・rebase・stash pop）の後に**
-      `git log --oneline <base-ref>..HEAD` を確認したか？
+- [ ] **HEAD が動く操作（派生・切り替え・detach・切り直し・rebase・stash pop）の後に**
+      (d) の「直前の操作」の表で確認したか？
       （直前のコマンドが失敗していても、次が成功して混在状態になることがある。
-      統合ブランチへ切り替えた後は `git status -sb` で見る）
+      統合ブランチへ切り替えた後は `git status -sb`、detach した後は `git rev-parse` で見る）
 - [ ] 未コミット変更の扱いは明確か？
       （別件を stash したなら、残した場所と戻し方を最終応答に書いたか）

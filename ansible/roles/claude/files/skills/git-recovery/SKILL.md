@@ -106,8 +106,8 @@ git-branch のルール 3 (d) の直後は対象ブランチを**チェックア
 切り直した後に `git stash pop` で戻す。
 
 ```bash
-git switch -C <new-branch> <base-ref>    # 同名ブランチが既にあるので -c ではなく -C
-git log --oneline <base-ref>..HEAD       # 空であることを再確認
+git switch -C <new-branch> <base-ref> --no-track   # 同名ブランチが既にあるので -c ではなく -C
+git log --oneline <base-ref>..HEAD                 # 空であることを再確認
 ```
 
 `-c` は `fatal: a branch named '<new-branch>' already exists` で失敗する。
@@ -127,8 +127,8 @@ git log --oneline <base-ref>..HEAD       # 空であることを再確認
 `AskUserQuestion` で確認する（非対話時は規約に沿って決め、最終応答で明示する）。
 
 ```bash
-# ベースの取得・更新は git-branch のルール 3 (b) に従う（ローカル/リモートのみで分岐する。ここには再掲しない）
-git switch -c <別の新ブランチ名> <base-ref>
+# ベースの取得・更新は git-branch のルール 3 (b) に従う（<base-ref> で分岐する。ここには再掲しない）
+git switch -c <別の新ブランチ名> <base-ref> --no-track
 git log --oneline <base-ref>..HEAD       # 空であること
 git cherry-pick <必要なコミット>           # 複数ある場合は古い順に並べる
 git log --oneline <base-ref>..HEAD       # 意図したコミットだけになったか再確認
