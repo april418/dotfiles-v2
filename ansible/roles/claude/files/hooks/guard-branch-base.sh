@@ -93,8 +93,8 @@ git for-each-ref --format='%(worktreepath)' refs/heads/<base> の出力が空で
        <base-ref> が <base>:        git switch <base> && git pull --rebase origin <base>
        <base-ref> が origin/<base>: git fetch origin
 
-  2. ベースを明示して派生する
-       git switch -c <new-branch> <base-ref>
+  2. ベースを明示して派生する (--no-track は -c <new-branch> より後ろに置きます)
+       git switch -c <new-branch> <base-ref> --no-track
 
   3. 派生直後に確認する
        git branch --show-current            # <new-branch> であること

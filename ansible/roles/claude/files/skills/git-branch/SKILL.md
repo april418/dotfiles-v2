@@ -79,7 +79,7 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
   ```bash
   git stash push -u -m "<元のブランチ>: <退避した変更の内容>"
   # ここで通常ケースの (b) を実施する（<base-ref> で分岐。ここには再掲しない）
-  git switch -c <new-branch> <base-ref>   # (c) 派生。ベースを明示する
+  git switch -c <new-branch> <base-ref> --no-track   # (c) 派生。ベースを明示する
   ```
 
   この場合は (b) 取得・更新を **完遂** する。この後 **(d) の検証を必ず実施する**。
@@ -105,8 +105,8 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
 - **「そのまま持ち込む」を選んだ場合**:
 
   ```bash
-  git fetch origin                        # <base-ref> が origin/<base> の場合のみ
-  git switch -c <new-branch> <base-ref>   # (c) 派生。この経路でもベースを明示する
+  git fetch origin                                   # <base-ref> が origin/<base> の場合のみ
+  git switch -c <new-branch> <base-ref> --no-track   # (c) 派生。この経路でもベースを明示する
   ```
 
   git が派生を受け付ければ、未コミット変更（ステージ済み・未追跡を含む）は新ブランチへ
@@ -151,10 +151,15 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
 そのブランチのコミットを引き連れてしまう。
 
 ```bash
-git switch -c <new-branch> <base-ref>
+git switch -c <new-branch> <base-ref> --no-track
 ```
 
 `<base-ref>` は git-workflow の `<base-ref>` 定義表で決めた参照（`<base>` または `origin/<base>`）。
+
+`--no-track` を付ける。`<base-ref>` が `origin/<base>` だと、付けなければ新ブランチの
+upstream が `origin/<base>` になる。git-push skill は upstream があると初回 push に `-u` を
+付けず、`@{upstream}..HEAD` が push 済みのコミットも数え続ける。`--no-track` は `-c <new-branch>`
+より後ろに置く。前に置くと、ベースを書き忘れてもフック（`guard-branch-base.sh`）が止めない。
 
 ### (d) 検証（省略不可）
 
@@ -266,8 +271,9 @@ stash して進める。未追跡ファイルだけなら pull は通るが、�
 
 ## チェックリスト
 
-- [ ] **ブランチを切る場合、`git switch -c <new> <base-ref>` とベースを明示したか？**
-      （引数を省くと現在の HEAD から切られ、直前の作業ブランチのコミットを引き連れる）
+- [ ] **ブランチを切る場合、`git switch -c <new> <base-ref> --no-track` とベースを明示したか？**
+      （引数を省くと現在の HEAD から切られ、直前の作業ブランチのコミットを引き連れる。
+      `--no-track` が無いと、`origin/<base>` から切ったときに upstream が `origin/<base>` になる）
 - [ ] **派生直後に** `git branch --show-current` が新しいブランチで、
       `git log --oneline <base-ref>..HEAD` が**空である**ことを確認したか？
       （※空を期待してよいのは**派生直後だけ**。作業が進んだブランチでは
