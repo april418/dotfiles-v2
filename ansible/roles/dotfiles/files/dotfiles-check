@@ -117,6 +117,33 @@ def run(args, timeout):
     return stdout, stderr
 
 
+# 既定で使える証明書を持たない Python（python.org の配布物は Install Certificates を流すまで持たない）のときに使う。
+# macOS の Homebrew の束は、キーチェーンで信頼された証明書も取り込んで作られる。
+CA_BUNDLES = [
+    "/opt/homebrew/etc/ca-certificates/cert.pem",
+    "/usr/local/etc/ca-certificates/cert.pem",
+    "/etc/ssl/cert.pem",
+    "/etc/ssl/certs/ca-certificates.crt",
+    "/etc/pki/tls/certs/ca-bundle.crt",
+    "/etc/ssl/ca-bundle.pem",
+]
+_ssl_context = []
+
+
+def ssl_context():
+    """既定の証明書が使えれば None（urlopen の既定に任せる）、使えなければ CA_BUNDLES で検証する context。"""
+    if not _ssl_context:
+        import ssl
+
+        paths = ssl.get_default_verify_paths()
+        usable = (paths.cafile and os.path.isfile(paths.cafile)) or (
+            paths.capath and os.path.isdir(paths.capath) and os.listdir(paths.capath)
+        )
+        bundle = None if usable else next((b for b in CA_BUNDLES if os.path.isfile(b)), None)
+        _ssl_context.append(ssl.create_default_context(cafile=bundle) if bundle else None)
+    return _ssl_context[0]
+
+
 def http_get(url, token=None):
     """(HTTP の状態コード, 本文) を返す。通信できなければ FetchError を投げる。"""
     # notify は通信しないので、遅い ssl などの import を取得のときまで遅らせる。
@@ -128,7 +155,7 @@ def http_get(url, token=None):
         # 通常のヘッダーはリダイレクト先が別のホストでも引き継がれる。トークンは最初の宛先にだけ送る。
         request.add_unredirected_header("Authorization", f"Bearer {token}")
     try:
-        with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as r:
+        with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT, context=ssl_context()) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, b""
