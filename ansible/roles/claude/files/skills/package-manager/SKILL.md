@@ -55,6 +55,7 @@ description: パッケージマネージャー（pnpm, npm, yarn, uv 等）や�
 pnpm install --config.engine-strict=false
 pnpm install --config.minimumReleaseAge=0
 pnpm install --config.package-manager-strict=false
+pnpm install --pm-on-fail=ignore
 npm install --engine-strict=false
 
 # Python — 絶対にやってはいけない
@@ -208,29 +209,27 @@ lockfile を再生成して整合性を取る。
 
 ---
 
-## ルール 5: pnpm audit の実行方法（暫定対応）
+## ルール 5: pnpm 10 以下の audit が 410 を返したとき
 
-pnpm v10.x では `pnpm audit` が npm レジストリの旧エンドポイント廃止により
-410 エラーで動作しない（pnpm/pnpm#11265）。
+pnpm 10 以下の `pnpm audit` は、npm が廃止を予告している旧エンドポイント
+（`/-/npm/v1/security/audits` と `/audits/quick`）を使うため、410 で失敗することがある
+（pnpm/pnpm#11265）。pnpm 11 以降は後継の `/-/npm/v1/security/advisories/bulk` を使う。
 
-代替コマンド:
-
-```bash
-pnpm dlx pnpm@11.0.0-rc.1 audit
-```
-
-CI 環境では `minimumReleaseAge` と `packageManagerStrictVersion` の
-制約により `pnpm dlx` 自体が失敗するため、以下のように実行する:
+`ERR_PNPM_AUDIT_BAD_RESPONSE` で 410 が出たら、pnpm 11 を一時的に取ってきて audit する。
+`--prod` など audit に渡していた引数はそのまま付ける。
 
 ```bash
-pnpm dlx --config.minimumReleaseAge=0 pnpm@11.0.0-rc.1 --config.package-manager-strict=false audit
+pnpm dlx pnpm@11 --pm-on-fail=ignore audit --prod
 ```
 
-**注意:** `pnpm dlx` で一時的に別バージョンの pnpm を実行する場合の
-`--config` フラグは **ルール 1 の例外** とする。
-これは `pnpm dlx` 自体の実行に必要な設定であり、
-プロジェクトの依存関係や lockfile に影響しないためである。
-pnpm 11 が正式リリースされたらこの回避策は不要になる。
+- `--pm-on-fail=ignore` を外すと、pnpm 11 はプロジェクトが宣言した pnpm 10 との食い違いで止まるか、pnpm 10 に切り替わって同じ 410 になる
+- pnpm 11 は pnpm 10 の audit の除外設定を一部読まない。package.json の `pnpm` フィールドは丸ごと無視し、`pnpm-workspace.yaml` の `auditConfig.ignoreCves` も読まない。除外していた脆弱性でも失敗するので、報告にその旨を添える
+- pnpm 11 は Node.js 22.13 以上が要る。Node.js がそれより古いとき、または pnpm 11 でも失敗したときは、ほかの回避を試さず audit の失敗として報告する
+- `--ignore-registry-errors` では回避しない。レジストリのエラーを成功扱いにし、脆弱性を見ないまま通してしまう
+
+この audit で `pnpm dlx pnpm@11` に渡す `--pm-on-fail=ignore` に限り、**ルール 1 の例外** とする。
+`pnpm dlx` で取ってきた一時的な pnpm にプロジェクトの PM の宣言を無視させるだけで、
+プロジェクトの依存関係や lockfile には影響しないためである。
 
 ---
 
