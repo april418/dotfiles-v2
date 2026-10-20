@@ -1,9 +1,9 @@
 """guard-branch-base.sh が使う、bash のコマンド文字列の解析。
 
 標準入力のコマンド文字列から、ベース (start-point) を付けずにブランチを作る
-git switch -c / -C と git checkout -b / -B を探す。見つけたコマンドごとに、
-対象のリポジトリの現在のブランチを 1 行ずつ標準出力へ書く。detach していれば
-HEAD を書き、リポジトリを特定できなければその行を書かない。
+git switch -c / -C、git checkout -b / -B、git worktree add -b / -B を探す。見つけた
+コマンドごとに、対象のリポジトリの現在のブランチを 1 行ずつ標準出力へ書く。detach
+していれば HEAD を書き、リポジトリを特定できなければその行を書かない。
 
 引数は 1 つで、コマンドを実行するディレクトリ (フック入力の cwd)。cd / pushd / popd の
 後ろのコマンドは移動先で判定する。移動先が実行時まで決まらないもの (cd "$X"、直前に
@@ -52,6 +52,7 @@ SWITCH = {
         "progress", "merge", "conflict", "detach", "track", "force", "orphan",
         "overwrite-ignore", "ignore-other-worktrees",
     },
+    "paths": 0,  # 起点より前に置く位置引数の数
     # git switch -c <new> -- <start-point> は -- の後ろを起点にする。
     "start_after_dashdash": True,
 }
@@ -65,8 +66,24 @@ CHECKOUT = {
         "ignore-other-worktrees", "ours", "theirs", "patch", "unified", "inter-hunk-context",
         "ignore-skip-worktree-bits", "pathspec-from-file", "pathspec-file-nul",
     },
+    "paths": 0,
     # git checkout -b <new> -- <x> の x はパスとして扱われ、起点にならない。
     "start_after_dashdash": False,
+}
+# git worktree add -h の一覧 (2.54 と 2.56 で同じ)。-b / -B に長い名前は無い。
+WORKTREE_ADD = {
+    "create": {"b", "B"},
+    "value": {"reason"},
+    "optional": set(),
+    "longs": {
+        "force", "orphan", "detach", "checkout", "lock", "reason", "quiet", "track",
+        "guess-remote", "relative-paths",
+    },
+    # git worktree add -b <new> <path> [<commit-ish>]。-- の後ろも <path> と起点として読む。
+    "paths": 1,
+    "start_after_dashdash": True,
+    # --orphan -b <new> は中身の無いブランチを作るので、HEAD のコミットを引き連れない
+    "unborn": {"orphan"},
 }
 
 
@@ -427,22 +444,23 @@ def resolve_long(name, longs):
 
 
 def lacks_start_point(args, spec):
-    """git switch / checkout の引数が、起点を付けずにブランチを作るものか。"""
-    creates = False
-    starts = 0
+    """git switch / checkout / worktree add の引数が、起点を付けずにブランチを作るものか。"""
+    creates = unborn = False
+    operands = 0
     k = 0
     while k < len(args):
         a = args[k]
         k += 1
         if a == "--":
             if spec["start_after_dashdash"]:
-                starts += len(args) - k
+                operands += len(args) - k
             break
         if a.startswith("--"):
             name, eq, _ = a[2:].partition("=")
             name = resolve_long(name, spec["longs"])
             if name in spec["create"]:
                 creates = True
+            unborn = unborn or name in spec.get("unborn", ())
             if (name in spec["create"] or name in spec["value"]) and not eq:
                 k += 1
         elif a.startswith("-") and a != "-":
@@ -457,8 +475,9 @@ def lacks_start_point(args, spec):
                 if ch in spec["optional"]:
                     break
         else:
-            starts += 1
-    return creates and starts == 0
+            operands += 1
+    # 位置引数が起点の手前までしか無ければ、起点を省いている
+    return creates and not unborn and operands == spec["paths"]
 
 
 def unbased_branch_repo(args):
@@ -475,10 +494,13 @@ def unbased_branch_repo(args):
             if a.split("=", 1)[0] in GIT_REPO_OPTS:
                 repo.append(a)
             k += 1
-    if k >= len(args):
+    if args[k:k + 2] == ["worktree", "add"]:
+        spec, rest = WORKTREE_ADD, args[k + 2:]
+    elif k < len(args):
+        spec, rest = {"switch": SWITCH, "checkout": CHECKOUT}.get(args[k]), args[k + 1:]
+    else:
         return None
-    spec = {"switch": SWITCH, "checkout": CHECKOUT}.get(args[k])
-    if spec is None or not lacks_start_point(args[k + 1:], spec):
+    if spec is None or not lacks_start_point(rest, spec):
         return None
     return repo
 

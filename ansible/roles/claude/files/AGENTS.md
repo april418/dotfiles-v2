@@ -452,7 +452,7 @@ stderr の指示に従って修正すること。フックを迂回しようと�
 
 | フック | 止めるもの |
 | --- | --- |
-| `~/.claude/hooks/guard-branch-base.sh` | 作業ブランチ上でベースを指定しない `git switch -c` / `-C`、`git checkout -b` / `-B` |
+| `~/.claude/hooks/guard-branch-base.sh` | 作業ブランチ上でベースを指定しない `git switch -c` / `-C`、`git checkout -b` / `-B`、`git worktree add -b` / `-B` |
 
 これらは「守れているつもりで抜けても気づけない」種類の失敗に対する備えである。
 ルールが文章として存在していても防げなかった実績があるため、機械化した。

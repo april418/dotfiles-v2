@@ -2,9 +2,9 @@
 # ==================================================
 # 作業ブランチからのベース未指定な派生をブロックする
 # ==================================================
-# git switch -c / -C や git checkout -b / -B にベースを指定しないと、現在の HEAD から
-# 分岐する。作業ブランチ上でこれを実行すると、そのブランチのコミットを
-# 引き連れた新ブランチができる。
+# git switch -c / -C、git checkout -b / -B、git worktree add -b / -B にベースを
+# 指定しないと、現在の HEAD から分岐する。作業ブランチ上でこれを実行すると、
+# そのブランチのコミットを引き連れた新ブランチができる。
 #
 # 厄介なのは、そうなってもブランチ名も差分も正しく見えることである。
 # PR を作るまで表面化せず、説明文に書いていないコミットがレビューされない
@@ -52,9 +52,9 @@ CWD="$(extract cwd)"
 
 [ -n "$COMMAND" ] || exit 0
 
-# 解析器の不具合が無関係なコマンドに及ばないよう、どちらの語も無いものは解析しない。
+# 解析器の不具合が無関係なコマンドに及ばないよう、どの語も無いものは解析しない。
 case "$COMMAND" in
-  *switch*|*checkout*) ;;
+  *switch*|*checkout*|*worktree*) ;;
   *) exit 0 ;;
 esac
 
@@ -93,8 +93,9 @@ git for-each-ref --format='%(worktreepath)' refs/heads/<base> の出力が空で
 
   2. ベースを明示して派生する (-C / -B で切り直すときも <base-ref> を付けます)
        git switch -c <new-branch> <base-ref> --no-track
+       git worktree add --no-track -b <new-branch> <path> <base-ref>   # worktree を作る場合
 
-  3. 派生直後に確認する
+  3. 派生直後に確認する (worktree を作った場合は git -C <path> で打ちます)
        git branch --show-current            # <new-branch> であること
        git log --oneline <base-ref>..HEAD   # 空であること
 
