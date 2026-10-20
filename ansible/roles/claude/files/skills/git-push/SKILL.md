@@ -112,6 +112,9 @@ git remote
 **`scripts.test` の値が `npm init` / `pnpm init` の既定の `echo "Error: no test specified" && exit 1` と完全に一致するときは、定義されていないものとして扱う。** package.json 上は `"test": "echo \"Error: no test specified\" && exit 1"` と書かれている。test 行の条件を満たさないので流さず、検出されなかったチェックと同じく push の可否の判定にも入れない。Step 2 の承認で見せる一覧と結果の出力には `— test（scripts.test が npm init の既定のままのためスキップ）` と書き、前段の失敗で打ち切ったときもこの書き方を変えない。
 空白やコマンドを足したもの（末尾に `&& jest` を足したもの等）は定義されているものとして流し、0 でない終了コードは失敗である。判定は PM によらない（`npm init` で作ってから別の PM に移したプロジェクトにも残る）。
 
+**ロックファイル（`bun.lock` / `pnpm-lock.yaml` / `yarn.lock` / `package-lock.json` / `npm-shrinkwrap.json`）がどれも無く、`package.json` の `dependencies` / `devDependencies` / `optionalDependencies` / `peerDependencies` / `workspaces` と `pnpm-workspace.yaml` の `packages` もどれも無いか空のときは、audit を流さない。** このとき PM は npm になり、`npm audit` はロックファイルが無いと `ENOLOCK` で exit 1 になる。依存が無ければ、ロックファイルを作って流しても `found 0 vulnerabilities`（exit 0）で終わる。検出されなかったチェックと同じく push の可否の判定には入れず、Step 2 の承認で見せる一覧と結果の出力には `— audit（ロックファイルも依存も無いためスキップ）` と書く。前段の失敗で打ち切ったときもこの書き方を変えない。
+ロックファイルが無くても上のどれかが空でなければ流し、`ENOLOCK` は失敗である。エラーが案内する `npm i --package-lock-only` はスキルから流さない（未コミットのファイルが増える）。
+
 **Python プロジェクト（`pyproject.toml` / `setup.py` / `setup.cfg` が存在）:**
 
 | チェック | 条件 | コマンド |
