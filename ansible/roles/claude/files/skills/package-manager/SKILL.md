@@ -32,14 +32,19 @@ description: パッケージマネージャー（pnpm, npm, yarn, uv 等）や�
 
 **Node.js (pnpm / npm):**
 
-| 階層 | ファイル | 例 |
-|------|---------|-----|
-| グローバル | `~/.npmrc`, `~/.config/pnpm/rc` | `engine-strict=true`, `minimum-release-age=10080` |
-| プロジェクト | `.npmrc` | `engine-strict=true`, `minimum-release-age=10080` |
-| プロジェクト | `pnpm-workspace.yaml` | `engineStrict: true`, `minimumReleaseAge: 10080` |
+| 階層         | ファイル                                | 読む PM           | 例                                                             |
+| ------------ | --------------------------------------- | ----------------- | -------------------------------------------------------------- |
+| グローバル   | `~/.npmrc`                              | npm、pnpm 10 以下 | `engine-strict=true`                                           |
+| グローバル   | `<pnpm の設定ディレクトリ>/rc`          | pnpm 10 以下      | `engine-strict=true`, `minimum-release-age=10080`              |
+| グローバル   | `<pnpm の設定ディレクトリ>/config.yaml` | pnpm 11 以降      | `engineStrict: true`, `minimumReleaseAge: 10080`               |
+| プロジェクト | `.npmrc`                                | npm、pnpm 10 以下 | `engine-strict=true`, `minimum-release-age=10080`（pnpm のみ） |
+| プロジェクト | `pnpm-workspace.yaml`                   | pnpm              | `engineStrict: true`, `minimumReleaseAge: 10080`               |
 
-**casing 規則**: `.npmrc`（ini 形式）はキーが **kebab-case**、`pnpm-workspace.yaml`（YAML）は **camelCase**。
-ファイル形式に合わせて表記する。両方 pnpm v9+ で同じ値として解釈される。
+`<pnpm の設定ディレクトリ>` は `$XDG_CONFIG_HOME/pnpm`。未設定なら macOS は `~/Library/Preferences/pnpm`、
+Linux は `~/.config/pnpm`。pnpm 11 以降は `rc` を読まず、`.npmrc` からは認証・レジストリ・プロキシなどの接続設定しか読まない。
+
+**casing 規則**: `.npmrc` と `rc`（ini 形式）はキーが **kebab-case**、`pnpm-workspace.yaml` と `config.yaml`（YAML）は **camelCase**。
+ファイル形式に合わせて表記する。
 
 **Python (uv):**
 
