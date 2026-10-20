@@ -166,7 +166,7 @@ lockfile を再生成して整合性を取る。
 | `yarn.lock` | yarn |
 | `uv.lock` | uv |
 
-`package.json` の `packageManager` フィールドがある場合はそれに従う。
+`package.json` に `packageManager` があればそれに、無ければ `devEngines.packageManager` があればそれに、ロックファイルより優先して従う（配列ならロックファイルの PM が含まれていればそれ、無ければ先頭）。
 
 ---
 

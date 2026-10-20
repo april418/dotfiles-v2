@@ -90,8 +90,15 @@ git remote
 
 **Node.js プロジェクト（`package.json` が存在）:**
 
-パッケージマネージャーの検出順: `bun.lock` → `pnpm-lock.yaml` → `yarn.lock` → `package-lock.json`。
-該当するロックファイルのマネージャーを使用する。いずれもなければ `npm` を使用する。
+パッケージマネージャー（PM）は上から順に見て、最初に決まったものを使う。
+
+1. `package.json` の `packageManager`（`pnpm@10.33.0` のような値の `@` より前）
+2. `package.json` の `devEngines.packageManager` の `name`。配列なら、3 のロックファイルで決まる PM がどれかの `name` に一致すればそれを、一致しないかロックファイルが無ければ先頭の `name` を使う
+3. ロックファイル: `bun.lock` → `pnpm-lock.yaml` → `yarn.lock` → `package-lock.json`
+4. どれも無ければ `npm`
+
+宣言（1・2）をロックファイルより先に見るのは、宣言と違う PM で流すと止まるからである（npm は `devEngines.packageManager` が他の PM を指すと `EBADDEVENGINES`、pnpm は `packageManager` が、11 以降は `devEngines.packageManager` も他の PM を指すと `This project is configured to use …` で exit 1）。
+宣言とロックファイルが食い違っていても宣言の PM で流す。その PM のロックファイルが無いことで audit などが失敗したら、ほかの失敗と同じく push を止める。
 
 **PATH 解決のフォールバック**: 非ログインシェル（subagent の Bash 等）では `nvm` 配下の `node` / `pnpm` / `npm` が `PATH` に入っていないことがある。`command -v <pm>` で見つからない場合は以下の優先順で探索する:
 
