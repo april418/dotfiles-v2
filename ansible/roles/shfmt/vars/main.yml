@@ -1,0 +1,5 @@
+---
+# dotfiles-check: tags https://github.com/mvdan/sh
+shfmt_version: "v3.14.1"
+# リリースのファイル名は amd64 / arm64 で、ansible の architecture が返す x86_64 / aarch64 とは名前が違う。
+shfmt_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_facts['architecture'], ansible_facts['architecture']) }}"

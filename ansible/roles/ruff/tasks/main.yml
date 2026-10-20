@@ -1,0 +1,17 @@
+---
+- name: Read installed ruff version
+  ansible.builtin.command:
+    cmd: "{{ ansible_facts['env'].HOME }}/.local/bin/ruff --version"
+  register: ruff_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install ruff
+  ansible.builtin.command:
+    cmd: "{{ ansible_facts['env'].HOME }}/.local/bin/uv tool install --force ruff=={{ ruff_version }}"
+  environment:
+    # install の ansible と同じく、XDG_BIN_HOME などで導入先が変わらないよう ~/.local/bin に固定する。
+    UV_TOOL_BIN_DIR: "{{ ansible_facts['env'].HOME }}/.local/bin"
+  when: ruff_installed.stdout | trim != 'ruff ' ~ ruff_version and ansible_facts['os_family'] != 'Windows'
+  changed_when: true

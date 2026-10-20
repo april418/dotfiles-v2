@@ -1,0 +1,22 @@
+---
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Read installed shfmt version
+  ansible.builtin.command:
+    cmd: "{{ ansible_facts['env'].HOME }}/.local/bin/shfmt --version"
+  register: shfmt_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install shfmt
+  ansible.builtin.get_url:
+    url: "https://github.com/mvdan/sh/releases/download/{{ shfmt_version }}/shfmt_{{ shfmt_version }}_{{ ansible_facts['system'] | lower }}_{{ shfmt_arch }}"
+    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/shfmt"
+    mode: "0755"
+    force: true
+  when: shfmt_installed.stdout | trim != shfmt_version and ansible_facts['os_family'] != 'Windows'
