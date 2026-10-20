@@ -131,9 +131,9 @@ bun は 1.2.15 で `bun audit` が入ったので、それより前の bun で�
 
 1. `~/.nvm/versions/node/*/bin/<pm>` の最新版
 2. `~/.local/share/pnpm/<pm>` 等の標準的な install path
-3. `corepack <pm>@latest` （corepack 利用可能時）
 
 それでも見つからなければ `AskUserQuestion` でユーザーに PM の場所を確認する（非対話モード時はチェックスキップして失敗扱いで中止）。
+`corepack <pm>@latest` で取ってくることはしない。Node.js 25 以降は corepack が同梱されず、`@latest` はプロジェクトが宣言した版を無視するため。
 
 | チェック | 条件 | コマンド |
 |---------|------|---------|
