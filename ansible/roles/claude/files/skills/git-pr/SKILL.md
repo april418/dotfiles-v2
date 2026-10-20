@@ -110,13 +110,13 @@ git を動かす。何をするかは、PR の head（作業ブランチ）を�
 `deleteLocalBranch`）。`git worktree list` で各 worktree のブランチが分かり、1 行目が
 main worktree である。ローカルに `<head>` が無ければ、gh はローカルで何もしない。
 
-| head をチェックアウトしている worktree | gh を打つ場所 | gh がローカルで行うこと |
-| --- | --- | --- |
-| どこにも無い | どこでも | `git branch -D <head>` |
-| main worktree | その worktree | `git checkout <base>`（ローカルに無ければ `git checkout -b <base> --track origin/<base>`）→ `git pull --ff-only origin <base>` → `git branch -D <head>`。`<base>` がほかの worktree にあれば、警告を出して何もしない |
-| main worktree | linked worktree | 警告を出して何もしない |
-| linked worktree | その worktree | 警告を出して何もしない |
-| linked worktree | ほかの worktree | `git worktree remove -- <head の worktree>` → `git branch -D <head>` |
+| head をチェックアウトしている worktree | gh を打つ場所   | gh がローカルで行うこと                                                                                                                                                                                              |
+| -------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| どこにも無い                           | どこでも        | `git branch -D <head>`                                                                                                                                                                                               |
+| main worktree                          | その worktree   | `git checkout <base>`（ローカルに無ければ `git checkout -b <base> --track origin/<base>`）→ `git pull --ff-only origin <base>` → `git branch -D <head>`。`<base>` がほかの worktree にあれば、警告を出して何もしない |
+| main worktree                          | linked worktree | 警告を出して何もしない                                                                                                                                                                                               |
+| linked worktree                        | その worktree   | 警告を出して何もしない                                                                                                                                                                                               |
+| linked worktree                        | ほかの worktree | `git worktree remove -- <head の worktree>` → `git branch -D <head>`                                                                                                                                                 |
 
 打つ前に次の 4 つを確かめる。
 
@@ -133,6 +133,7 @@ main worktree である。ローカルに `<head>` が無ければ、gh はロ�
    その worktree に残るブランチは、その worktree が head を離れた後、次にマージしたときの
    一括削除（「マージ済みのローカルブランチは残さない」）で消える。最終応答に、残って
    いることを書く。
+
 2. **push していないコミットが無いこと。** ローカルに `<head>` があれば、`git fetch origin`
    の後に `git log --oneline origin/<head>..<head>` が空であることを確かめる。マージされるのは
    リモートの head までで、gh の `git branch -D` はその先のコミットも消し、どのブランチからも
@@ -297,11 +298,11 @@ git push origin --delete <branch>
 設定）を `gh api 'repos/{owner}/{repo}' --jq .delete_branch_on_merge` で確かめる（`{owner}` と
 `{repo}` は gh が今のリポジトリで埋める）。
 
-| 値 | すること |
-| --- | --- |
-| `true` | 設定は変えない。残っている head は上の箇条のとおりに扱う |
+| 値      | すること                                                                                                                                                             |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `true`  | 設定は変えない。残っている head は上の箇条のとおりに扱う                                                                                                             |
 | `false` | `gh api -X PATCH 'repos/{owner}/{repo}' -F delete_branch_on_merge=true` でオンにすることも提案する。リポジトリの設定を変える操作なので、ユーザーの承認を得てから流す |
-| `null` | このトークンでは設定を読めない（read 権限だけのリポジトリで実測）。提案せず、設定を変えられる人に頼むよう最終応答に書く |
+| `null`  | このトークンでは設定を読めない（read 権限だけのリポジトリで実測）。提案せず、設定を変えられる人に頼むよう最終応答に書く                                              |
 
 **古い状態からブランチを切ると、無駄なマージ作業が発生しうる。** git-branch のルール 3(b)
 は「派生直前に更新する」と定めているが、それだけでは足りない。マージから次の

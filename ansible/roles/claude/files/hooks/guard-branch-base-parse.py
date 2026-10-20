@@ -51,9 +51,21 @@ SWITCH = {
     "value": {"conflict", "orphan"},
     "optional": {"t"},
     "longs": {
-        "create", "force-create", "guess", "discard-changes", "quiet", "recurse-submodules",
-        "progress", "merge", "conflict", "detach", "track", "force", "orphan",
-        "overwrite-ignore", "ignore-other-worktrees",
+        "create",
+        "force-create",
+        "guess",
+        "discard-changes",
+        "quiet",
+        "recurse-submodules",
+        "progress",
+        "merge",
+        "conflict",
+        "detach",
+        "track",
+        "force",
+        "orphan",
+        "overwrite-ignore",
+        "ignore-other-worktrees",
     },
     "paths": 0,  # 起点より前に置く位置引数の数
     # git switch -c <new> -- <start-point> は -- の後ろを起点にする。
@@ -64,10 +76,28 @@ CHECKOUT = {
     "value": {"U", "conflict", "orphan", "unified", "inter-hunk-context", "pathspec-from-file"},
     "optional": {"t"},
     "longs": {
-        "guess", "overlay", "auto-advance", "quiet", "recurse-submodules", "progress", "merge",
-        "conflict", "detach", "track", "force", "orphan", "overwrite-ignore",
-        "ignore-other-worktrees", "ours", "theirs", "patch", "unified", "inter-hunk-context",
-        "ignore-skip-worktree-bits", "pathspec-from-file", "pathspec-file-nul",
+        "guess",
+        "overlay",
+        "auto-advance",
+        "quiet",
+        "recurse-submodules",
+        "progress",
+        "merge",
+        "conflict",
+        "detach",
+        "track",
+        "force",
+        "orphan",
+        "overwrite-ignore",
+        "ignore-other-worktrees",
+        "ours",
+        "theirs",
+        "patch",
+        "unified",
+        "inter-hunk-context",
+        "ignore-skip-worktree-bits",
+        "pathspec-from-file",
+        "pathspec-file-nul",
     },
     "paths": 0,
     # git checkout -b <new> -- <x> の x はパスとして扱われ、起点にならない。
@@ -79,8 +109,16 @@ WORKTREE_ADD = {
     "value": {"reason"},
     "optional": set(),
     "longs": {
-        "force", "orphan", "detach", "checkout", "lock", "reason", "quiet", "track",
-        "guess-remote", "relative-paths",
+        "force",
+        "orphan",
+        "detach",
+        "checkout",
+        "lock",
+        "reason",
+        "quiet",
+        "track",
+        "guess-remote",
+        "relative-paths",
     },
     # git worktree add -b <new> <path> [<commit-ish>]。-- の後ろも <path> と起点として読む。
     "paths": 1,
@@ -164,13 +202,13 @@ class Lexer:
             c = s[i]
             if c == "\\":
                 if not s.startswith("\n", i + 1):
-                    cur.add(s[i + 1:i + 2])
+                    cur.add(s[i + 1 : i + 2])
                     cur.quoted = True
                 i += 2
             elif c == "'":
                 j = s.find("'", i + 1)
                 j = n if j < 0 else j
-                cur.add(s[i + 1:j])
+                cur.add(s[i + 1 : j])
                 cur.quoted = True
                 i = j + 1
             elif c == '"':
@@ -194,14 +232,16 @@ class Lexer:
             elif c in "<>" or s.startswith("&>", i):
                 i = self.redirect(i, cur, heredocs)
             elif c in ";&|":
-                op = s[i:i + 2] if s[i:i + 2] in ("&&", "||", "|&") else c
+                op = s[i : i + 2] if s[i : i + 2] in ("&&", "||", "|&") else c
                 self.end_command(cur, heredocs, op)
                 i += len(op)
             elif c == "(" and s.startswith("(", i + 1) and cur.parts is None and not cur.words:
                 # (( ... )) は算術式で、中の << はヒアドキュメントではない
                 i = self.skip_nested(i + 2, "(", ")", 2)
-            elif c == "(" and EMPTY_PARENS.match(s, i) and (
-                cur.words if cur.parts is None else not "".join(cur.parts).endswith("=")
+            elif (
+                c == "("
+                and EMPTY_PARENS.match(s, i)
+                and (cur.words if cur.parts is None else not "".join(cur.parts).endswith("="))
             ):
                 # f() { ... } は関数の定義で、本体は呼ぶまで動かない。a=() は空の配列の代入である
                 self.end_command(cur, heredocs)
@@ -266,7 +306,7 @@ class Lexer:
         k = 0
         while k < len(words) and (words[k] in CD_PREFIXES or ASSIGNMENT.match(words[k])):
             k += 1
-        name, args = (words[k], words[k + 1:]) if k < len(words) else ("", [])
+        name, args = (words[k], words[k + 1 :]) if k < len(words) else ("", [])
         dirs, lost = self.dirs, False
         if name == "cd":
             while args and CD_OPTION.fullmatch(args[0]):
@@ -353,9 +393,18 @@ class Lexer:
         else:
             cur.end_word(heredocs)
         for op, kind in (
-            ("<<<", "file"), ("<<-", "heredoc-strip"), ("<<", "heredoc"),
-            ("&>>", "file"), ("&>", "file"), (">>", "file"), (">&", "file"), ("<&", "file"),
-            (">|", "file"), ("<>", "file"), ("<", "file"), (">", "file"),
+            ("<<<", "file"),
+            ("<<-", "heredoc-strip"),
+            ("<<", "heredoc"),
+            ("&>>", "file"),
+            ("&>", "file"),
+            (">>", "file"),
+            (">&", "file"),
+            ("<&", "file"),
+            (">|", "file"),
+            ("<>", "file"),
+            ("<", "file"),
+            (">", "file"),
         ):
             if s.startswith(op, i):
                 cur.redirect = kind
@@ -371,7 +420,7 @@ class Lexer:
             c = s[i]
             if c == '"':
                 return i + 1
-            if c == "\\" and s[i + 1:i + 2] in ("$", "`", '"', "\\", "\n"):
+            if c == "\\" and s[i + 1 : i + 2] in ("$", "`", '"', "\\", "\n"):
                 if s[i + 1] != "\n":
                     cur.add(s[i + 1])
                 i += 2
@@ -399,7 +448,7 @@ class Lexer:
             j = i + 2
             while j < n and s[j] != "'":
                 j += 2 if s[j] == "\\" else 1
-            cur.add(s[i + 2:j])
+            cur.add(s[i + 2 : j])
             cur.quoted = True
             return j + 1
         if s.startswith('"', i + 1) and not in_dquote:
@@ -428,7 +477,7 @@ class Lexer:
         s, n = self.s, len(self.s)
         body = []
         while i < n and s[i] != "`":
-            if s[i] == "\\" and s[i + 1:i + 2] in ("`", "\\", "$"):
+            if s[i] == "\\" and s[i + 1 : i + 2] in ("`", "\\", "$"):
                 body.append(s[i + 1])
                 i += 2
             else:
@@ -516,9 +565,9 @@ def unbased_branch(args):
         a = args[k]
         if a in GIT_VALUE_OPTS:
             if a in GIT_REPO_OPTS:
-                repo += args[k:k + 2]
+                repo += args[k : k + 2]
             elif a in GIT_CONFIG_OPTS:
-                config += args[k:k + 2]
+                config += args[k : k + 2]
             k += 2
         else:
             name = a.split("=", 1)[0]
@@ -527,10 +576,10 @@ def unbased_branch(args):
             elif name in GIT_CONFIG_OPTS:
                 config.append(a)
             k += 1
-    if args[k:k + 2] == ["worktree", "add"]:
-        spec, rest = WORKTREE_ADD, args[k + 2:]
+    if args[k : k + 2] == ["worktree", "add"]:
+        spec, rest = WORKTREE_ADD, args[k + 2 :]
     elif k < len(args):
-        spec, rest = {"switch": SWITCH, "checkout": CHECKOUT}.get(args[k]), args[k + 1:]
+        spec, rest = {"switch": SWITCH, "checkout": CHECKOUT}.get(args[k]), args[k + 1 :]
     else:
         return None
     found = spec is not None and lacks_start_point(rest, spec)
@@ -606,7 +655,7 @@ def tracking_remotes(opts, cwd, ref):
     for record in out.split("\0"):
         key, _, value = record.partition("\n")
         if key.startswith("remote.") and key.endswith(".fetch"):
-            refspecs.setdefault(key[len("remote."):-len(".fetch")], []).append(value)
+            refspecs.setdefault(key[len("remote.") : -len(".fetch")], []).append(value)
     # refs/remotes/<remote>/ の下を見るだけでは、--single-branch で clone した remote に
     # 古い追跡ブランチが残っていると、git が照合しないものを数える。refspec で写す
     found = []
@@ -621,7 +670,7 @@ def match_pattern(pattern, name):
     """name が * を 1 つ含む pattern に当てはまれば * の部分を、当てはまらなければ None を返す。"""
     prefix, _, suffix = pattern.partition("*")
     if name.startswith(prefix) and name.endswith(suffix) and len(name) >= len(prefix) + len(suffix):
-        return name[len(prefix):len(name) - len(suffix)]
+        return name[len(prefix) : len(name) - len(suffix)]
     return None
 
 
@@ -676,7 +725,7 @@ def branches(text, *state, ran_git=None):
         k = next((k for k, w in enumerate(words) if os.path.basename(w) in ("git", "eval", *SHELLS)), None)
         if k is None:
             continue
-        name, args = os.path.basename(words[k]), words[k + 1:]
+        name, args = os.path.basename(words[k]), words[k + 1 :]
         if name == "git":
             target = unbased_branch(args)
             if target is not None:
@@ -706,8 +755,9 @@ def main():
         found = branches(text, cwd)
     except Exception as e:
         # トランスクリプトに出るのは stderr の 1 行目だけなので、トレースバックにしない
-        print(f"guard-branch-base: コマンド文字列を解析できず、判定していない ({type(e).__name__}: {e})",
-              file=sys.stderr)
+        print(
+            f"guard-branch-base: コマンド文字列を解析できず、判定していない ({type(e).__name__}: {e})", file=sys.stderr
+        )
         sys.exit(1)
     for branch in found:
         print(branch)

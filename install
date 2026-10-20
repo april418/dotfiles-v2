@@ -91,8 +91,6 @@ Licensed under the MIT license.
 ====================================
 '
 
-
-
 print_logo() {
   printf "${BOLD}${BG_GLAY}%s${CLEAR_LINE}${BLUE}%s${DEFAULT}%s${RESET}\n" "$DOTFILES_HEADER" "$DOTFILES_LOGO" "$DOTFILES_FOOTER"
 }
@@ -208,19 +206,19 @@ check_distribution() {
   fi
 
   case "$DISTRO_ID" in
-    ubuntu|debian)
+    ubuntu | debian)
       INSTALL_CMD="$SUDO apt install -y"
       ;;
     fedora)
       INSTALL_CMD="$SUDO dnf install -y"
       ;;
-    centos|rhel)
+    centos | rhel)
       INSTALL_CMD="$SUDO yum install -y"
       ;;
     arch)
       INSTALL_CMD="$SUDO pacman -S --noconfirm"
       ;;
-    opensuse*|suse)
+    opensuse* | suse)
       INSTALL_CMD="$SUDO zypper install -y"
       ;;
     macos)
@@ -320,7 +318,7 @@ setup_uv() {
   script="$(mktemp)"
   # uv ロールと同じく、rc ファイルを書き換えさせず、導入先を ~/.local/bin に固定する。
   if curl -LsSf -o "$script" https://astral.sh/uv/install.sh \
-      && UV_NO_MODIFY_PATH=1 UV_INSTALL_DIR="$HOME/.local/bin" sh "$script" && [ -x "$UV" ]; then
+    && UV_NO_MODIFY_PATH=1 UV_INSTALL_DIR="$HOME/.local/bin" sh "$script" && [ -x "$UV" ]; then
     rm -f "$script"
     print_success "uv installed successfully"
   else
@@ -361,7 +359,7 @@ setup_ansible() {
   # ansible は collection の集まりで、ansible-playbook などのコマンドは依存先の ansible-core が持つ。
   # XDG_BIN_HOME などで導入先が変わらないよう、ANSIBLE_PLAYBOOK と同じ ~/.local/bin に固定する。
   if UV_TOOL_BIN_DIR="$HOME/.local/bin" "$UV" tool install --force --managed-python --python "$ANSIBLE_PYTHON" --with-executables-from ansible-core ansible \
-      && [ "$(ansible_python)" = "$ANSIBLE_PYTHON" ]; then
+    && [ "$(ansible_python)" = "$ANSIBLE_PYTHON" ]; then
     print_success "Ansible installed successfully"
   else
     print_error "Failed to install Ansible"
@@ -460,8 +458,6 @@ run_ansible_playbook() {
     exit 1
   fi
 }
-
-
 
 # Start of the script
 handle_error "Aborted by user" 1 2 3 15
