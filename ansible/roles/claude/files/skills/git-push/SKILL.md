@@ -126,7 +126,7 @@ git remote
 `yarn npm audit` の既定は今いるワークスペースの直接依存だけなので、`--all` と `--recursive` で全ワークスペースの推移的な依存まで見る。4 以上は非推奨のパッケージも moderate として数えて exit 1 になるので、npm / pnpm と同じく脆弱性だけで止まるよう `--no-deprecations` を付ける（このフラグは 4 から）。
 yarn 1 の終了コードは見つかった重大度の値の和（info 1 / low 2 / moderate 4 / high 8 / critical 16）で、info だけでも 0 にならず失敗である。
 bun は 1.2.15 で `bun audit` が入ったので、それより前の bun では失敗になる。
-pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 で失敗したら、package-manager skill のルール 5 の手順で pnpm 11 を使って流し直し、その結果で判定する。出力の audit の行には括弧で `pnpm 10 が 410 を返したため pnpm 11 で流し直した` と書き、ルール 5 が報告に添えるよう求めることも同じ括弧に入れる。
+pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 で失敗したら、package-manager skill のルール 5 の手順で pnpm 11 を使って流し直し、その結果で判定する。出力の `Node.js audit` の行には括弧で `pnpm 10 が 410 を返したため pnpm 11 で流し直した` と書き、ルール 5 が報告に添えるよう求めることも同じ括弧に入れる。
 
 **PATH 解決のフォールバック**: 非ログインシェル（subagent の Bash 等）では `nvm` 配下の `node` / `pnpm` / `npm` が `PATH` に入っていないことがある。`command -v <pm>` で見つからない場合は以下の優先順で探索する:
 
@@ -144,10 +144,10 @@ pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 
 | test | `scripts.test` が定義されている | `<pm> run test` |
 | audit | 常に実行 | `<pm> audit` (`pnpm` の場合は `pnpm audit --prod`) |
 
-**`scripts.test` の値が `npm init` / `pnpm init` の既定の `echo "Error: no test specified" && exit 1` と完全に一致するときは、定義されていないものとして扱う。** package.json 上は `"test": "echo \"Error: no test specified\" && exit 1"` と書かれている。test 行の条件を満たさないので流さず、検出されなかったチェックと同じく push の可否の判定にも入れない。Step 2 の承認で見せる一覧と結果の出力には `— test（scripts.test が npm init の既定のままのためスキップ）` と書き、前段の失敗で打ち切ったときもこの書き方を変えない。
+**`scripts.test` の値が `npm init` / `pnpm init` の既定の `echo "Error: no test specified" && exit 1` と完全に一致するときは、定義されていないものとして扱う。** package.json 上は `"test": "echo \"Error: no test specified\" && exit 1"` と書かれている。test 行の条件を満たさないので流さず、検出されなかったチェックと同じく push の可否の判定にも入れない。Step 2 の承認で見せる一覧と結果の出力には `— Node.js test（scripts.test が npm init の既定のままのためスキップ）` と書き、前段の失敗で打ち切ったときもこの書き方を変えない。
 空白やコマンドを足したもの（末尾に `&& jest` を足したもの等）は定義されているものとして流し、0 でない終了コードは失敗である。判定は PM によらない（`npm init` で作ってから別の PM に移したプロジェクトにも残る）。
 
-**ロックファイル（`bun.lock` / `bun.lockb` / `pnpm-lock.yaml` / `yarn.lock` / `package-lock.json` / `npm-shrinkwrap.json`）がどれも無く、`package.json` の `dependencies` / `devDependencies` / `optionalDependencies` / `peerDependencies` / `workspaces` と `pnpm-workspace.yaml` の `packages` もどれも無いか空のときは、audit を流さない。** ロックファイルが無いと、`npm audit` は `ENOLOCK`、`pnpm audit` は `ERR_PNPM_AUDIT_NO_LOCKFILE` で exit 1 になる。依存が無ければ、ロックファイルを作って流しても脆弱性 0 件（exit 0）で終わる。検出されなかったチェックと同じく push の可否の判定には入れず、Step 2 の承認で見せる一覧と結果の出力には `— audit（ロックファイルも依存も無いためスキップ）` と書く。前段の失敗で打ち切ったときもこの書き方を変えない。
+**ロックファイル（`bun.lock` / `bun.lockb` / `pnpm-lock.yaml` / `yarn.lock` / `package-lock.json` / `npm-shrinkwrap.json`）がどれも無く、`package.json` の `dependencies` / `devDependencies` / `optionalDependencies` / `peerDependencies` / `workspaces` と `pnpm-workspace.yaml` の `packages` もどれも無いか空のときは、audit を流さない。** ロックファイルが無いと、`npm audit` は `ENOLOCK`、`pnpm audit` は `ERR_PNPM_AUDIT_NO_LOCKFILE` で exit 1 になる。依存が無ければ、ロックファイルを作って流しても脆弱性 0 件（exit 0）で終わる。検出されなかったチェックと同じく push の可否の判定には入れず、Step 2 の承認で見せる一覧と結果の出力には `— Node.js audit（ロックファイルも依存も無いためスキップ）` と書く。前段の失敗で打ち切ったときもこの書き方を変えない。
 ロックファイルが無くても上のどれかが空でなければ流し、ロックファイルが無いことによる失敗も失敗である。ロックファイルを作るコマンド（`npm audit` のエラーが案内する `npm i --package-lock-only`、`pnpm install --lockfile-only` 等）はスキルから流さない（未コミットのファイルが増える）。
 
 **Python プロジェクト（`pyproject.toml` / `setup.py` / `setup.cfg` が存在）:**
@@ -159,7 +159,7 @@ pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 
 | test | `pytest` がインストール済み | `pytest` |
 
 pytest は収集・選択されたテストが 0 件だと exit 5 で終わる。`uv init` 直後、テスト関数の無い `test_*.py` だけのとき、`addopts` の `-m` / `-k` で全件が外れたときがこれに当たる。テストがあっても `testpaths` / `python_files` の設定や全モジュールの `importorskip` で 0 件になれば同じく exit 5 で、区別しない。
-**exit 5 は失敗に数えない。** push の可否を決める判定（冒頭の「全チェック成功」、Step 3 の「すべてのチェックに通過したら」）では通過として扱い、出力だけ `— test（実行するテストが 0 件のためスキップ。pytest の exit 5: <最終行>）` と書く。`<最終行>` は pytest の最後の行から `=` と所要時間を除いたもの（`no tests ran` / `1 deselected` など）。
+**exit 5 は失敗に数えない。** push の可否を決める判定（冒頭の「全チェック成功」、Step 3 の「すべてのチェックに通過したら」）では通過として扱い、出力だけ `— Python test（実行するテストが 0 件のためスキップ。pytest の exit 5: <最終行>）` と書く。`<最終行>` は pytest の最後の行から `=` と所要時間を除いたもの（`no tests ran` / `1 deselected` など）。
 exit 5 以外の 0 でない終了コードは失敗である。この扱いは Python の表から流した `pytest` に限る。Makefile / Taskfile のターゲットや `scripts.test` から呼ばれた pytest は、テストが 0 件でもそのツールの終了コードで判定する。それらはプロジェクトが定めた入口なので、その終了コードをそのまま採る。表の `pytest` は skill が選んだコマンドなので、exit 5 の読み方も skill が決めてよい。make の出力と報告の書き方は Makefile / Taskfile の節にある。
 
 **Rust プロジェクト（`Cargo.toml` が存在）:**
@@ -199,8 +199,6 @@ exit 5 以外の 0 でない終了コードは失敗である。この扱いは 
 
 `lint`, `check`, `test`, `build` ターゲットが定義されていれば実行する。
 
-出力ではチェック名を `make <ターゲット>` / `task <タスク>` と書く。Python の表の `test` と同時に流れると、同じ pytest の 0 件がスキップと失敗に分かれるので、どちらの結果かを区別するためである。
-
 ターゲットから呼ばれた pytest のテストが 0 件だと、make は exit 2 で終わる。最終行は `make: *** [test] Error 5` で、その直前の行は、要約を出す設定なら pytest の要約になる（既定では `=` で囲まれた `no tests ran in 0.00s`、`-q` では囲みが無い。`-qq` では要約が出ず空行。GNU Make 3.81 と pytest 9.1.1 で実測）。これも失敗として push を止める（理由は Python の表の下の段落）。
 最終行が `Error 5` で終わり、直前の行が pytest の要約で `passed` / `failed` / `error` / `skipped` のどれも含まない（`no tests ran` / `1 deselected` / `1 warning` など）ときは、失敗の報告に原因と直し方を添える。make の `Error 5` はレシピのどのコマンドが 5 を返しても出るので、要約の行が無ければ添えない。この判定は make の出力の形に合わせたもので、task には当てはめない。
 
@@ -210,7 +208,9 @@ exit 5 以外の 0 でない終了コードは失敗である。この扱いは 
 
 #### チェック実行の原則
 
-- 検出されたチェックの一覧と実行順をユーザーに提示し、`AskUserQuestion` で承認を得てから実行する（省略するかは冒頭の「Step 2 / Step 3 の承認」に従い、チェックを流す前に決める）。
+- 検出されたチェックの一覧と実行順をユーザーに提示し、`AskUserQuestion` で承認を得てから実行する（省略するかは冒頭の「Step 2 / Step 3 の承認」に従い、チェックを流す前に決める）。一覧の各行も次の項のチェック名で書く。
+- **チェック名**: 一覧と結果の出力では、表の「チェック」列の前に種別名を付けて `<種別名> <チェック>` と書く（`Node.js build` / `Docker build`）。種別名は各節の見出しの「プロジェクト」より前の語（`Node.js` / `Python` / `Rust` / `Go` / `Ansible` / `Docker`）と `Makefile` / `Taskfile` である。Makefile / Taskfile は種別名を付けず `make <ターゲット>` / `task <タスク>` と書く（`make` / `task` が種別を示し、ターゲット名がそのままチェック名になる）。以下の `<チェック名>` も、各節のスキップ行も、この名前である。
+  build / lint / test などは複数の表にあり、`package.json` と `Dockerfile` が両方あると `✗ build（失敗）` ではどちらの build か読めない。種別が 1 つのときも付けるのは、検出した数で書式を変えず、1 行だけ引用・中継されてもどの種別か読めるようにするためである。
 - チェックをスキップしたい場合はユーザーが指定できる。
 - 各チェックの実行結果（成功/失敗）をリアルタイムで表示する。
 - **失敗時の優先規則（同時発生時の判断）**:
@@ -224,7 +224,7 @@ exit 5 以外の 0 でない終了コードは失敗である。この扱いは 
     | 場合 | 出力 |
     | --- | --- |
     | 種別を 1 つも検出できなかった | `（プロジェクト種別を検出できなかったため全チェックをスキップ）` |
-    | 種別は検出したが、どのチェックも条件を満たさなかった | `（<種別> を検出したが <チェックが無い理由>ため全チェックをスキップ）` |
+    | 種別は検出したが、どのチェックも条件を満たさなかった | `（<種別名> を検出したが <チェックが無い理由>ため全チェックをスキップ）` |
 
     例: `（Python を検出したが ruff / mypy / pytest が入っていないため全チェックをスキップ）`、`（Makefile を検出したが lint / check / test / build ターゲットが無いため全チェックをスキップ）`。
     コマンドが入っているかは、条件の列に書かれていない限り 0 件の理由にしない。流すと決まったチェックのコマンドが無ければ失敗として扱う（Node.js の PM は先に上の PATH 解決のフォールバックに従う。見つからないときの確認を含む）
@@ -345,8 +345,9 @@ preview 環境も無かった。**見る場所が存在しなかった。** 前�
 - abcdef3 test(auth): ログインのテストを追加
 
 ### 品質チェック
-- ✓ build
-- ✓ lint
-- ✗ test（失敗）
-- — audit（前段失敗のため未実行）
+- ✓ Node.js build
+- ✓ Node.js lint
+- ✗ Node.js test（失敗）
+- — Node.js audit（前段失敗のため未実行）
+- — Docker build（前段失敗のため未実行）
 ```
