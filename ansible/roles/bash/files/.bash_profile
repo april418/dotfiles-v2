@@ -33,6 +33,8 @@ fi
 # Token: override UV_DEFAULT_INDEX in ~/.bash_profile.local
 #   export UV_DEFAULT_INDEX="https://token:tg_anon_xxx@pypi.flatt.tech/simple/"
 export NPM_CONFIG_REGISTRY="https://npm.flatt.tech"
+# pnpm 11+ reads the registry env var only from pnpm_config_registry
+export PNPM_CONFIG_REGISTRY="https://npm.flatt.tech"
 export UV_DEFAULT_INDEX="https://pypi.flatt.tech/simple/"
 
 # Load .bash_profile.local if it exists
