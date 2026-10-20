@@ -158,8 +158,7 @@ git switch -c <new-branch> <base-ref> --no-track
 
 `--no-track` を付ける。`<base-ref>` が `origin/<base>` だと、付けなければ新ブランチの
 upstream が `origin/<base>` になる。git-push skill は upstream があると初回 push に `-u` を
-付けず、`@{upstream}..HEAD` が push 済みのコミットも数え続ける。`--no-track` は `-c <new-branch>`
-より後ろに置く。前に置くと、ベースを書き忘れてもフック（`guard-branch-base.sh`）が止めない。
+付けず、`@{upstream}..HEAD` が push 済みのコミットも数え続ける。
 
 ### (d) 検証（省略不可）
 
