@@ -15,12 +15,12 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 ただし以下のいずれかに該当する場合は確認を省略してよい。非対話モードと事前指示済みでは **3 箇所すべて**、前提条件揃いでは Step 2 / Step 3 を省略する。
 
 - **非対話モード**: subagent 実行、CI、Auto Mode 等、ユーザーへの問い合わせができないコンテキスト
-- **明確な前提条件揃い**: 全チェック成功（または検出 0 件）+ 未コミット変更なし + push 先が一意に確定（Step 1 の表で push コマンドが決まる行に当たる。初回 push を含む）。判定する時点は下の「Step 2 / Step 3 の承認」の表に従う
+- **明確な前提条件揃い**: 全チェック成功（または検出 0 件）+ 未コミット変更なし + push 先が一意に確定（Step 1 の表で push コマンドが決まる行に当たるか、Step 1 の確認への答えで push コマンドが決まった。初回 push と、remote の名指しで決まる行を含む）。判定する時点は下の「Step 2 / Step 3 の承認」の表に従う
 - **ユーザーが事前指示済み**: 直近のユーザー指示で push 実行が明示的に承認されている
 
 省略した場合の振る舞い:
 
-- **Step 1 で中止条件を検出した場合**（未コミット変更あり / push 対象 0 件 / detached HEAD / upstream が `[gone]` / push 先の remote が決まらない 等）: push は実行せず、検出内容と次に取りうる方針（コミット / stash / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する
+- **Step 1 で中止条件を検出した場合**（未コミット変更あり / push 対象 0 件 / detached HEAD / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）: push は実行せず、検出内容と次に取りうる方針（コミット / stash / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する
 - **Step 2 / Step 3 の承認**: 非対話モードと事前指示済みでは省略する。前提条件揃いで省略するかは、各ステップに入るときに下の表で判定する。省略したら最終応答（または Discretionary fill-ins 相当の箇所）に「どの判断で承認を省略したか」を 1 行で明記する
 
   | 承認 | 判定する時点 | 前提条件揃いで省略できる条件 |
@@ -60,15 +60,21 @@ git remote
 2. **push 先のリモート・ブランチ** — まず `git branch --show-current` が空でないことを確かめる。
    空なら detached HEAD で push するブランチが無いので、中止条件として扱う（`for-each-ref` は
    `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。空でなければ
-   `for-each-ref` の出力と `git remote` の行数で決める。
+   `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
 
-   | upstream（`for-each-ref` の出力） | `git remote` | push 先 |
-   | --- | --- | --- |
-   | 同名のリモートブランチ（`<remote>/<branch>`。`[ahead N]` / `[behind N]` / `[ahead N, behind N]` が続いてよい。`[gone]` は次の行） | — | `git push <remote> <branch>` |
-   | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る） |
-   | 空（upstream が無い）、または名前の違うブランチ | 1 行 | **初回 push として扱い、`git push -u <remote> <branch>` で確定とみなす** |
-   | 空、または名前の違うブランチ | 2 行以上 | `AskUserQuestion` でユーザーに push 先を確認する |
-   | — | 0 行 | push 先が無い。中止条件として扱う |
+   **remote の名指し**は、push を頼んだ指示が push 先の remote を名前で指定していること（「fork に push して」、`/git-push fork` の引数など）。
+   指示として数えるのは、対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプトである。skill の引数は、1 語のときだけ名前として比べる（2 語以上なら一致しないものとして扱う）。push 先の remote を聞く確認（名指しが `git remote` のどれとも一致しない、2 行以上で名指しが無い）でユーザーが答えた remote も名指しに数え、表を引き直す。エージェントが自分で選んで skill の引数に入れた名前は数えない。
+   名前は `git remote` の出力の各行と完全一致で比べる。どれとも一致しなければ、`git remote` が 0 行なら表の最終行で中止し、1 行以上なら表には当てはめず `AskUserQuestion` でユーザーに push 先を確認する。表の「名指し」はすべて一致したものである。
+
+   | upstream（`for-each-ref` の出力） | `git remote` | remote の名指し | push 先 |
+   | --- | --- | --- | --- |
+   | 同名のリモートブランチ（`<remote>/<branch>`。`[ahead N]` / `[behind N]` / `[ahead N, behind N]` が続いてよい。`[gone]` で終わるものは下の `[gone]` の行） | — | 無い、または upstream の remote | `git push <remote> <branch>` |
+   | 同名のリモートブランチ（`[gone]` を除く） | — | upstream と違う remote | `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない。付け替えずに push すると upstream は変わらず、3. の `@{upstream}..HEAD` は upstream の remote との差しか出さない（upstream の remote に push 済みなら 0 件になり、push せずに終わる。Git 2.54.0 で実測）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる。どちらでも、3. は `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える |
+   | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | — | `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る） |
+   | 空（upstream が無い）、または名前の違うブランチ | 1 行 | 無い、またはその remote | **初回 push として扱い、`git push -u <remote> <branch>` で確定とみなす** |
+   | 空、または名前の違うブランチ | 2 行以上 | ある | **初回 push として扱い、`git push -u <名指しの remote> <branch>` で確定とみなす** |
+   | 空、または名前の違うブランチ | 2 行以上 | 無い | `AskUserQuestion` でユーザーに push 先を確認する |
+   | — | 0 行 | — | push 先が無い。中止条件として扱う |
 
    `origin/<base>` から切ったブランチは upstream が `origin/<base>` になる（名前の違う
    ブランチ）。そのままでは引数なしの `git push` が名前の不一致で拒否され、`-u` を付けずに
