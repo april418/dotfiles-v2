@@ -2,7 +2,7 @@
 # ==================================================
 # 作業ブランチからのベース未指定な派生をブロックする
 # ==================================================
-# git switch -c / git checkout -b にベースを指定しないと、現在の HEAD から
+# git switch -c / -C や git checkout -b / -B にベースを指定しないと、現在の HEAD から
 # 分岐する。作業ブランチ上でこれを実行すると、そのブランチのコミットを
 # 引き連れた新ブランチができる。
 #
@@ -52,27 +52,25 @@ CWD="$(extract cwd)"
 
 [ -n "$COMMAND" ] || exit 0
 
-# git switch -c <name> / git checkout -b <name> を拾う。
-# -c/-b の後ろのトークン数を数え、1 個ならベース未指定と判断する。
-BRANCH_ARGS="$(printf '%s' "$COMMAND" \
-  | grep -oE '\bgit[[:space:]]+(switch[[:space:]]+-c|checkout[[:space:]]+-b)[[:space:]]+[^;&|]*' \
-  | head -1 \
-  | sed -E 's/.*(switch[[:space:]]+-c|checkout[[:space:]]+-b)[[:space:]]+//')"
-
-[ -n "$BRANCH_ARGS" ] || exit 0
-
-# オプション (-- で始まるもの) を除いた引数の数
-ARG_COUNT="$(printf '%s\n' $BRANCH_ARGS | grep -vc '^-' || true)"
-[ "$ARG_COUNT" -le 1 ] || exit 0
-
-# 現在のブランチを調べる。git リポジトリでなければ何もしない。
-cd "${CWD:-.}" 2>/dev/null || exit 0
-CURRENT="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || exit 0
-
-case "$CURRENT" in
-  feature/*|hotfix/*) ;;
-  *) exit 0 ;;   # 統合ブランチ上なら問題ない
+# 解析器の不具合が無関係なコマンドに及ばないよう、どちらの語も無いものは解析しない。
+case "$COMMAND" in
+  *switch*|*checkout*) ;;
+  *) exit 0 ;;
 esac
+
+# 解析に失敗したら exit 1 で通す (PreToolUse の exit 1 はブロックしない)。python3 は
+# .py が見つからないと exit 2 で終わるので、終了コードをそのまま返さない。
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+BRANCHES="$(printf '%s' "$COMMAND" | python3 "$HOOK_DIR/guard-branch-base-parse.py" "${CWD:-.}")" || exit 1
+
+# 統合ブランチ上、detach した HEAD、git リポジトリの外なら問題ない
+CURRENT=""
+while IFS= read -r branch; do
+  case "$branch" in
+    feature/*|hotfix/*) CURRENT="$branch"; break ;;
+  esac
+done <<< "$BRANCHES"
+[ -n "$CURRENT" ] || exit 0
 
 cat >&2 <<EOS
 ブランチの派生を中止しました。
@@ -93,7 +91,7 @@ git for-each-ref --format='%(worktreepath)' refs/heads/<base> の出力が空で
        <base-ref> が <base>:        git switch <base> && git pull --rebase origin <base>
        <base-ref> が origin/<base>: git fetch origin
 
-  2. ベースを明示して派生する (--no-track は -c <new-branch> より後ろに置きます)
+  2. ベースを明示して派生する (-C / -B で切り直すときも <base-ref> を付けます)
        git switch -c <new-branch> <base-ref> --no-track
 
   3. 派生直後に確認する
