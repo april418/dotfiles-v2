@@ -117,6 +117,10 @@ git remote
 | type-check | `mypy` がインストール済み | `mypy .` |
 | test | `pytest` がインストール済み | `pytest` |
 
+pytest は収集・選択されたテストが 0 件だと exit 5 で終わる。`uv init` 直後、テスト関数の無い `test_*.py` だけのとき、`addopts` の `-m` / `-k` で全件が外れたときがこれに当たる。テストがあっても `testpaths` / `python_files` の設定や全モジュールの `importorskip` で 0 件になれば同じく exit 5 で、区別しない。
+**exit 5 は失敗に数えない。** push の可否を決める判定（冒頭の「全チェック成功」、Step 3 の「すべてのチェックに通過したら」）では通過として扱い、出力だけ `— test（実行するテストが 0 件のためスキップ。pytest の exit 5: <最終行>）` と書く。`<最終行>` は pytest の最後の行から `=` と所要時間を除いたもの（`no tests ran` / `1 deselected` など）。
+exit 5 以外の 0 でない終了コードは失敗である。この扱いは Python の表から流した `pytest` に限る。Makefile / Taskfile のターゲットや `scripts.test` から呼ばれた pytest は、そのツールの終了コードで判定する（make は exit 2 を返す）。
+
 **Rust プロジェクト（`Cargo.toml` が存在）:**
 
 | チェック | 条件 | コマンド |
