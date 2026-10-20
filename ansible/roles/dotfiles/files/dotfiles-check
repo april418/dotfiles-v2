@@ -39,6 +39,8 @@ ZINIT_DIR = os.path.join(
 )
 NVM_REPO_URL = "https://github.com/nvm-sh/nvm.git"
 GITHUB_API = "https://api.github.com"
+# native インストーラーの配布元。<チャンネル> を引くと、そのチャンネルの版だけを返す。
+CLAUDE_RELEASES = "https://downloads.claude.ai/claude-code-releases"
 
 # 配置に効くのはこの下だけ。install など外側の変更で流すよう促すと、
 # Claude Code が ~/.claude/settings.json に書き足した設定を無駄に上書きさせる。
@@ -547,6 +549,72 @@ class Nvm(Tool):
         return notice(summary, summary, [display for display, _ in steps], steps=steps)
 
 
+class ClaudeCode(Tool):
+    key = "claude"
+    label = "Claude Code"
+
+    def __init__(self, path):
+        self.path = path
+
+    def installed(self):
+        """native インストーラーで入れたものなら版、そうでなければ None。"""
+        # native のランチャーは ~/.local/share/claude/versions/<版> へのリンクなので、claude --version を起動せずに読める。
+        # Homebrew や npm で入れたもの、デスクトップアプリが同梱するものはこの形にならない。
+        target = os.path.realpath(self.path)
+        versions = os.path.dirname(target)
+        if os.path.basename(versions) != "versions" or os.path.basename(os.path.dirname(versions)) != "claude":
+            return None
+        version = os.path.basename(target)
+        return version if re.fullmatch(r"\d+\.\d+\.\d+", version) else None
+
+    @staticmethod
+    def channel():
+        """claude update が従うチャンネル（settings.json の autoUpdatesChannel。既定は latest）。"""
+        config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
+        channel = (read_json(os.path.join(config, "settings.json")) or {}).get("autoUpdatesChannel")
+        return channel if channel in ("latest", "stable") else "latest"
+
+    def fetch(self):
+        if self.installed() is None:
+            return {"unsupported": True}
+        # Claude Code は起動すれば自分でチャンネルの版へ上がるので、ほかのツールのような待ち期間は置かない。
+        channel = self.channel()
+        status, body = http_get(f"{CLAUDE_RELEASES}/{channel}")
+        if status != 200:
+            raise FetchError(f"{channel} チャンネルの版を取得できない（HTTP {status}）")
+        version = body.decode("utf-8", "replace").strip()
+        if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+            raise FetchError(f"{channel} チャンネルの版を読めない（{version[:40]!r}）")
+        return {"channel": channel, "version": version}
+
+    def skipped(self, data):
+        if self.installed() is None:
+            return "native インストーラーで入れたものではないため確かめていない（入れた方法で更新する）"
+        if data.get("unsupported"):
+            return "取得の後に入れ方が変わったため、次の取得で確かめる"
+        if data.get("channel") != self.channel():
+            return "取得の後にチャンネルが変わったため、次の取得で確かめる"
+        return None
+
+    def evaluate(self, data):
+        installed, latest = self.installed(), data.get("version")
+        # 別のチャンネルの版を勧めると、claude update で上げても通知が消えない。
+        if installed is None or latest is None or data.get("channel") != self.channel():
+            return None
+        if not isinstance(latest, str) or not re.fullmatch(r"\d+\.\d+\.\d+", latest):
+            raise ValueError(f"版として読めない（{latest!r}）")
+        if version_key(installed) >= version_key(latest):
+            return None
+        summary = f"Claude Code {installed} → {latest}"
+        # claude update はシェルの rc を書き換えないので、uv や nvm のような抑える指定は要らない。
+        return notice(summary, summary, ["claude update"], steps=[("claude update", [self.path, "update"])])
+
+    def remark(self, data):
+        if self.evaluate(data) is None:
+            return None
+        return "自動更新と同じく、待ち期間なしでチャンネルの版へ上げる"
+
+
 class GitTool(Tool):
     """git で clone して更新するもの（zinit 本体とプラグイン）。"""
 
@@ -703,6 +771,9 @@ def find_tools():
     nvm = Nvm.locate()
     if nvm:
         found.append(Nvm(nvm))
+    claude = find_tool("claude")
+    if claude:
+        found.append(ClaudeCode(claude))
     found += GitTool.locate()
     brew = find_tool("brew")
     if brew:
@@ -1504,7 +1575,8 @@ def fits(text):
 
 
 UPDATE_GROUPS = [("dotfiles", "d", "dotfiles", "dotfiles"), ("tools", "t", "ツール", "tools"), ("brew", "b", "Homebrew", "tools")]
-# 質問の選択肢に添える。Homebrew は版の公開日時を持たず、ほかと違って待ち期間なしで上げる。
+# 質問の選択肢に添える。Homebrew は版の公開日時を持たず、待ち期間なしで上げる。Claude Code も待たないが、
+# 起動すれば自分で上がる版へ上げるだけなので、ツールには添えない。
 UPDATE_NOTES = {"brew": "待ち期間なし"}
 
 
