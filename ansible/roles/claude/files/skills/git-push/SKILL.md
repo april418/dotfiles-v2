@@ -99,7 +99,7 @@ git remote
 
 #### 検出ロジック
 
-以下の優先順で検出する。該当しないものはスキップする。
+以下の種別をすべて調べ、当てはまった種別はすべて対象にする（最初に当てはまった種別で止めない）。チェックを流す順は節の並び（Node.js → Python → Rust → Go → Ansible → Docker → Makefile → Taskfile）で、種別の中は表の行の順（Makefile / Taskfile は `lint` → `check` → `test` → `build` の順）である。
 
 **Node.js プロジェクト（`package.json` が存在）:**
 
