@@ -188,7 +188,9 @@ exit 5 以外の 0 でない終了コードは失敗である。この扱いは 
 | チェック | 条件 | コマンド |
 |---------|------|---------|
 | lint | `ansible-lint` がインストール済み | `ansible-lint` |
-| syntax-check | 常に実行 | `ansible-playbook --syntax-check <playbook>` |
+| syntax-check | `playbook.yml` が存在 | `ansible-playbook --syntax-check playbook.yml` |
+
+syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。ほかの YAML を playbook とみなすのは推測で、vars やタスクのリストに流すと落ちる。ほかの playbook は ansible-lint に任せる（外せない syntax-check ルールで、見つけた playbook すべてに `ansible-playbook --syntax-check` を流す）。
 
 **Docker プロジェクト（`Dockerfile` または `compose.yml` / `docker-compose.yml` が存在）:**
 
