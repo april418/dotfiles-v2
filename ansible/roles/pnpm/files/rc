@@ -1,4 +1,5 @@
-# pnpm グローバル設定
+# pnpm 10 以下のグローバル設定
+# pnpm 11 以降はこのファイルを読まず、同じディレクトリの config.yaml を読む。値を変えたらそちらも揃える
 # ~/.npmrc の内容に極力揃えている（項目順も合わせる）
 audit=true
 audit-level=high

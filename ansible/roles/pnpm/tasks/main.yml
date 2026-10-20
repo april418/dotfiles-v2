@@ -10,3 +10,9 @@
     src: files/rc
     dest: "{{ pnpm_config_dir }}/rc"
     mode: "0644"
+
+- name: Copy pnpm config.yaml
+  ansible.builtin.copy:
+    src: files/config.yaml
+    dest: "{{ pnpm_config_dir }}/config.yaml"
+    mode: "0644"

@@ -1,0 +1,9 @@
+# pnpm 11 以降のグローバル設定
+# pnpm 10 以下はこのファイルを読まず、同じディレクトリの rc を読む。値を変えたらそちらも揃える
+# pnpm 11 以降は ~/.npmrc から認証・レジストリ・プロキシなどの接続設定しか読まないので、~/.npmrc にある設定もここに置く
+# audit 系は置かない。pnpm 11 はグローバルの auditLevel を無視して毎回警告し、pnpm 12 は audit: true で設定の読み込みに失敗する
+engineStrict: true
+ignoreScripts: true
+# npm の min-release-age=7（日）に相当。pnpm は分単位のみ。
+minimumReleaseAge: 10080
+saveExact: true
