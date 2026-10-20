@@ -1,7 +1,8 @@
 """guard-branch-base.sh が使う、bash のコマンド文字列の解析。
 
 標準入力のコマンド文字列から、ベース (start-point) を付けずにブランチを作る
-git switch -c / -C、git checkout -b / -B、git worktree add -b / -B を探す。見つけた
+git switch -c / -C、git checkout -b / -B、git worktree add -b / -B を探す。-b を付けない
+git worktree add <path> も、<path> の basename のブランチを HEAD から作るなら含める。見つけた
 コマンドごとに、対象のリポジトリの現在のブランチを 1 行ずつ標準出力へ書く。detach
 していれば HEAD を書き、リポジトリを特定できなければその行を書かない。
 
@@ -40,6 +41,8 @@ EMPTY_PARENS = re.compile(r"\(\s*\)")
 GIT_VALUE_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--attr-source"}
 # 対象のリポジトリを変えるもの。現在のブランチを調べるときに同じものを渡す。
 GIT_REPO_OPTS = {"-C", "--git-dir", "--work-tree"}
+# 設定を変えるもの。worktree.guessRemote などを読むときに同じものを渡す。
+GIT_CONFIG_OPTS = {"-c", "--config-env"}
 
 # longs は git switch -h / git checkout -h の一覧 (2.54 と 2.56 で同じ)。parse-options は
 # 長いオプションを一意な接頭辞に省略させる (--cr は --create) ので、解決に全部の名前が要る。
@@ -82,8 +85,11 @@ WORKTREE_ADD = {
     # git worktree add -b <new> <path> [<commit-ish>]。-- の後ろも <path> と起点として読む。
     "paths": 1,
     "start_after_dashdash": True,
-    # --orphan -b <new> は中身の無いブランチを作るので、HEAD のコミットを引き連れない
-    "unborn": {"orphan"},
+    # 値を取らない真偽のオプション。--no-<name> で打ち消せ、後に書いたものが勝つ (実測)
+    "flags": {"orphan", "detach", "guess-remote"},
+    "short_flags": {"d": "detach"},
+    # -b を付けなくても、<path> の basename のブランチが無ければ作る
+    "dwim_branch": True,
 }
 
 
@@ -434,38 +440,50 @@ class Lexer:
 
 
 def resolve_long(name, longs):
-    """省略された長いオプション名を正式な名前にする。決まらなければ None。"""
-    if name.startswith("no-"):
-        return None  # 否定形は値を取らないので、どの名前かは要らない
+    """省略された長いオプション名を (正式な名前, --no- を付けたか) にする。決まらなければ名前は None。"""
+    negated = name.startswith("no-")
+    if negated:
+        name = name[3:]
     if name in longs:
-        return name
+        return name, negated
     hits = [long for long in longs if long.startswith(name)]
-    return hits[0] if len(hits) == 1 else None
+    return (hits[0] if len(hits) == 1 else None), negated
 
 
 def lacks_start_point(args, spec):
-    """git switch / checkout / worktree add の引数が、起点を付けずにブランチを作るものか。"""
-    creates = unborn = False
-    operands = 0
+    """git switch / checkout / worktree add の引数が、起点を付けずにブランチを作るものか。
+
+    作るなら True、作らなければ False を返す。-b を付けない git worktree add <path> は、
+    作るかがリポジトリの状態で決まるので、(<path>, --guess-remote の値) を返す。
+    --guess-remote の値は、指定が無ければ None。
+    """
+    creates = False
+    flags = {}
+    operands = []
     k = 0
     while k < len(args):
         a = args[k]
         k += 1
         if a == "--":
             if spec["start_after_dashdash"]:
-                operands += len(args) - k
+                operands += args[k:]
             break
         if a.startswith("--"):
             name, eq, _ = a[2:].partition("=")
-            name = resolve_long(name, spec["longs"])
+            name, negated = resolve_long(name, spec["longs"])
+            if name in spec.get("flags", ()):
+                flags[name] = not negated
+            if negated:
+                continue  # 否定形は値を取らない
             if name in spec["create"]:
                 creates = True
-            unborn = unborn or name in spec.get("unborn", ())
             if (name in spec["create"] or name in spec["value"]) and not eq:
                 k += 1
         elif a.startswith("-") and a != "-":
             # -qc y のように短いオプションはまとめられ、値を取るものの後ろは値になる (-cy)
             for pos, ch in enumerate(a[1:], 1):
+                if ch in spec.get("short_flags", {}):
+                    flags[spec["short_flags"][ch]] = True
                 if ch in spec["create"]:
                     creates = True
                 if ch in spec["create"] or ch in spec["value"]:
@@ -475,24 +493,39 @@ def lacks_start_point(args, spec):
                 if ch in spec["optional"]:
                     break
         else:
-            operands += 1
-    # 位置引数が起点の手前までしか無ければ、起点を省いている
-    return creates and not unborn and operands == spec["paths"]
+            operands.append(a)
+    if flags.get("orphan"):
+        return False  # 中身の無いブランチを作るので、HEAD のコミットを引き連れない
+    if creates:
+        # 位置引数が起点の手前までしか無ければ、起点を省いている
+        return len(operands) == spec["paths"]
+    if spec.get("dwim_branch") and not flags.get("detach") and len(operands) == 1:
+        return operands[0], flags.get("guess-remote")
+    return False
 
 
-def unbased_branch_repo(args):
-    """git の引数がベース無しの派生なら、対象のリポジトリを決めるオプションを返す。違えば None。"""
-    repo = []
+def unbased_branch(args):
+    """git の引数がベース無しの派生になりうるなら (repo, config, dwim) を返す。違えば None。
+
+    repo は対象のリポジトリを決めるオプション、config は設定を変えるオプションである。
+    dwim は -b を付けない git worktree add なら lacks_start_point が返した組で、ほかは None。
+    """
+    repo, config = [], []
     k = 0
     while k < len(args) and args[k].startswith("-"):
         a = args[k]
         if a in GIT_VALUE_OPTS:
             if a in GIT_REPO_OPTS:
                 repo += args[k:k + 2]
+            elif a in GIT_CONFIG_OPTS:
+                config += args[k:k + 2]
             k += 2
         else:
-            if a.split("=", 1)[0] in GIT_REPO_OPTS:
+            name = a.split("=", 1)[0]
+            if name in GIT_REPO_OPTS:
                 repo.append(a)
+            elif name in GIT_CONFIG_OPTS:
+                config.append(a)
             k += 1
     if args[k:k + 2] == ["worktree", "add"]:
         spec, rest = WORKTREE_ADD, args[k + 2:]
@@ -500,9 +533,10 @@ def unbased_branch_repo(args):
         spec, rest = {"switch": SWITCH, "checkout": CHECKOUT}.get(args[k]), args[k + 1:]
     else:
         return None
-    if spec is None or not lacks_start_point(rest, spec):
+    found = spec is not None and lacks_start_point(rest, spec)
+    if found is False:
         return None
-    return repo
+    return repo, config, (None if found is True else found)
 
 
 def shell_script(args):
@@ -523,23 +557,118 @@ def shell_script(args):
     return None
 
 
+def git(args, cwd):
+    """git を実行し、成功すれば標準出力を、失敗すれば None を返す。"""
+    try:
+        result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, errors="replace")
+    except OSError:
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
 def current_branch(repo, cwd):
     if any(UNKNOWN in opt for opt in repo):
         return None
-    try:
-        result = subprocess.run(
-            ["git", *repo, "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=cwd, capture_output=True, text=True, errors="replace",
-        )
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
+    return (git([*repo, "rev-parse", "--abbrev-ref", "HEAD"], cwd) or "").strip() or None
 
 
-def branches(text, *state):
-    """state は Lexer の引数 (cwd, oldpwd, dirs, lost) で、cwd のほかは省ける。"""
+def creates_from_head(repo, config, cwd, path, guess):
+    """-b を付けない git worktree add <path> が、HEAD からブランチを作るか。決められなければ True。
+
+    guess は --guess-remote の値で、None なら worktree.guessRemote を読む。
+    """
+    # 2.56 は末尾の / を落とす。2.54 は落とさず、不正なブランチ名として何も作らない
+    name = path.rstrip("/").rsplit("/", 1)[-1]
+    if not name or UNKNOWN in name:
+        return True
+    # basename のブランチがあれば、git はそれを開くだけで作らない
+    if git([*repo, "show-ref", "--verify", "--quiet", "refs/heads/" + name], cwd) is not None:
+        return False
+    if any(UNKNOWN in opt for opt in config):
+        return True
+    opts = repo + config
+    if guess is None:
+        guess = (git([*opts, "config", "--type=bool", "--get", "worktree.guessRemote"], cwd) or "").strip() == "true"
+    if not guess:
+        return True
+    # 追跡ブランチを持つ remote が 1 つに決まれば、git はその追跡ブランチから作る
+    remotes = tracking_remotes(opts, cwd, "refs/heads/" + name)
+    if len(remotes) > 1:
+        # 2.54 は HEAD から作り、2.56 は何も作らずに失敗する。checkout.defaultRemote があればそれを使う
+        return (git([*opts, "config", "--get", "checkout.defaultRemote"], cwd) or "").strip() not in remotes
+    return not remotes
+
+
+def tracking_remotes(opts, cwd, ref):
+    """remote.<name>.fetch の refspec で ref を写し、写した先の参照がある remote の名前を返す。"""
+    out = git([*opts, "config", "-z", "--get-regexp", r"^remote\..*\.fetch$"], cwd) or ""
+    refspecs = {}
+    for record in out.split("\0"):
+        key, _, value = record.partition("\n")
+        if key.startswith("remote.") and key.endswith(".fetch"):
+            refspecs.setdefault(key[len("remote."):-len(".fetch")], []).append(value)
+    # refs/remotes/<remote>/ の下を見るだけでは、--single-branch で clone した remote に
+    # 古い追跡ブランチが残っていると、git が照合しないものを数える。refspec で写す
+    found = []
+    for remote, specs in refspecs.items():
+        dst = map_refspec(specs, ref)
+        if dst and git([*opts, "rev-parse", "--verify", "--quiet", "--end-of-options", dst], cwd) is not None:
+            found.append(remote)
+    return found
+
+
+def match_pattern(pattern, name):
+    """name が * を 1 つ含む pattern に当てはまれば * の部分を、当てはまらなければ None を返す。"""
+    prefix, _, suffix = pattern.partition("*")
+    if name.startswith(prefix) and name.endswith(suffix) and len(name) >= len(prefix) + len(suffix):
+        return name[len(prefix):len(name) - len(suffix)]
+    return None
+
+
+def map_refspec(specs, ref):
+    """fetch の refspec の並びで ref を写した先を返す。写さなければ None、保存しない (dst が空) なら空文字列。"""
+    positive, negative = [], []
+    for spec in specs:
+        if spec.startswith("^"):
+            negative.append(spec[1:])
+            continue
+        body = spec[1:] if spec.startswith("+") else spec
+        src, colon, dst = body.rpartition(":")
+        positive.append((src, dst) if colon else (body, None))
+    # git の query_matches_negative_refspec は、パターンの refspec を dst 側で ref に当てるので、
+    # refs/heads/*:refs/remotes/<r>/* に足した ^refs/heads/<name> は効かない (2.54 / 2.56 で実測)
+    names = []
+    for src, dst in positive:
+        if "*" in src:
+            part = match_pattern(dst or src, ref)
+            if part is not None:
+                names.append(src.replace("*", part, 1))
+        elif src == ref:
+            names.append(src)
+    for pattern in negative:
+        for name in names:
+            if (match_pattern(pattern, name) is not None) if "*" in pattern else pattern == name:
+                return None
+    # dst が空の refspec に当てはまっても、git はそこで探すのをやめる
+    for src, dst in positive:
+        if dst is None:
+            continue
+        if "*" in src:
+            part = match_pattern(src, ref)
+            if part is not None:
+                return dst.replace("*", part, 1)
+        elif src == ref:
+            return dst
+    return None
+
+
+def branches(text, *state, ran_git=None):
+    """state は Lexer の引数 (cwd, oldpwd, dirs, lost) で、cwd のほかは省ける。
+
+    ran_git は、git を読むたびに要素を足すリストである。eval や bash -c の中を読むときに
+    外側のものを渡し、前に git があったかを内と外で共有する。
+    """
+    ran_git = [] if ran_git is None else ran_git
     found = []
     for words, (cwd, oldpwd, dirs, lost) in Lexer(text, *state).run():
         # コマンド名に限らず、最初に現れた git から読む。xargs、sudo -u、env、time などの
@@ -549,18 +678,24 @@ def branches(text, *state):
             continue
         name, args = os.path.basename(words[k]), words[k + 1:]
         if name == "git":
-            repo = unbased_branch_repo(args)
-            branch = None if repo is None else current_branch(repo, cwd)
-            if branch:
-                found.append(branch)
+            target = unbased_branch(args)
+            if target is not None:
+                repo, config, dwim = target
+                branch = current_branch(repo, cwd)
+                # ref と設定はフックの時点のものしか読めない。前の git (git branch -D <name> など) や、
+                # git の前の代入と env (GIT_CONFIG_*、HOME、env -i など) で変わりうるなら、ブランチを作るものとする
+                unsure = ran_git or any(ASSIGNMENT.match(w) or os.path.basename(w) == "env" for w in words[:k])
+                if branch and (dwim is None or unsure or creates_from_head(repo, config, cwd, *dwim)):
+                    found.append(branch)
+            ran_git.append(name)
         elif name == "eval":
             # eval は今のシェルで動くので、cd - の移動先も pushd のスタックも引き継ぐ
-            found += branches(" ".join(args), cwd, oldpwd, dirs, lost)
+            found += branches(" ".join(args), cwd, oldpwd, dirs, lost, ran_git=ran_git)
         else:
             script = shell_script(args)
             if script is not None:
                 # bash -c は子のシェルで動き、OLDPWD もスタックも引き継がない
-                found += branches(script, cwd, None, (), lost)
+                found += branches(script, cwd, None, (), lost, ran_git=ran_git)
     return found
 
 
