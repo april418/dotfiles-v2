@@ -109,15 +109,16 @@ ruff format .
 | 順 | 手がかり | 流すもの |
 | --- | --- | --- |
 | 1 | `package.json` の `format` / `fix` / `lint:fix`、`Makefile` / `Taskfile.yml` の `fmt` / `format` | そのスクリプト・ターゲット |
-| 2 | `.github/workflows/*.yml` の整形チェック | 書き込む形に直したもの（`prettier --check` → `prettier --write`、`cargo fmt --check` → `cargo fmt`、`ruff format --check` → `ruff format`） |
+| 2 | `.github/workflows/*.yml` の整形チェック | 書き込む形に直したもの（`prettier --check` → `prettier --write`、`shfmt --diff` → `shfmt --write`、`gofmt -l` → `gofmt -w`、`cargo fmt --check` → `cargo fmt`、`ruff format --check` → `ruff format`） |
 | 3 | `.prettierrc*`、`pyproject.toml` の `[tool.ruff.format]` / `[tool.black]`、`.pre-commit-config.yaml` | そのツールを、コミットに入れるファイル（削除したものを除く）だけに流す（`prettier --write --ignore-unknown <files>` / `ruff format <files>` / `black <files>` / `pre-commit run --files <files>`） |
 
-2 で `--check` を外すだけにしない。`prettier <file>` は整形結果を標準出力に出すだけで
-ファイルを書き換えず、exit 0 で終わる。3 でリポジトリ全体に流さないのは、変更して
-いないファイルまで書き換わって差分が膨らむためである。prettier は扱えないファイルや
-存在しないファイルを渡すと exit 2 になるので、`--ignore-unknown` を付けて削除したものを
-除く。`pre-commit run` はフックがファイルを書き換えると exit 1 になる。もう一度流して
-exit 0 なら整形済みである。
+2 でチェック用のフラグを外せば書き込む、と決めつけない。prettier・shfmt・gofmt は
+フラグを外しただけだと、整形結果を標準出力に出すだけでファイルを書き換えず、exit 0 で
+終わる。表に無いツールは、書き込む形を `--help` で確かめる。3 でリポジトリ全体に
+流さないのは、変更していないファイルまで書き換わって差分が膨らむためである。prettier は
+扱えないファイルや存在しないファイルを渡すと exit 2 になるので、`--ignore-unknown` を
+付けて削除したものを除く。`pre-commit run` はフックがファイルを書き換えると exit 1 に
+なる。もう一度流して exit 0 なら整形済みである。
 
 **手がかりが 1 つも無い、または手がかりのツールが入っていなくて流せないときは、
 `AskUserQuestion` で「整形せずにコミットする」か「整形コマンドを指定する」かを
