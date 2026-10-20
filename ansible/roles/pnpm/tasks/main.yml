@@ -1,12 +1,18 @@
 ---
 - name: Ensure pnpm config directory exists
   ansible.builtin.file:
-    path: "{{ ansible_facts['env'].HOME }}/.config/pnpm"
+    path: "{{ pnpm_config_dir }}"
     state: directory
     mode: "0755"
 
 - name: Copy pnpm rc
   ansible.builtin.copy:
-    src: files/.config/pnpm/rc
-    dest: "{{ ansible_facts['env'].HOME }}/.config/pnpm/rc"
+    src: files/rc
+    dest: "{{ pnpm_config_dir }}/rc"
+    mode: "0644"
+
+- name: Copy pnpm config.yaml
+  ansible.builtin.copy:
+    src: files/config.yaml
+    dest: "{{ pnpm_config_dir }}/config.yaml"
     mode: "0644"
