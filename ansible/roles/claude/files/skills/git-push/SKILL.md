@@ -126,6 +126,7 @@ git remote
 `yarn npm audit` の既定は今いるワークスペースの直接依存だけなので、`--all` と `--recursive` で全ワークスペースの推移的な依存まで見る。4 以上は非推奨のパッケージも moderate として数えて exit 1 になるので、npm / pnpm と同じく脆弱性だけで止まるよう `--no-deprecations` を付ける（このフラグは 4 から）。
 yarn 1 の終了コードは見つかった重大度の値の和（info 1 / low 2 / moderate 4 / high 8 / critical 16）で、info だけでも 0 にならず失敗である。
 bun は 1.2.15 で `bun audit` が入ったので、それより前の bun では失敗になる。
+pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 で失敗したら、package-manager skill のルール 5 の手順で pnpm 11 を使って流し直し、その結果で判定する。出力の audit の行には括弧で `pnpm 10 が 410 を返したため pnpm 11 で流し直した` と書き、ルール 5 が報告に添えるよう求めることも同じ括弧に入れる。
 
 **PATH 解決のフォールバック**: 非ログインシェル（subagent の Bash 等）では `nvm` 配下の `node` / `pnpm` / `npm` が `PATH` に入っていないことがある。`command -v <pm>` で見つからない場合は以下の優先順で探索する:
 
