@@ -124,7 +124,7 @@ git remote
 
 pytest は収集・選択されたテストが 0 件だと exit 5 で終わる。`uv init` 直後、テスト関数の無い `test_*.py` だけのとき、`addopts` の `-m` / `-k` で全件が外れたときがこれに当たる。テストがあっても `testpaths` / `python_files` の設定や全モジュールの `importorskip` で 0 件になれば同じく exit 5 で、区別しない。
 **exit 5 は失敗に数えない。** push の可否を決める判定（冒頭の「全チェック成功」、Step 3 の「すべてのチェックに通過したら」）では通過として扱い、出力だけ `— test（実行するテストが 0 件のためスキップ。pytest の exit 5: <最終行>）` と書く。`<最終行>` は pytest の最後の行から `=` と所要時間を除いたもの（`no tests ran` / `1 deselected` など）。
-exit 5 以外の 0 でない終了コードは失敗である。この扱いは Python の表から流した `pytest` に限る。Makefile / Taskfile のターゲットや `scripts.test` から呼ばれた pytest は、そのツールの終了コードで判定する（make は exit 2 を返す）。
+exit 5 以外の 0 でない終了コードは失敗である。この扱いは Python の表から流した `pytest` に限る。Makefile / Taskfile のターゲットや `scripts.test` から呼ばれた pytest は、テストが 0 件でもそのツールの終了コードで判定する。それらはプロジェクトが定めた入口なので、その終了コードをそのまま採る。表の `pytest` は skill が選んだコマンドなので、exit 5 の読み方も skill が決めてよい。make の出力と報告の書き方は Makefile / Taskfile の節にある。
 
 **Rust プロジェクト（`Cargo.toml` が存在）:**
 
@@ -162,6 +162,15 @@ exit 5 以外の 0 でない終了コードは失敗である。この扱いは 
 **Makefile / Taskfile（`Makefile` / `Taskfile.yml` が存在）:**
 
 `lint`, `check`, `test`, `build` ターゲットが定義されていれば実行する。
+
+出力ではチェック名を `make <ターゲット>` / `task <タスク>` と書く。Python の表の `test` と同時に流れると、同じ pytest の 0 件がスキップと失敗に分かれるので、どちらの結果かを区別するためである。
+
+ターゲットから呼ばれた pytest のテストが 0 件だと、make は exit 2 で終わる。最終行は `make: *** [test] Error 5` で、その直前の行は、要約を出す設定なら pytest の要約になる（既定では `=` で囲まれた `no tests ran in 0.00s`、`-q` では囲みが無い。`-qq` では要約が出ず空行。GNU Make 3.81 と pytest 9.1.1 で実測）。これも失敗として push を止める（理由は Python の表の下の段落）。
+最終行が `Error 5` で終わり、直前の行が pytest の要約で `passed` / `failed` / `error` / `skipped` のどれも含まない（`no tests ran` / `1 deselected` / `1 warning` など）ときは、失敗の報告に原因と直し方を添える。make の `Error 5` はレシピのどのコマンドが 5 を返しても出るので、要約の行が無ければ添えない。この判定は make の出力の形に合わせたもので、task には当てはめない。
+
+```
+- ✗ make test（失敗。pytest の実行するテストが 0 件で exit 5。テストを足すか、0 件を通すなら Makefile 側で `pytest || [ $$? -eq 5 ]` のように exit 5 を成功に変える）
+```
 
 #### チェック実行の原則
 
