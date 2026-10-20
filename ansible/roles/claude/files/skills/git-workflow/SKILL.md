@@ -30,7 +30,7 @@ Read で SKILL.md を開いただけでは、圧縮の後に本文が戻らな�
 
 ## ルール 0: 非対話時にどこまで進めてよいか
 
-**この規定は git-* skill（git-branch / git-pr / git-recovery を含む）全体に効く。**
+**この規定は `git-*` skill（git-branch / git-pr / git-recovery を含む）全体に効く。**
 特定の手順の中だけの話ではない。
 
 非対話（subagent 実行 / CI / Auto Mode 等）では `AskUserQuestion` を呼べない。
