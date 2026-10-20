@@ -1,0 +1,3 @@
+# dotfiles-check は拡張子が無いので名指しする。既定の対象にある Markdown は prettier に任せる。
+include = ["*.py", "ansible/roles/dotfiles/files/dotfiles-check"]
+line-length = 120

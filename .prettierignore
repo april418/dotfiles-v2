@@ -1,0 +1,5 @@
+# .claude/ には Claude Code の worktree や実行時のファイルが置かれる。prettier は .git/info/exclude を読まない。
+.claude/*
+!.claude/CLAUDE.md
+# ccstatusline の TUI が書き出す形のまま置き、書き出したものを貼り直したときに差分を出さない。
+ansible/roles/claude/files/ccstatusline.json

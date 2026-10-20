@@ -1,0 +1,2 @@
+# Markdown のコードブロックは例として書いたままにする。YAML の例にある {{...}} の雛形を整形で壊さないため。
+embeddedLanguageFormatting: "off"
