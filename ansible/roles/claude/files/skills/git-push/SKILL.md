@@ -9,26 +9,20 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 - push 前にプロジェクト固有の品質チェックを自動検出・実行する。
 - すべてのチェックに通過した場合のみ push を実行する。
 
-## 実行モードと AskUserQuestion の省略条件
+## 実行モードと AskUserQuestion
 
-本スキルは Step 1（中止条件検出時の方針確認）、Step 2（チェック一覧承認）、Step 3（push 最終確認）の **3 箇所** で `AskUserQuestion` を要求する。
-ただし以下のいずれかに該当する場合は確認を省略してよい。非対話モードと事前指示済みでは **3 箇所すべて**、前提条件揃いでは Step 2 / Step 3 を省略する。
+本スキルは、流すチェックの一覧にも push にも承認を取らない（`[gone]` のブランチを作り直すかは下の表の 1 行目で聞く）。Step 1 を通った時点で未コミット変更は無く push 先も 1 つに決まっており、作業ブランチへの通常の push（force を伴わない）は後から打ち消せる（git-workflow のルール 0）。
+チェックを外すのは push を頼む指示で行う（「流さないチェックの書き方」）。
 
-- **非対話モード**: subagent 実行、CI、Auto Mode 等、ユーザーへの問い合わせができないコンテキスト
-- **明確な前提条件揃い**: 全チェック成功（または流すチェックが 0 件）+ 未コミット変更なし（Step 1 の 1. の判定。未追跡のファイルも数える）+ push 先が一意に確定（Step 1 の表で push コマンドが決まる行に当たるか、Step 1 の確認への答えで push コマンドが決まった。初回 push と、remote の名指しで決まる行を含む）。判定する時点は下の「Step 2 / Step 3 の承認」の表に従う
-- **ユーザーが事前指示済み**: 直近のユーザー指示で push 実行が明示的に承認されている
+`AskUserQuestion` で聞くのは次の 3 つの場面だけである。**非対話モード**（subagent 実行、CI、Auto Mode 等、ユーザーへの問い合わせができないコンテキスト）では、右の列のとおりにする。
 
-省略した場合の振る舞い:
+| 場面 | 対話モード | 非対話モード |
+| --- | --- | --- |
+| Step 1 で確認が要るか中止条件を検出した（未コミット変更、push 先の remote が決まらない、名指しの remote が upstream の remote と違う、upstream が `[gone]`、detached HEAD、remote が 0 行） | 検出内容を伝え、次に取りうる方針を聞く | 下の段落 |
+| Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
+| Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く | 同じ選択肢を最終応答で提示する |
 
-- **Step 1 で中止条件を検出した場合**（未コミット変更あり / push 対象 0 件 / detached HEAD / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）: push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する
-- **Step 2 / Step 3 の承認**: 非対話モードと事前指示済みでは省略する。前提条件揃いで省略するかは、各ステップに入るときに下の表で判定する。省略したら最終応答（または Discretionary fill-ins 相当の箇所）に「どの判断で承認を省略したか」を 1 行で明記する
-
-  | 承認 | 判定する時点 | 前提条件揃いで省略できる条件 |
-  | --- | --- | --- |
-  | Step 2 のチェック一覧承認 | チェックを流す前 | 未コミット変更なし + push 先が一意に確定 |
-  | Step 3 の push 最終確認 | 全チェックを流し、作業ツリーを取り直した後 | Step 2 の行の条件（Step 2 に入るときの判定を引き継ぎ、未追跡のファイルを数え直さない）+ 全チェック成功（または流すチェックが 0 件） |
-
-  流すチェックが 0 件なら、モードによらず Step 2 の承認は取らない（「チェック実行の原則」の 0 件の項）。
+非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / push 対象 0 件 / detached HEAD / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する。
 
 **チェックが 1 つでも失敗したら、どのモードでも push しない。** 失敗内容を報告して終える（「失敗時の優先規則」）。
 
@@ -77,8 +71,8 @@ git remote
    | upstream（`for-each-ref` の出力） | `git remote` | remote の名指し | push 先 |
    | --- | --- | --- | --- |
    | 同名のリモートブランチ（`<remote>/<branch>`。`[ahead N]` / `[behind N]` / `[ahead N, behind N]` が続いてよい。`[gone]` で終わるものは下の `[gone]` の行） | — | 無い、または upstream の remote | `git push <remote> <branch>` |
-   | 同名のリモートブランチ（`[gone]` を除く） | — | upstream と違う remote | `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない。付け替えずに push すると upstream は変わらず、3. の `@{upstream}..HEAD` は upstream の remote との差しか出さない（upstream の remote に push 済みなら 0 件になり、push せずに終わる。Git 2.54.0 で実測）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる。どちらでも、3. は `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える |
-   | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | — | `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る） |
+   | 同名のリモートブランチ（末尾が `[gone]` のものを含む） | — | upstream と違う remote | `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない。付け替えずに push すると upstream は変わらず、3. の `@{upstream}..HEAD` は upstream の remote との差しか出さない（upstream の remote に push 済みなら 0 件になり、push せずに終わる。Git 2.54.0 で実測）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる。どちらでも、3. は `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える |
+   | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | 無い、または upstream の remote | `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る）。push すると答えたら `git push <upstream の remote> <branch>` に決まる。upstream の設定は残っており、push で追跡が戻るので `-u` は要らない。3. は `@{upstream}` が解決できず exit 128 になるので、`git log --oneline HEAD --not --remotes=<upstream の remote>` で数える（どちらも Git 2.54.0 で実測） |
    | 空（upstream が無い）、または名前の違うブランチ | 1 行 | 無い、またはその remote | **初回 push として扱い、`git push -u <remote> <branch>` で確定とみなす** |
    | 空、または名前の違うブランチ | 2 行以上 | ある | **初回 push として扱い、`git push -u <名指しの remote> <branch>` で確定とみなす** |
    | 空、または名前の違うブランチ | 2 行以上 | 無い | `AskUserQuestion` でユーザーに push 先を確認する |
@@ -151,10 +145,10 @@ pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 
 
 `scripts.typecheck` と `scripts.type-check` が両方定義されていれば両方流す。中身が違いうるので、片方だけでは取りこぼす。
 
-**`scripts.test` の値が `npm init` / `pnpm init` の既定の `echo "Error: no test specified" && exit 1` と完全に一致するときは、定義されていないものとして扱う。** package.json 上は `"test": "echo \"Error: no test specified\" && exit 1"` と書かれている。test 行の条件を満たさないので流さず、検出されなかったチェックと同じく push の可否の判定にも入れない。Step 2 の承認で見せる一覧と結果の出力には `— Node.js test（scripts.test が npm init の既定のままのためスキップ）` と書き、前段の失敗で打ち切ったときもこの書き方を変えない。
+**`scripts.test` の値が `npm init` / `pnpm init` の既定の `echo "Error: no test specified" && exit 1` と完全に一致するときは、定義されていないものとして扱う。** package.json 上は `"test": "echo \"Error: no test specified\" && exit 1"` と書かれている。test 行の条件を満たさないので流さず、検出されなかったチェックと同じく push の可否の判定にも入れない。結果の出力には `— Node.js test（scripts.test が npm init の既定のままのためスキップ）` と書き、前段の失敗で打ち切ったときもこの書き方を変えない。
 空白やコマンドを足したもの（末尾に `&& jest` を足したもの等）は定義されているものとして流し、0 でない終了コードは失敗である。判定は PM によらない（`npm init` で作ってから別の PM に移したプロジェクトにも残る）。
 
-**ロックファイル（`bun.lock` / `bun.lockb` / `pnpm-lock.yaml` / `yarn.lock` / `package-lock.json` / `npm-shrinkwrap.json`）がどれも無く、`package.json` の `dependencies` / `devDependencies` / `optionalDependencies` / `peerDependencies` / `workspaces` と `pnpm-workspace.yaml` の `packages` もどれも無いか空のときは、audit を流さない。** ロックファイルが無いと、`npm audit` は `ENOLOCK`、`pnpm audit` は `ERR_PNPM_AUDIT_NO_LOCKFILE` で exit 1 になる。依存が無ければ、ロックファイルを作って流しても脆弱性 0 件（exit 0）で終わる。検出されなかったチェックと同じく push の可否の判定には入れず、Step 2 の承認で見せる一覧と結果の出力には `— Node.js audit（ロックファイルも依存も無いためスキップ）` と書く。前段の失敗で打ち切ったときもこの書き方を変えない。
+**ロックファイル（`bun.lock` / `bun.lockb` / `pnpm-lock.yaml` / `yarn.lock` / `package-lock.json` / `npm-shrinkwrap.json`）がどれも無く、`package.json` の `dependencies` / `devDependencies` / `optionalDependencies` / `peerDependencies` / `workspaces` と `pnpm-workspace.yaml` の `packages` もどれも無いか空のときは、audit を流さない。** ロックファイルが無いと、`npm audit` は `ENOLOCK`、`pnpm audit` は `ERR_PNPM_AUDIT_NO_LOCKFILE` で exit 1 になる。依存が無ければ、ロックファイルを作って流しても脆弱性 0 件（exit 0）で終わる。検出されなかったチェックと同じく push の可否の判定には入れず、結果の出力には `— Node.js audit（ロックファイルも依存も無いためスキップ）` と書く。前段の失敗で打ち切ったときもこの書き方を変えない。
 ロックファイルが無くても上のどれかが空でなければ流し、ロックファイルが無いことによる失敗も失敗である。ロックファイルを作るコマンド（`npm audit` のエラーが案内する `npm i --package-lock-only`、`pnpm install --lockfile-only` 等）はスキルから流さない（未コミットのファイルが増える）。
 
 **Python プロジェクト（`pyproject.toml` / `setup.py` / `setup.cfg` が存在）:**
@@ -166,7 +160,7 @@ pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 
 | test | `pytest` がインストール済み | `pytest` |
 
 pytest は収集・選択されたテストが 0 件だと exit 5 で終わる。`uv init` 直後、テスト関数の無い `test_*.py` だけのとき、`addopts` の `-m` / `-k` で全件が外れたときがこれに当たる。テストがあっても `testpaths` / `python_files` の設定や全モジュールの `importorskip` で 0 件になれば同じく exit 5 で、区別しない。
-**exit 5 は失敗に数えない。** push の可否を決める判定（冒頭の「全チェック成功」、Step 3 の「すべてのチェックに通過したら」）では通過として扱い、出力だけ `— Python test（実行するテストが 0 件のためスキップ。pytest の exit 5: <最終行>）` と書く。`<最終行>` は pytest の最後の行から `=` と所要時間を除いたもの（`no tests ran` / `1 deselected` など）。
+**exit 5 は失敗に数えない。** push の可否を決める判定（冒頭の「チェックが 1 つでも失敗したら」、Step 3 の「すべてのチェックに通過したら」）では通過として扱い、出力だけ `— Python test（実行するテストが 0 件のためスキップ。pytest の exit 5: <最終行>）` と書く。`<最終行>` は pytest の最後の行から `=` と所要時間を除いたもの（`no tests ran` / `1 deselected` など）。
 exit 5 以外の 0 でない終了コードは失敗である。この扱いは Python の表から流した `pytest` に限る。Makefile / Taskfile のターゲットや `scripts.test` から呼ばれた pytest は、テストが 0 件でもそのツールの終了コードで判定する。それらはプロジェクトが定めた入口なので、その終了コードをそのまま採る。表の `pytest` は skill が選んだコマンドなので、exit 5 の読み方も skill が決めてよい。make の出力と報告の書き方は Makefile / Taskfile の節にある。
 
 **Rust プロジェクト（`Cargo.toml` が存在）:**
@@ -217,15 +211,13 @@ syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。
 
 #### チェック実行の原則
 
-- 検出されたチェックの一覧と実行順をユーザーに提示し、`AskUserQuestion` で承認を得てから実行する（省略するかは冒頭の「Step 2 / Step 3 の承認」に従い、チェックを流す前に決める）。一覧の各行も次の項のチェック名で書く。
-- **チェック名**: 一覧と結果の出力では、表の「チェック」列の前に種別名を付けて `<種別名> <チェック>` と書く（`Node.js build` / `Docker build`）。種別名は各節の見出しの「プロジェクト」より前の語（`Node.js` / `Python` / `Rust` / `Go` / `Ansible` / `Docker`）と `Makefile` / `Taskfile` である。Makefile / Taskfile は種別名を付けず `make <ターゲット>` / `task <タスク>` と書く（`make` / `task` が種別を示し、ターゲット名がそのままチェック名になる）。以下の `<チェック名>` も、各節のスキップ行も、この名前である。
+- **チェック名**: 結果の出力では、表の「チェック」列の前に種別名を付けて `<種別名> <チェック>` と書く（`Node.js build` / `Docker build`）。種別名は各節の見出しの「プロジェクト」より前の語（`Node.js` / `Python` / `Rust` / `Go` / `Ansible` / `Docker`）と `Makefile` / `Taskfile` である。Makefile / Taskfile は種別名を付けず `make <ターゲット>` / `task <タスク>` と書く（`make` / `task` が種別を示し、ターゲット名がそのままチェック名になる）。以下の `<チェック名>` も、各節のスキップ行も、この名前である。
   build / lint / test などは複数の表にあり、`package.json` と `Dockerfile` が両方あると `✗ build（失敗）` ではどちらの build か読めない。種別が 1 つのときも付けるのは、検出した数で書式を変えず、1 行だけ引用・中継されてもどの種別か読めるようにするためである。
-- チェックをスキップしたい場合はユーザーが指定できる。
-- **流さないチェックの書き方**: 次のチェックは流さず、結果の出力に `— <チェック名>（<理由>）` と書く。承認の前に分かっているもの（ツールが入っていない、push を頼んだ指示で外した）は Step 2 の一覧にも書く。push の可否の判定には入れず、前段の失敗で打ち切ったときも書き方を変えない。
+- **流さないチェックの書き方**: 次のチェックは流さず、結果の出力に `— <チェック名>（<理由>）` と書く。push の可否の判定には入れず、前段の失敗で打ち切ったときも書き方を変えない。
 
   | 流さない理由 | `<理由>` |
   | --- | --- |
-  | ユーザーが Step 2 の承認か、push を頼んだ指示（対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプト。エージェントが自分で決めて外したものは数えない）で外した | `ユーザーの指示でスキップ` |
+  | ユーザーが push を頼んだ指示（対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプト。エージェントが自分で決めて外したものは数えない）で外した | `ユーザーの指示でスキップ` |
   | 表の条件が「`<ツール>` がインストール済み」で、そのツールが入っていない | `<ツール> が入っていないためスキップ`（`— Python lint（ruff が入っていないためスキップ）`） |
 
   ツールが入っているかは環境で変わり、別の環境や CI では流れて落ちうるので書く。`scripts.build` が無い、`Dockerfile` が無いなど、プロジェクトがそのチェックを定めていないために条件を満たさないものは、各節が書き方を決めたもの（npm init の既定の test、ロックファイルも依存も無い audit）を除いて書かない。
@@ -235,7 +227,7 @@ syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。
 - **失敗時の優先規則（同時発生時の判断）**:
   1. **1 つでもチェックが失敗した時点で残りのチェックは打ち切ってよい**（`audit は常に実行` のような原則よりも「失敗で中止」が優先）。打ち切ったチェックは出力で `— <チェック名>（前段失敗のため未実行）` と明記する
   2. 失敗内容をユーザーに報告し push を中止する。`git status --porcelain --untracked-files=no` が空でなければ、チェックが書き換えたファイルも添える（Step 3 の取り直しは通過したときしか流れない）。Step 3 の「チェックが作った未追跡のファイル」も流す。どのモードでも同じで、skill の手順はそこで終わる。次の手を `AskUserQuestion` で聞くことも、直して流し直すことも、この skill の手順には含めない
-- プロジェクトの種別が検出できない場合、または流すチェックが 1 つもない場合（スキップ行だけになる場合を含む）は、Step 2 の承認を取らずに Step 3 に進む。承認するコマンドが無いためで、スキップ行は結果の出力にだけ書く。各節と上の項が言う「Step 2 の一覧」は、流すチェックが 1 つ以上あって承認を取るときのものである。
+- プロジェクトの種別が検出できない場合、または流すチェックが 1 つもない場合（スキップ行だけになる場合を含む）は、チェックを流さずに Step 3 に進む。
   - **種別はプロジェクトルートにある上の構成ファイルだけで決め、拡張子からは推測しない。** `app.py` だけで `pyproject.toml` 等が無いリポジトリは検出 0 件になり、それで正しい。構成ファイルが無いのはプロジェクトがチェックを定めていないということで、推測で流すと合意の無い基準で push が止まる
   - **流すチェックが 0 件のときの出力**: 「品質チェック」セクションは残し、0 件になった理由を明示する。種別ごとに、`— <チェック名>（理由）` のスキップ行（上の「流さないチェックの書き方」や各節の規則で出すもの）があればそれを並べ、1 行も無い種別には下の表の行を書く
 
@@ -255,14 +247,10 @@ syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。
 git status --porcelain --untracked-files=no
 ```
 
-出力が空でなければ、チェックが追跡ファイルを書き換えている（`eslint --fix` や整形ツールなど）。通ったのは書き換えた後の作業ツリーで、push するコミットではないので、どのモードでも push しない。書き換わったファイルを報告し、コミットしてから push し直すか中断するかを提示する（対話時は `AskUserQuestion`、非対話時は最終応答）。事前指示済みでもこの問いは省略しない。push の承認は、書き換わったファイルのコミットまでは含まない。
+出力が空でなければ、チェックが追跡ファイルを書き換えている（`eslint --fix` や整形ツールなど）。通ったのは書き換えた後の作業ツリーで、push するコミットではないので、どのモードでも push しない。書き換わったファイルを報告し、コミットしてから push し直すか中断するかを提示する（対話時は `AskUserQuestion`、非対話時は最終応答）。push を頼まれていてもこの問いは省略しない。push の依頼は、書き換わったファイルのコミットまでは含まない。
 未追跡のファイルは見ない。チェックを流す前からあった未追跡のファイルは Step 1 で止めているので、この時点にある未追跡のファイルはチェックが作ったもの（ビルドの生成物など）で、チェックした内容と push するコミットの違いにはならない。
 
-出力が空なら:
-
-1. push コマンドをユーザーに提示する
-2. `AskUserQuestion` で最終確認を行う（省略するかは冒頭の「Step 2 / Step 3 の承認」に従う）
-3. 承認を得たら push を実行する
+出力が空なら、Step 1 で決めた push コマンドで push する。
 
 ```bash
 git push <remote> <branch>
@@ -276,7 +264,7 @@ git push -u <remote> <branch>
 
 #### チェックが作った未追跡のファイル
 
-チェックを流したら、push したかどうか（失敗・書き換え・確認で断られた場合を含む）にかかわらず、最終報告の前に流す。
+チェックを流したら、push したかどうか（失敗・書き換えで止めた場合を含む）にかかわらず、最終報告の前に流す。
 
 ```bash
 git status --porcelain --untracked-files=normal
