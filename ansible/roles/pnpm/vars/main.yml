@@ -1,0 +1,9 @@
+---
+# pnpm が設定を探すディレクトリと同じ規則で決める。macOS は XDG_CONFIG_HOME が無いと ~/.config を見ない。
+# XDG_CONFIG_HOME が空文字のときは OS の既定に倒す。pnpm 11 以下と同じで、pnpm 12 は cwd 相対の pnpm/ を見るため合わせられない。
+pnpm_config_dir: >-
+  {{ ansible_facts['env'].XDG_CONFIG_HOME ~ '/pnpm'
+     if ansible_facts['env'].XDG_CONFIG_HOME | default('') | length > 0
+     else ansible_facts['env'].HOME ~ ('/Library/Preferences/pnpm'
+                                       if ansible_facts['os_family'] == 'Darwin'
+                                       else '/.config/pnpm') }}
