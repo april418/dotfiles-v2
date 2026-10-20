@@ -107,8 +107,25 @@ git remote
 
 **Node.js プロジェクト（`package.json` が存在）:**
 
-パッケージマネージャーの検出順: `bun.lock` → `pnpm-lock.yaml` → `yarn.lock` → `package-lock.json`。
-該当するロックファイルのマネージャーを使用する。いずれもなければ `npm` を使用する。
+パッケージマネージャー（PM）は上から順に見て、最初に決まったものを使う。
+
+1. `package.json` の `packageManager`（`pnpm@10.33.0` のような値の `@` より前）
+2. `package.json` の `devEngines.packageManager` の `name`。配列なら、3 のロックファイルで決まる PM がどれかの `name` に一致すればそれを、一致しないかロックファイルが無ければ先頭の `name` を使う
+3. ロックファイル: `bun.lock` / `bun.lockb` → `pnpm-lock.yaml` → `yarn.lock` → `package-lock.json`
+4. どれも無ければ `npm`
+
+宣言（1・2）をロックファイルより先に見るのは、宣言と違う PM で流すと止まるからである（npm は `devEngines.packageManager` が他の PM を指すと `EBADDEVENGINES`、pnpm は `packageManager` が、11 以降は `devEngines.packageManager` も他の PM を指すと `This project is configured to use …` で exit 1）。
+宣言とロックファイルが食い違っていても宣言の PM で流す。その PM のロックファイルが無いことで audit などが失敗したら、ほかの失敗と同じく push を止める。
+
+下の表の audit 行の `<pm> audit` は、yarn では `yarn --version` のメジャー版で分ける。
+
+- 1: `yarn audit`
+- 2・3: `yarn npm audit --all --recursive`
+- 4 以上: `yarn npm audit --all --recursive --no-deprecations`
+
+`yarn npm audit` の既定は今いるワークスペースの直接依存だけなので、`--all` と `--recursive` で全ワークスペースの推移的な依存まで見る。4 以上は非推奨のパッケージも moderate として数えて exit 1 になるので、npm / pnpm と同じく脆弱性だけで止まるよう `--no-deprecations` を付ける（このフラグは 4 から）。
+yarn 1 の終了コードは見つかった重大度の値の和（info 1 / low 2 / moderate 4 / high 8 / critical 16）で、info だけでも 0 にならず失敗である。
+bun は 1.2.15 で `bun audit` が入ったので、それより前の bun では失敗になる。
 
 **PATH 解決のフォールバック**: 非ログインシェル（subagent の Bash 等）では `nvm` 配下の `node` / `pnpm` / `npm` が `PATH` に入っていないことがある。`command -v <pm>` で見つからない場合は以下の優先順で探索する:
 
