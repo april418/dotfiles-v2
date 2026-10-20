@@ -109,6 +109,9 @@ git remote
 | test | `scripts.test` が定義されている | `<pm> run test` |
 | audit | 常に実行 | `<pm> audit` (`pnpm` の場合は `pnpm audit --prod`) |
 
+**`scripts.test` の値が `npm init` / `pnpm init` の既定の `echo "Error: no test specified" && exit 1` と完全に一致するときは、定義されていないものとして扱う。** package.json 上は `"test": "echo \"Error: no test specified\" && exit 1"` と書かれている。test 行の条件を満たさないので流さず、検出されなかったチェックと同じく push の可否の判定にも入れない。Step 2 の承認で見せる一覧と結果の出力には `— test（scripts.test が npm init の既定のままのためスキップ）` と書き、前段の失敗で打ち切ったときもこの書き方を変えない。
+空白やコマンドを足したもの（末尾に `&& jest` を足したもの等）は定義されているものとして流し、0 でない終了コードは失敗である。判定は PM によらない（`npm init` で作ってから別の PM に移したプロジェクトにも残る）。
+
 **Python プロジェクト（`pyproject.toml` / `setup.py` / `setup.cfg` が存在）:**
 
 | チェック | 条件 | コマンド |
