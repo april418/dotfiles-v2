@@ -135,8 +135,10 @@ pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 
 1. `~/.nvm/versions/node/*/bin/<pm>` の最新版
 2. `~/.local/share/pnpm/<pm>` 等の標準的な install path
 
-それでも見つからなければ `AskUserQuestion` でユーザーに PM の場所を確認する（非対話モード時はチェックスキップして失敗扱いで中止）。
+それでも見つからなければ `AskUserQuestion` でユーザーに PM の場所を確認する。
+非対話モード時は Node.js のチェックを流さずに失敗とし、push を中止する。出力は、流すはずだった Node.js のチェックのうち最初のものを `✗ Node.js build（失敗。pnpm が見つからない。探した場所: <command -v と上の 1・2 で見たパス>）` のように書き、残りの Node.js のチェックは前段失敗の行（`— <チェック名>（前段失敗のため未実行）`）にする。ほかの種別のチェックは、ほかの失敗と同じく「失敗時の優先規則」に従う。
 `corepack <pm>@latest` で取ってくることはしない。Node.js 25 以降は corepack が同梱されず、`@latest` はプロジェクトが宣言した版を無視するため。
+流す Node.js のチェックが 1 つも無ければ（スキップ行だけなら）PM は探さず、見つからなくても失敗にしない。
 
 | チェック | 条件 | コマンド |
 |---------|------|---------|
