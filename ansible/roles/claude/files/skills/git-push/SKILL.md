@@ -94,7 +94,7 @@ git remote
 
 1. `package.json` の `packageManager`（`pnpm@10.33.0` のような値の `@` より前）
 2. `package.json` の `devEngines.packageManager` の `name`。配列なら、3 のロックファイルで決まる PM がどれかの `name` に一致すればそれを、一致しないかロックファイルが無ければ先頭の `name` を使う
-3. ロックファイル: `bun.lock` → `pnpm-lock.yaml` → `yarn.lock` → `package-lock.json`
+3. ロックファイル: `bun.lock` / `bun.lockb` → `pnpm-lock.yaml` → `yarn.lock` → `package-lock.json`
 4. どれも無ければ `npm`
 
 宣言（1・2）をロックファイルより先に見るのは、宣言と違う PM で流すと止まるからである（npm は `devEngines.packageManager` が他の PM を指すと `EBADDEVENGINES`、pnpm は `packageManager` が、11 以降は `devEngines.packageManager` も他の PM を指すと `This project is configured to use …` で exit 1）。
