@@ -194,7 +194,7 @@ syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。
 
 | チェック | 条件 | コマンド |
 |---------|------|---------|
-| lint | `hadolint` がインストール済み | `hadolint Dockerfile` |
+| lint | `Dockerfile` が存在し、`hadolint` がインストール済み | `hadolint Dockerfile` |
 | build | `Dockerfile` が存在 | `docker build --check .` |
 | compose-config | `compose.yml` / `docker-compose.yml` が存在 | `docker compose config --quiet` |
 
@@ -218,7 +218,7 @@ syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。
   | 流さない理由 | `<理由>` |
   | --- | --- |
   | ユーザーが push を頼んだ指示（対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプト。エージェントが自分で決めて外したものは数えない）で外した | `ユーザーの指示でスキップ` |
-  | 表の条件が「`<ツール>` がインストール済み」で、そのツールが入っていない | `<ツール> が入っていないためスキップ`（`— Python lint（ruff が入っていないためスキップ）`） |
+  | 表の条件のうち「`<ツール>` がインストール済み」だけを満たさない | `<ツール> が入っていないためスキップ`（`— Python lint（ruff が入っていないためスキップ）`） |
 
   ツールが入っているかは環境で変わり、別の環境や CI では流れて落ちうるので書く。`scripts.build` が無い、`Dockerfile` が無いなど、プロジェクトがそのチェックを定めていないために条件を満たさないものは、各節が書き方を決めたもの（npm init の既定の test、ロックファイルも依存も無い audit）を除いて書かない。
   ユーザーが外したチェックに、ツールが入っていない理由や各節のスキップ理由も当てはまるときは、そちらを書く。ユーザーは外したことを知っているが、ツールが無いことは知らない。
