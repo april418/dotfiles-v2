@@ -1,6 +1,6 @@
 ---
 name: git-pr
-description: PR の作成とマージに関するルール。gh pr create の前に含まれるコミットを説明文と突き合わせる手順、マージしてよいかの承認規律、merge commit 形式でのマージ、gh pr merge --delete-branch が worktree ごとにローカルで行うことと打つ前の確認、マージ直後のベース追従（linked worktree を含む）とマージ済みブランチの掃除。gh pr create / gh pr merge を実行する前と、PR がマージされた直後に参照する。共通ルールは git-workflow skill にある。
+description: PR の作成とマージに関するルール。gh pr create の前に含まれるコミットを説明文と突き合わせる手順、マージしてよいかの承認規律、merge commit 形式でのマージ、gh pr merge --delete-branch が worktree ごとにローカルで行うことと打つ前の確認（積んだ PR の base の付け替えを含む）、マージ直後のベース追従（linked worktree を含む）とマージ済みブランチの掃除。gh pr create / gh pr merge を実行する前と、PR がマージされた直後に参照する。共通ルールは git-workflow skill にある。
 ---
 
 # 概要
@@ -118,7 +118,7 @@ main worktree である。ローカルに `<head>` が無ければ、gh はロ�
 | linked worktree | その worktree | 警告を出して何もしない |
 | linked worktree | ほかの worktree | `git worktree remove -- <head の worktree>` → `git branch -D <head>` |
 
-打つ前に次の 3 つを確かめる。
+打つ前に次の 4 つを確かめる。
 
 1. **head がほかの linked worktree にあるなら、その worktree で打つ。** ほかの worktree から
    打つと、gh はその worktree を `git worktree remove` で消す。変更や未追跡ファイルがあれば
@@ -146,6 +146,24 @@ main worktree である。ローカルに `<head>` が無ければ、gh はロ�
    `git stash push -u -m "<head>: <退避した変更の内容>"` で取る。gh がマージせずに止まったら、
    head の上で `git stash list` からメッセージで探し、`git stash pop stash@{N}` で戻す。
    マージまで進んだら、最終応答に、stash した変更がマージした PR に入っていないことも書く。
+4. **この PR の head を base にしている open な PR（積んだ PR）が無いこと。** あれば、先に
+   その PR の base をこの PR の base へ付け替える。`--delete-branch` で head を消すと、
+   GitHub は積んだ PR を付け替えずに閉じる（2026-10-20 に `gh pr merge --delete-branch` で実測。
+   付け替えると書いた 2020 年の changelog とは違った）。
+
+   ```bash
+   gh pr list --base <head> --state open --json number,title,author
+   gh pr edit <積んだ PR の番号> --base <この PR の base>
+   ```
+
+   付け替えはこのマージの名指しに含める。`--delete-branch` の削除と同じく、名指しされた
+   マージで積んだ PR を閉じないための操作である。ただし積んだ PR の author が自分（AI が
+   作ったもの）でなければ、付け替えずに止めてユーザーに確認する。マージの後に、積んだ PR が
+   `gh pr view <番号> --json state,baseRefName` で OPEN かつ付け替え先を向いていることを確かめる。
+
+   閉じられてしまったら、消えたブランチをマージ前の SHA でリモートに作り直し
+   （`git push origin <SHA>:refs/heads/<head>`）、`gh pr reopen` → `gh pr edit --base` の後に
+   作り直したブランチを消す。PR の番号を残すにはこの順しかない。
 
 stdout が端末でないと、gh はマージの成功もブランチの削除も出力せず、警告とエラーだけを出す
 （`infof` は `IsStdoutTTY()` のときだけ書く）。exit が 0 以外でも、マージは済んでいることがある。
@@ -280,10 +298,11 @@ git status -sb | head -1        # ## main...origin/main [behind N] が出てい�
       （曖昧な回答・URL 提示だけでは承認ではない。他人 author の PR は特に）
 - [ ] PR マージ時は `--merge --delete-branch` を使っているか？
       （merge commit 形式で、リモートのブランチを消す。ローカルは gh が飛ばすことがある）
-- [ ] **マージの前に** 3 つを確かめたか？
+- [ ] **マージの前に** 4 つを確かめたか？
       （head がほかの linked worktree にあるならそこで打つ。
       `git log --oneline origin/<head>..<head>` が空。
-      自分の worktree が head をチェックアウトしているなら未コミット変更が無い）
+      自分の worktree が head をチェックアウトしているなら未コミット変更が無い。
+      head を base にしている積んだ PR があれば、先に base を付け替える）
 - [ ] gh の exit が 0 以外のとき、再実行せずに `gh pr view <number> --json state` を見たか？
 - [ ] **マージした後、`<base-ref>` に合わせてベースへ戻したか？**
       （マージした head の上か、統合ブランチか detach した HEAD にいたときだけ。
