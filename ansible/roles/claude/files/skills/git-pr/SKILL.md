@@ -292,6 +292,17 @@ git push origin --delete <branch>
 
 `git push --delete` はコミットを送らないので、git-push skill（push 前の品質チェック）は通さない。
 
+マージした head が `git ls-remote --exit-code --heads origin <head>` で exit 0（リモートに
+残っている）なら、リポジトリの `delete_branch_on_merge`（マージした PR の head を GitHub が消す
+設定）を `gh api 'repos/{owner}/{repo}' --jq .delete_branch_on_merge` で確かめる（`{owner}` と
+`{repo}` は gh が今のリポジトリで埋める）。
+
+| 値 | すること |
+| --- | --- |
+| `true` | 設定は変えない。残っている head は上の箇条のとおりに扱う |
+| `false` | `gh api -X PATCH 'repos/{owner}/{repo}' -F delete_branch_on_merge=true` でオンにすることも提案する。リポジトリの設定を変える操作なので、ユーザーの承認を得てから流す |
+| `null` | このトークンでは設定を読めない（read 権限だけのリポジトリで実測）。提案せず、設定を変えられる人に頼むよう最終応答に書く |
+
 **古い状態からブランチを切ると、無駄なマージ作業が発生しうる。** git-branch のルール 3(b)
 は「派生直前に更新する」と定めているが、それだけでは足りない。マージから次の
 派生までの間に手元が遅れたままになり、その間に作った作業ブランチが古いベースを
@@ -338,4 +349,5 @@ git status -sb | head -1        # ## main...origin/main [behind N] が出てい�
       （使われなかった `claude/*` なども消える。ほかの作業ブランチの上では流さない。
       拒否されたものを `-D` で消さず、消したものと残ったものを最終応答に書く）
 - [ ] リモートに残ったマージ済みブランチを、名指しも承認も無しに消していないか？
+      （残っていたら `delete_branch_on_merge` を確かめ、`false` ならオンにすることも提案する）
 - [ ] 「ファイルが無い」と言う前に `git status -sb` で `behind` を確認したか？
