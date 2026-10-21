@@ -57,7 +57,7 @@ git remote
    ただし今のブランチが統合ブランチか detached HEAD（2.）なら、コミットを伴う選択肢（コミット、`.gitignore` に足してコミット）は出さない（git-workflow のルール 2）。先に作業ブランチへ移すかを聞き、移した後の Step 1 で未コミットの変更を扱う。
    未追跡のファイルには無視する選択肢も出す。生成物は `.gitignore` に足してコミットする（git-commit skill。このコミットも push 対象に入る）。`.gitignore` を書き換えただけでは ` M .gitignore` が残る。自分だけが作るファイル（メモなど）は `.git/info/exclude` に足す（コミットは要らない）。
    stash は `git stash push -u -m "<branch>: git-push の前に退避 (<退避したパス>)"` にする。`-u` が無いと未追跡のファイルを退避せず、未追跡のファイルだけのときは `No local changes to save` と出して exit 0 で終わる（Git 2.54.0 で実測）。メッセージにパスを入れるのは、同じ文言の stash が 2 つ並ぶと `git stash list` で見分けられないため。
-   片付けたら Step 1 からやり直す。stash は push の後も戻さず、最終応答に退避したときのメッセージと戻し方（`git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`）を書く。戻さないのは、チェックが作り直したファイルとパスが重なると、pop が一部だけ戻して exit 1 になり stash も残るためである。
+   片付けたら Step 1 からやり直す。stash は push の後も戻さず、退避したときのメッセージと戻し方を出力の「作業ツリー」節に書く。戻さないのは、チェックが作り直したファイルとパスが重なると、pop が一部だけ戻して exit 1 になり stash も残るためである。
 2. **push 先のリモート・ブランチ** — まず `git branch --show-current` が空でないことを確かめる。
    空なら detached HEAD で push するブランチが無いので、中止条件として扱う（`for-each-ref` は
    `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。
@@ -91,7 +91,7 @@ git remote
    | upstream（`for-each-ref` の出力） | `git remote` | remote の名指し | push 先 |
    | --- | --- | --- | --- |
    | 同名のリモートブランチ（`<remote>/<branch>`。`[ahead N]` / `[behind N]` / `[ahead N, behind N]` が続いてよい。`[gone]` で終わるものは下の `[gone]` の行） | — | 無い、または upstream の remote | `git push <remote> <branch>` |
-   | 同名のリモートブランチ（末尾が `[gone]` のものを含む） | — | upstream と違う remote | `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない（付け替えずに push すると upstream は変わらない）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる。どちらでも、3. は `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える。`@{upstream}..HEAD` は upstream の remote との差で、upstream の remote に push 済みなら 0 件になって push せずに終わり、`[gone]` なら `@{upstream}` が解決できず exit 128 になる（どちらも Git 2.54.0 で実測） |
+   | 同名のリモートブランチ（末尾が `[gone]` のものを含む） | — | upstream と違う remote | `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない（付け替えずに push すると upstream は変わらない）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる。どちらでも、3. は `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える。`@{upstream}..HEAD` は upstream の remote との差で、upstream の remote に push 済みなら 0 件になって push せずに終わる（Git 2.54.0 で実測）。`[gone]` では下の行のとおり使えない |
    | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | 無い、または upstream の remote | `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る）。push すると答えたら `git push <upstream の remote> <branch>` に決まる。upstream の設定は残っており、push で追跡が戻るので `-u` は要らない。3. は `@{upstream}` が解決できず exit 128 になるので、`git log --oneline HEAD --not --remotes=<upstream の remote>` で数える（どちらも Git 2.54.0 で実測） |
    | 空（upstream が無い）、または名前の違うブランチ | 1 行 | 無い、またはその remote | **初回 push として扱い、`git push -u <remote> <branch>` で確定とみなす** |
    | 空、または名前の違うブランチ | 2 行以上 | ある | **初回 push として扱い、`git push -u <名指しの remote> <branch>` で確定とみなす** |
@@ -324,7 +324,7 @@ git status --porcelain --untracked-files=normal
 
 - `--force` や `--force-with-lease` は**ユーザーが明示的に要求した場合のみ**使用する。
 - スキルから自発的に force push を提案しない。
-- 統合ブランチ（`develop` / `master` / `main`）への force push を頼まれても、Step 1 の 2. で止める。force でない push と同じく、統合ブランチへ push する選択肢は出さない。
+- 統合ブランチ（`develop` / `master` / `main`）への force push も Step 1 の 2. で止める。
 
 ## push した後、人に確認を頼む前に
 
