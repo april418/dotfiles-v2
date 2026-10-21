@@ -181,7 +181,9 @@ git remote
    無いコミットだけを出す。2. で追跡 ref の残りがあると分かったときは、初回 push の行を除き、2 本目に `--exclude=<remote>/<branch>` を足す（2. の表の後の段落）。
    数える前に `git for-each-ref --count=1 refs/remotes/<remote>/` が空なら、`git fetch <remote>` する（2. で fetch した remote には流さない）。
    一度も fetch していない remote には remote-tracking ref が無く、何も除かれずに push 済みのコミットまで
-   並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。fetch が失敗したら、push 済みのコミットを
+   並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。2. で残りがあると分かった remote では、`--exclude=refs/remotes/<remote>/<branch>` を
+   足して見る。fetch せずに push しただけの remote は残りだけで空にならず、数える側で残りを除くと push 済みのコミットまで並ぶ。
+   `for-each-ref` の `--exclude` は `log` と逆で、`refs/remotes/` から書かないと何も除かない（どれも Git 2.54.0 で実測）。fetch が失敗したら、push 済みのコミットを
    除けず数えられないので、聞かずに終える（`— push しない（<remote> を fetch できなかったため。<git が出した最初の fatal: の行>）`）。
    0 件と同じく中止条件に数えない。
 
