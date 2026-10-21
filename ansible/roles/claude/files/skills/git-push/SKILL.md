@@ -121,8 +121,8 @@ git remote
    0 件でも push しないのは、コミットの無いブランチから GitHub は PR を作らない（`No commits between <base> and <branch>`）ためである。
 
    ```bash
-   git log --oneline @{upstream}..HEAD               # upstream が同名のリモートブランチ
-   git log --oneline HEAD --not --remotes=<remote>   # 初回 push
+   git log --oneline @{upstream}..HEAD               # 表の 1 行目（upstream の remote へ push する）
+   git log --oneline HEAD --not --remotes=<remote>   # ほかの行（初回 push、[gone]、upstream と違う remote）。<remote> は push 先
    ```
 
    初回 push で `git log -5` のように件数で区切ると、自分のコミットが 0 件でもベースの
