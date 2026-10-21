@@ -63,11 +63,13 @@ git remote
    `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。
    `develop` / `master` / `main` なら統合ブランチで、これも中止条件として扱う。git-workflow のルール 2 は
    統合ブランチへの直接の push を禁じており、push を頼まれていても force push でも、リモートにまだその
-   ブランチが無くても例外にしない。`git remote` が 1 行で、`git ls-remote --exit-code --heads <remote> <branch>`
-   が exit 2（リモートにそのブランチが無い）なら新しいリポジトリの初回の push なので、ユーザーが手で行う旨を
-   push 節の理由に添え（`— push しない（統合ブランチ main のため。リモートに main が無く、初回の push は手で行う）`）、
-   推奨する方針を中断にする。upstream で決めないのは、`git remote add` と `git fetch` の後もリモートに
-   ブランチがあるのに upstream は空のままだからである（Git 2.54.0 で実測）。`git remote` が 2 行以上なら添えない。
+   ブランチが無くても例外にしない。`git remote` が 1 行で、`git ls-remote --exit-code --heads <remote> refs/heads/<branch>`
+   が exit 2（リモートにそのブランチが無い）なら、まだリモートに無い統合ブランチの初回の push なので、ユーザーが
+   手で行う旨を push 節の理由に添え（`— push しない（統合ブランチ main のため。リモートに main が無く、初回の push は手で行う）`）、
+   推奨する方針を中断にする。対話時は確認の文にも同じことを書く。upstream で決めないのは、`git remote add` と
+   `git fetch` の後もリモートにブランチがあるのに upstream は空のままだからである。`refs/heads/` を付けるのは、
+   `main` だけだと `feature/main` のように末尾が一致するブランチでも exit 0 になるためである（どちらも Git 2.54.0
+   で実測）。`git remote` が 2 行以上なら添えない。
    detached HEAD と統合ブランチで出す方針は、作業ブランチへ移す（下の「作業ブランチへ移す」）か中断で、
    統合ブランチへ push する選択肢は出さない。
    どちらでもなければ `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
