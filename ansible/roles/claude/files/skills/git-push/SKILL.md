@@ -159,6 +159,7 @@ git remote
 
 `yarn npm audit` の既定は今いるワークスペースの直接依存だけなので、`--all` と `--recursive` で全ワークスペースの推移的な依存まで見る。4 以上は非推奨のパッケージも moderate として数えて exit 1 になるので、npm / pnpm と同じく脆弱性だけで止まるよう `--no-deprecations` を付ける（このフラグは 4 から）。
 yarn 1 の終了コードは見つかった重大度の値の和（info 1 / low 2 / moderate 4 / high 8 / critical 16）で、info だけでも 0 にならず失敗である。
+`yarn --version` は audit を流すと決まったときに、audit の直前に流す。0 以外で終わったら audit のコマンドが決まらないので、audit を流さずに `✗ Node.js audit（失敗。yarn --version が exit <N> で終わった）` と書く。
 bun は 1.2.15 で `bun audit` が入ったので、それより前の bun では失敗になる。
 pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 で失敗したら、package-manager skill のルール 5 の手順で pnpm 11 を使って流し直し、その結果で判定する。出力の `Node.js audit` の行には括弧で `pnpm 10 が 410 を返したため pnpm 11 で流し直した` と書き、ルール 5 が報告に添えるよう求めることも同じ括弧に入れる。
 
@@ -317,7 +318,7 @@ git push -u <remote> <branch>
 #### チェックが作った未追跡のファイル
 
 チェックのコマンド（表の「コマンド」列や make / task のターゲット。インストール済みの判定は数えない）を 1 つでも実行したら、push したかどうか（失敗・書き換えで止めた場合を含む）にかかわらず、最終報告の前に流す。Step 3 で書き換えを提示する前に流したなら、その結果を使う。
-1 つも実行していなければ（流すチェックが 0 件、PM が見つからず ✗ にしただけ）流さない。未追跡のファイルが無いことは Step 1 で確かめてあり、何も実行していなければ空になる。
+1 つも実行していなければ（流すチェックが 0 件、PM が見つからず ✗ にしただけ、`yarn --version` が失敗して audit を ✗ にしただけ）流さない。未追跡のファイルが無いことは Step 1 で確かめてあり、何も実行していなければ空になる。
 
 ```bash
 git status --porcelain --untracked-files=normal
