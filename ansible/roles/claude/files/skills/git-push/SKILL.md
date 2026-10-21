@@ -126,8 +126,13 @@ git remote
    ```
 
    初回 push で `git log -5` のように件数で区切ると、自分のコミットが 0 件でもベースの
-   コミットが並び、0 件を判定できない。`--not --remotes=<remote>` はリモートのどのブランチにも
+   コミットが並び、0 件を判定できない。`--not --remotes=<remote>` はその remote のどのブランチにも
    無いコミットだけを出す。
+   数える前に `git for-each-ref --count=1 refs/remotes/<remote>/` が空なら、`git fetch <remote>` する。
+   一度も fetch していない remote には remote-tracking ref が無く、何も除かれずに push 済みのコミットまで
+   並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。fetch が失敗したら、push もその remote に
+   繋がらないので、聞かずに終える（`— push しない（<remote> を fetch できなかったため。<git が出した fatal: の行>）`）。
+   0 件と同じく中止条件に数えない。
 
 ### Step 2: プロジェクトの品質チェックを自動検出・実行
 
