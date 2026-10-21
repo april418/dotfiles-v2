@@ -18,11 +18,11 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 
 | 場面 | 対話モード | 非対話モード |
 | --- | --- | --- |
-| Step 1 で確認が要るか中止条件を検出した（未コミット変更、push 先の remote が決まらない、名指しの remote が upstream の remote と違う、upstream が `[gone]`、detached HEAD、remote が 0 行） | 検出内容を伝え、次に取りうる方針を聞く | 下の段落 |
+| Step 1 で確認が要るか中止条件を検出した（未コミット変更、push 先の remote が決まらない、名指しの remote が upstream の remote と違う、upstream が `[gone]`、detached HEAD、統合ブランチ、remote が 0 行） | 検出内容を伝え、次に取りうる方針を聞く | 下の段落 |
 | Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く | 同じ選択肢を最終応答で提示する |
 
-非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / push 対象 0 件 / detached HEAD / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する。
+非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / push 対象 0 件 / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する。
 
 **チェックが 1 つでも失敗したら、どのモードでも push しない。** 失敗内容を報告して終える（「失敗時の優先規則」）。
 
@@ -57,8 +57,13 @@ git remote
    片付けたら Step 1 からやり直す。stash は push の後も戻さず、最終応答に退避したときのメッセージと戻し方（`git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`）を書く。戻さないのは、チェックが作り直したファイルとパスが重なると、pop が一部だけ戻して exit 1 になり stash も残るためである。
 2. **push 先のリモート・ブランチ** — まず `git branch --show-current` が空でないことを確かめる。
    空なら detached HEAD で push するブランチが無いので、中止条件として扱う（`for-each-ref` は
-   `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。空でなければ
-   `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
+   `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。
+   `develop` / `master` / `main` なら統合ブランチで、これも中止条件として扱う。git-workflow のルール 2 は
+   統合ブランチへの直接の push を禁じており、push を頼まれていても force push でも例外にしない。
+   確認で出す方針は作業ブランチへ移す（今の HEAD から `git switch -c <作業ブランチ> HEAD --no-track` で
+   切り、Step 1 からやり直す）か中断で、統合ブランチへ push する選択肢は出さない。統合ブランチに
+   残った手元のコミットはこの skill では消さない（消すのは git-workflow のルール 6 の要承認操作）。
+   どちらでもなければ `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
    `for-each-ref` の出力は前後の空白を除いてから表に当てる。upstream が無いと空白 1 文字の
    行になり、これが表の「空」である。upstream との差が無いときも `origin/<branch> ` と
    末尾に空白が付く（どちらも Git 2.54.0 で実測）。
@@ -300,7 +305,7 @@ git status --porcelain --untracked-files=normal
 
 - `--force` や `--force-with-lease` は**ユーザーが明示的に要求した場合のみ**使用する。
 - スキルから自発的に force push を提案しない。
-- main / master ブランチへの force push をユーザーが要求した場合は、リスクを警告する。
+- 統合ブランチ（`develop` / `master` / `main`）への force push を頼まれても、Step 1 の 2. で止める。force でない push と同じく、統合ブランチへ push する選択肢は出さない。
 
 ## push した後、人に確認を頼む前に
 
