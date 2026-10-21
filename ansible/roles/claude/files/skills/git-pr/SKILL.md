@@ -139,7 +139,7 @@ main worktree である。ローカルに `<head>` が無ければ、gh はロ�
    辿れなくなる。PR を番号で指定すると、gh はローカルとのずれを警告しない。空でなければ
    マージせず、ユーザーに伝える。
 3. **自分の worktree で head をチェックアウトしているなら、未コミット変更が無いこと。**
-   `git status --short` に出力があれば、git-branch のルール 7 を踏む（選択肢は「表の例外」）。
+   `git status --porcelain --untracked-files=normal` に出力があれば、git-branch のルール 7 を踏む（選択肢は「表の例外」）。
    コミットしても push しなければマージに入らず、2. の条件を満たさなくなる。持ち込むと、main worktree では
    gh が `git checkout <base>` で変更を `<base>` へ移すか、checkout が拒否されて、リモートの
    ブランチを消さないままエラーで止まる。linked worktree では gh は触れないが、直後の追従で
