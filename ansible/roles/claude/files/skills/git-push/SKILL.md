@@ -22,7 +22,7 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 | Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く | 同じ選択肢を最終応答で提示する |
 
-非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / push 対象 0 件 / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する。
+非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する。
 
 **チェックが 1 つでも失敗したら、どのモードでも push しない。** 失敗内容を報告して終える（「失敗時の優先規則」）。
 
@@ -86,6 +86,7 @@ git remote
    ブランチ）。そのままでは引数なしの `git push` が名前の不一致で拒否され、`-u` を付けずに
    push すると upstream がベースを指したまま残るので、初回 push として `-u` で付け替える。
 3. **push 対象のコミット** — 差分コミット一覧をユーザーに表示する。push するコミットが 0 件の場合は「push するコミットがない」旨を伝えて終了する。
+   0 件は中止条件に数えない。取りうる方針が無いので、どのモードでも聞かず、選択肢も出さない。
 
    ```bash
    git log --oneline @{upstream}..HEAD               # upstream が同名のリモートブランチ
