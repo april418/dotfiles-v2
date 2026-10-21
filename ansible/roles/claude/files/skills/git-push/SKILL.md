@@ -115,6 +115,10 @@ git remote
    - 移したら Step 1 からやり直す
 3. **push 対象のコミット** — 差分コミット一覧をユーザーに表示する。push するコミットが 0 件の場合は「push するコミットがない」旨を伝えて終了する。
    0 件は中止条件に数えない。取りうる方針が無いので、どのモードでも聞かず、選択肢も出さない。
+   2. の表で push 先に同名のブランチがあると決まっていない行（upstream と違う remote、初回 push）で 0 件なら、
+   `git ls-remote --exit-code --heads <remote> refs/heads/<branch>` を流す。exit 2 のときだけ、リモートに
+   ブランチが無いことを理由に添える（`— push しない（push するコミットが無いため。origin に feature/x が無く、ブランチだけ作るなら手で push する）`）。
+   0 件でも push しないのは、コミットの無いブランチから GitHub は PR を作らない（`No commits between <base> and <branch>`）ためである。
 
    ```bash
    git log --oneline @{upstream}..HEAD               # upstream が同名のリモートブランチ
