@@ -93,7 +93,7 @@ gh pr merge <number> --merge --delete-branch
 - squash は粒度を潰し、rebase は merge commit のメタ情報（PR 番号への参照等）を失わせる
 
 ユーザーが明示的に `--squash` / `--rebase` を指示した場合のみ従う。
-`main` / `master` への force push 同様、リスクを警告した上で実行する。
+その場合は、リスクを警告した上で実行する。
 
 git-workflow のルール 8（ローカルでの `git merge` 禁止）と矛盾しないこと:
 
