@@ -22,7 +22,7 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 | Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く | 同じ選択肢を最終応答で提示する |
 
-非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する。
+非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 中断等）を最終応答で 2〜4 択で提示する。
 
 **チェックが 1 つでも失敗したら、どのモードでも push しない。** 失敗内容を報告して終える（「失敗時の優先規則」）。
 
@@ -52,6 +52,7 @@ git remote
    チェックは作業ツリーを読むので、push しないファイルのせいでチェックが通ったり落ちたりする（新しく足したファイルの `git add` し忘れは、手元で通って CI で落ちる）。
    `--short` ではなく `--porcelain` を使うのは、設定の `status.branch=true` で `--short` が clean でも `## <branch>` の行を出すため。`--untracked-files=normal` は `status.showUntrackedFiles=no` でも `??` を出すために付ける（どちらも Git 2.54.0 で実測）。`.gitignore` などで無視されたファイルは出ないので数えない。
    未コミットの変更がある場合は `AskUserQuestion` でユーザーに報告し、先にコミットするか stash するか確認する。片付くまで push は行わない。
+   ただし今のブランチが統合ブランチか detached HEAD（2.）なら、コミットを伴う選択肢（コミット、`.gitignore` に足してコミット）は出さない（git-workflow のルール 2）。先に作業ブランチへ移すかを聞き、移した後の Step 1 で未コミットの変更を扱う。
    未追跡のファイルには無視する選択肢も出す。生成物は `.gitignore` に足してコミットする（git-commit skill。このコミットも push 対象に入る）。`.gitignore` を書き換えただけでは ` M .gitignore` が残る。自分だけが作るファイル（メモなど）は `.git/info/exclude` に足す（コミットは要らない）。
    stash は `git stash push -u -m "<branch>: git-push の前に退避 (<退避したパス>)"` にする。`-u` が無いと未追跡のファイルを退避せず、未追跡のファイルだけのときは `No local changes to save` と出して exit 0 で終わる（Git 2.54.0 で実測）。メッセージにパスを入れるのは、同じ文言の stash が 2 つ並ぶと `git stash list` で見分けられないため。
    片付けたら Step 1 からやり直す。stash は push の後も戻さず、最終応答に退避したときのメッセージと戻し方（`git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`）を書く。戻さないのは、チェックが作り直したファイルとパスが重なると、pop が一部だけ戻して exit 1 になり stash も残るためである。
@@ -59,14 +60,27 @@ git remote
    空なら detached HEAD で push するブランチが無いので、中止条件として扱う（`for-each-ref` は
    `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。
    `develop` / `master` / `main` なら統合ブランチで、これも中止条件として扱う。git-workflow のルール 2 は
-   統合ブランチへの直接の push を禁じており、push を頼まれていても force push でも例外にしない。
-   確認で出す方針は作業ブランチへ移す（今の HEAD から `git switch -c <作業ブランチ> HEAD --no-track` で
-   切り、Step 1 からやり直す）か中断で、統合ブランチへ push する選択肢は出さない。統合ブランチに
-   残った手元のコミットはこの skill では消さない（消すのは git-workflow のルール 6 の要承認操作）。
+   統合ブランチへの直接の push を禁じており、push を頼まれていても force push でも、リモートにまだその
+   ブランチが無くても例外にしない。`for-each-ref` の upstream が空なら、初回の push（新しいリポジトリの
+   `main` など）はユーザーが手で行う旨を報告に添える。
+   detached HEAD と統合ブランチで出す方針は、作業ブランチへ移すか中断で、統合ブランチへ push する
+   選択肢は出さない。
    どちらでもなければ `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
    `for-each-ref` の出力は前後の空白を除いてから表に当てる。upstream が無いと空白 1 文字の
    行になり、これが表の「空」である。upstream との差が無いときも `origin/<branch> ` と
    末尾に空白が付く（どちらも Git 2.54.0 で実測）。
+
+   **作業ブランチへ移す**ときは、今の HEAD から切る。未コミットの変更もそのまま移る。
+
+   ```bash
+   git switch -c <作業ブランチ> HEAD --no-track
+   ```
+
+   - git-branch のルール 3 の (a)(b) は踏まない。ほかのベースから切ると手元のコミットを置いていき、(b) の `git pull --rebase` は手元のコミットを付け直す
+   - 名前は git-workflow のルール 1 で決める。対話時は名前の候補を Step 1 の確認の選択肢に入れ、別に聞かない。同名のブランチがあると exit 128 になるので、`-C` で上書きせず別の名前にする
+   - 切った直後は `git branch --show-current` が新しいブランチであることを確かめる。git-branch の (d) の `<base-ref>..HEAD` には手元のコミットが出るが、持ってきたものなので混入として扱わない
+   - 統合ブランチに残った手元のコミットはこの skill では消さない（消すのは git-workflow のルール 6 の要承認操作）
+   - 移したら Step 1 からやり直す
 
    **remote の名指し**は、push を頼んだ指示が push 先の remote を名前で指定していること（「fork に push して」、`/git-push fork` の引数など）。
    指示として数えるのは、対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプトである。skill の引数は、1 語のときだけ名前として比べる（2 語以上なら一致しないものとして扱う）。push 先の remote を聞く確認（名指しが `git remote` のどれとも一致しない、2 行以上で名指しが無い）でユーザーが答えた remote も名指しに数え、表を引き直す。エージェントが自分で選んで skill の引数に入れた名前は数えない。
@@ -415,6 +429,7 @@ Step 1 で止めたときと PM の確認で中断したときは、チェック
 | 作業ツリー | `` 書き換えたファイル: `<パス>` `` | 失敗時の優先規則 2 か Step 3 の取り直しで、`git status --porcelain --untracked-files=no` が空でなかった（1 ファイル 1 行） |
 | 作業ツリー | `` 未追跡のファイル: `<パス>`（`.gitignore` に足してコミットすることを勧める） `` | Step 3 の「チェックが作った未追跡のファイル」で `??` の行が出た（1 ファイル 1 行） |
 | 作業ツリー | `` stash: `<退避したときのメッセージ>`（戻し方: `git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`） `` | Step 1 の確認でユーザーが stash を選んだ |
+| 作業ツリー | `` 統合ブランチ: `<統合ブランチ>` に、`<作業ブランチ>` へ移したコミットが残っている（消すには git-workflow のルール 6 の承認が要る） `` | Step 1 で統合ブランチから作業ブランチへ移し、統合ブランチに push していないコミットがあった |
 | 次の手 | 番号付きの選択肢 | 非対話で Step 1 の中止条件か Step 3 の書き換えを検出した。対話時は `AskUserQuestion` で聞き終えているので書かない |
 
 非対話で、全チェックが通った後に Step 3 で書き換えを検出した例:
