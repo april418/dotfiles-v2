@@ -179,7 +179,15 @@ pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 
 | `PNPM_HOME` | `$XDG_DATA_HOME/pnpm`（`XDG_DATA_HOME` も空なら macOS は `~/Library/pnpm`、ほかは `~/.local/share/pnpm`） |
 | `BUN_INSTALL` | `~/.bun` |
 
-それでも見つからなければ `AskUserQuestion` でユーザーに PM の場所を確認する。
+表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。
+corepack が置く pnpm / yarn と npm は `#!/usr/bin/env node` で始まり、フルパスで呼んでも `node` が `PATH` に無いと `env: node: No such file or directory` で exit 127 になる。`<dir>/node <dir>/npm run build` と node をフルパスで呼んでも、scripts の中の `node` が `sh: node: command not found` で落ちる（どちらも npm 11.12.1 / pnpm 12.6.0 で実測）。nvm の `<dir>` にはその版の `node` がある。
+シンボリックリンクは辿らない。nvm の `bin/pnpm` などは `../lib/node_modules/` の下へのリンクで、辿った先のディレクトリに `node` は無い。
+`node` があるかは確かめない。`<dir>` にも `PATH` にも `node` が無ければ（スタンドアロンの pnpm など）、node を呼ぶチェックは失敗し、ほかの失敗と同じく push を止める。
+`<dir>` は展開した絶対パスで書き（引用符の中の `~` は展開されない）、コマンドごとに付ける。Bash の呼び出しの間で環境変数は引き継がれないことがある。
+出力では、流した Node.js のチェック（`yarn --version` の失敗で ✗ にした audit も数える）のうち最初の行の括弧の最後に `pnpm が PATH に無いため ~/.nvm/versions/node/v24.15.0/bin を PATH の先頭に足して流した` のように書く（ホームディレクトリは `~` と書く）。括弧にほかの説明（`失敗。`、410 で流し直したことなど）があれば、その後に `。` で区切って続ける。nvm ならパスから node の版が読め、CI と結果が違ったときの手がかりになる。
+
+表の場所でも見つからなければ `AskUserQuestion` でユーザーに PM の場所を確認する。
+答えが実行ファイルならその親を、ディレクトリならそれを `<dir>` にし、表の場所で見つけたときと同じに扱う。`<dir>/<pm>` が実行できなければ（`test -x`）見つからなかった扱いにして、`<dir>/<pm>` が実行できなかったことを添え、中断を選択肢に入れてもう一度聞く。`bin/` の下などを自分で探しには行かない。
 非対話モード時は Node.js のチェックを流さずに失敗とし、push を中止する。出力は、流すはずだった Node.js のチェックのうち最初のものを `✗ Node.js build（失敗。bun が見つからない。探した場所: PATH, ~/.nvm/versions/node/*/bin/bun, ~/.bun/bin/bun）` のように書き、残りの Node.js のチェックは前段失敗の行（`— <チェック名>（前段失敗のため未実行）`）にする。ほかの種別のチェックは、ほかの失敗と同じく「失敗時の優先規則」に従う。
 `探した場所:` には、`command -v` を `PATH` と書き、続けて表で見た場所を見た順に `, ` で区切って並べる。変数は展開した値で書き、ホームディレクトリは `~` と書き、glob は展開しない。
 `corepack <pm>@latest` で取ってくることはしない。Node.js 25 以降は corepack が同梱されず、`@latest` はプロジェクトが宣言した版を無視するため。
