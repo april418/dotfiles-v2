@@ -69,6 +69,9 @@ DOTFILES_GIT="https://github.com/april418/dotfiles-v2.git"
 # OS の Python を使うと、Homebrew などが既定の版を上げて古い版を消したときに ansible が起動しなくなる。
 ANSIBLE_PYTHON="3.14"
 UV="$HOME/.local/bin/uv"
+# uv ロールが置く uv.toml の exclude-newer = "1 week" を読めるのは 0.9.17 から。
+# 最新へ上げないのは、公開直後の版を入れない方針（dotfiles-check の 1 週間ルール）に合わせるため。
+UV_MIN_VERSION="0.9.17"
 # PATH の先にほかの ansible（Homebrew の formula など）があっても、uv で入れたものを使う。
 ANSIBLE_PLAYBOOK="$HOME/.local/bin/ansible-playbook"
 DOTFILES_HEADER='
@@ -272,13 +275,37 @@ setup_python() {
   fi
 }
 
+# $1 が $2 より古い版なら 0 を返す。$1 が空（版を読めない）なら古いとみなす。
+version_lt() {
+  [ "$1" != "$2" ] && [ "$(printf '%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]
+}
+
+uv_version() {
+  "$UV" --version | awk '{print $2}'
+}
+
 setup_uv() {
   print_step "Checking uv installation..."
 
   # uv ロールと同じ場所を見る。ここで入れたものをプレイブックが入れ直さないため。
   if [ -x "$UV" ]; then
-    print_info "uv is installed. Version: $("$UV" --version | awk '{print $2}')"
-    print_success "uv installation check completed successfully"
+    local version
+    version="$(uv_version)"
+    print_info "uv is installed. Version: $version"
+    if ! version_lt "$version" "$UV_MIN_VERSION"; then
+      print_success "uv installation check completed successfully"
+      return 0
+    fi
+    print_info "uv $UV_MIN_VERSION or later is required."
+    print_step "Updating uv..."
+    # 古い uv は uv.toml を読めずにどのコマンドも止まるので、更新だけは設定を読ませない。
+    # self update はインストーラを流し直すので、導入時と同じく rc ファイルを書き換えさせない。
+    if UV_NO_MODIFY_PATH=1 "$UV" --no-config self update "$UV_MIN_VERSION" && ! version_lt "$(uv_version)" "$UV_MIN_VERSION"; then
+      print_success "uv updated successfully"
+    else
+      print_error "Failed to update uv. Update it to $UV_MIN_VERSION or later with the tool that installed it, or move $UV away and rerun."
+      exit 1
+    fi
     return 0
   fi
 
