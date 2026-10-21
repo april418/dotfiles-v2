@@ -23,7 +23,7 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 | Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く（チェックが作った未追跡のファイルがあれば、その扱いも） | 同じ選択肢を最終応答で提示する |
 
-非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / ユーザーが手で force push する / 中断等）を最終応答で 2〜4 択で提示する。
+非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 対話で force push を頼み直す / ユーザーが手で force push する / 中断等）を最終応答で 2〜4 択で提示する。
 upstream が `[gone]`、名指しの remote が upstream の remote と違う、detached HEAD、統合ブランチでも、push するコミットが 0 件ならどのモードでも聞かず、0 件として終える（detached HEAD と統合ブランチは、未コミットの変更も無いとき。Step 1 の 2.）。
 ただし統合ブランチと detached HEAD で force push を頼まれたときと、非対話で作業ブランチへの force push を頼まれたときは、0 件でも止める（「force push について」）。
 対話で作業ブランチへの force push を頼まれ、push 先から消えるコミットがあるときも、0 件で終えずに承認を聞く（Step 1 の 3.）。
@@ -422,7 +422,7 @@ git status --porcelain --untracked-files=normal
 - 統合ブランチ（`develop` / `master` / `main`）への force push も Step 1 の 2. で止める。push するコミットが 0 件でも、統合ブランチであることを理由に止める。detached HEAD も同じである。
 - 対話モードでは、作業ブランチへの force push は Step 1 の 2. で push 先を fetch して `ls-remote` で先端の sha を取り、3. で push 先から消えるコミットを見せて `AskUserQuestion` で承認を取ってから行う（git-workflow のルール 6）。チェックは通常の push と同じく流す（push 先に残るのは HEAD である）。
   `--force` は使わず、承認したときに控えた sha を `--force-with-lease=refs/heads/<branch>:<sha>` で渡す。sha を渡さない `--force-with-lease` は remote-tracking ref と比べるので、承認の後に fetch が走ると、見せていないコミットまで上書きする（`git push --help`）。`--force-if-includes` は、sha を渡した lease と一緒では効かないので付けない（同）。
-- 非対話モードでは、作業ブランチへの force push も、要求されていても行わない（git-workflow のルール 0）。Step 1 の 2. で中止条件として扱い、チェックは流さない。1. の未コミットの変更の方針、2. の表の確認、3. の 0 件の終わり方より先に当てる。push 節は `— push しない（非対話では force push を行わないため）` にし、出す方針はユーザーが手で force push する（推奨。`git push --force-with-lease <remote> <branch>`）か中断にする。対話で頼み直す方針は出さない。
+- 非対話モードでは、作業ブランチへの force push も、要求されていても行わない（git-workflow のルール 0）。Step 1 の 2. で中止条件として扱い、チェックは流さない。1. の未コミットの変更の方針、2. の表の確認、3. の 0 件の終わり方より先に当てる。push 節は `— push しない（非対話では force push を行わないため）` にし、出す方針は対話で force push を頼み直す（推奨。Auto Mode なら切ってから、subagent なら呼び出し元の対話セッションで頼む。Auto Mode のままでは同じところで止まる）、ユーザーが手で force push する（`git push --force-with-lease <remote> <branch>`）、中断の 3 つにする。頼み直せば、消えるコミットを見てから承認でき、push 先の先端が承認したときのままでなければ上書きしない。手で打つコマンドは sha を渡さないので、打つ前に fetch したほかの人のコミットも上書きする。
   コマンドの `<remote>` は、remote の名指しがあればその remote、無ければ upstream の remote、どちらも無く `git remote` が 1 行ならその remote にする。決まらなければ `<remote>` のまま書き、push 先の remote を確かめてから打つよう添える。2. の表より先に止めるので push 先は決まっておらず、推測した remote に他人のブランチがあると、fetch 済みなら `--force-with-lease` でも上書きする（Git 2.54.0 で実測）。
   巻き戻す force push は新しいコミットが無くてもリモートを変えるので、0 件でもこの理由で止める。チェックを流さないのは、push しないと決まっていて、その結果が使われないためである。
 
