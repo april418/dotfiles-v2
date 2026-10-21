@@ -100,6 +100,18 @@ git remote
 
 以下の種別をすべて調べ、当てはまった種別はすべて対象にする（最初に当てはまった種別で止めない）。チェックを流す順は節の並び（Node.js → Python → Rust → Go → Ansible → Docker → Makefile → Taskfile）で、種別の中は表の行の順（Makefile / Taskfile は `lint` → `check` → `test` → `build` の順）である。
 
+表の条件の「`<ツール>` がインストール済み」は次のとおりに判定する。入っていなければ「流さないチェックの書き方」のスキップ行にする。
+
+| ツール | 判定 | 流すコマンド |
+| --- | --- | --- |
+| Python の表（`ruff` / `mypy` / `pytest`） | プロジェクトルートの `.venv/bin/<ツール>` が実行可能か。無ければ `command -v <ツール>` | `.venv/bin/<ツール>` で見つけたら、表のコマンドの先頭をそのパスにする（`.venv/bin/ruff check .`） |
+| `clippy` / `cargo-audit` | `cargo clippy --version` / `cargo audit --version` が exit 0 か | 表のとおり |
+| ほか（`golangci-lint` / `ansible-lint` / `hadolint`） | `command -v <ツール>` | 表のとおり |
+
+`.venv/bin` を先に見るのは、uv などがプロジェクトルートに作る `.venv` のツールは、venv を有効にしないと `PATH` に無いため。`PATH` の pytest は自分の環境で動くので、`.venv` に入れたプロジェクトの依存を import できない。
+`uv run` は使わない。`.venv` や `uv.lock` が無ければ作り、`pyproject.toml` と食い違う `uv.lock` を書き換える（uv 0.13.1 で実測）。
+`clippy` という実行ファイルは無く、`cargo clippy` の実体の `cargo-clippy` は rustup がコンポーネントの有無によらず置く proxy なので、`command -v` では判定できない。
+
 **Node.js プロジェクト（`package.json` が存在）:**
 
 パッケージマネージャー（PM）は上から順に見て、最初に決まったものを使う。
