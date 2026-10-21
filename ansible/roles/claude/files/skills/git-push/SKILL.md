@@ -23,7 +23,7 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く（チェックが作った未追跡のファイルがあれば、その扱いも） | 同じ選択肢を最終応答で提示する |
 
 非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / ユーザーが手で force push する / 中断等）を最終応答で 2〜4 択で提示する。
-upstream が `[gone]`、detached HEAD、統合ブランチでも、push するコミットが 0 件ならどのモードでも聞かず、0 件として終える（detached HEAD と統合ブランチは、未コミットの変更も無いとき。Step 1 の 2.）。
+upstream が `[gone]`、名指しの remote が upstream の remote と違う、detached HEAD、統合ブランチでも、push するコミットが 0 件ならどのモードでも聞かず、0 件として終える（detached HEAD と統合ブランチは、未コミットの変更も無いとき。Step 1 の 2.）。
 ただし統合ブランチと detached HEAD で force push を頼まれたときと、非対話で作業ブランチへの force push を頼まれたときは、0 件でも止める（「force push について」）。
 
 確認への答えは、Step 1 からやり直した後も使い、同じことを聞き直さない（外したチェック、push 先の remote、`-u` で付け替えるか、`[gone]` のブランチを push するか、PM の場所）。
@@ -96,7 +96,7 @@ git remote
    | upstream（`for-each-ref` の出力） | `git remote` | remote の名指し | push 先 |
    | --- | --- | --- | --- |
    | 同名のリモートブランチ（`<remote>/<branch>`。`[ahead N]` / `[behind N]` / `[ahead N, behind N]` が続いてよい。`[gone]` で終わるものは下の `[gone]` の行） | — | 無い、または upstream の remote | `git push <remote> <branch>` |
-   | 同名のリモートブランチ（末尾が `[gone]` のものを含む） | — | upstream と違う remote | `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない（付け替えずに push すると upstream は変わらない）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる。どちらでも、3. は `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える。`@{upstream}..HEAD` は upstream の remote との差で、upstream の remote に push 済みなら 0 件になって push せずに終わる（Git 2.54.0 で実測）。`[gone]` では下の行のとおり使えない |
+   | 同名のリモートブランチ（末尾が `[gone]` のものを含む） | — | upstream と違う remote | 聞く前に、3. のコミットを `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える。`@{upstream}..HEAD` は upstream の remote との差で、upstream の remote に push 済みなら 0 件になって push せずに終わる（Git 2.54.0 で実測）。`[gone]` では下の行のとおり使えない。0 件なら聞かずに 3. の 0 件として終える。1 件以上なら `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない（付け替えずに push すると upstream は変わらない）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる |
    | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | 無い、または upstream の remote | 聞く前に、3. のコミットを `git log --oneline HEAD --not --remotes=<upstream の remote>` で数える（`@{upstream}` は解決できず exit 128 になる）。0 件なら聞かずに 3. の 0 件として終え、理由に `[gone]` を添える（`— push しない（push するコミットが無いため。upstream の origin/feature/x は [gone]）`）。merge commit でマージされたブランチはここで終わる。1 件以上なら `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり（squash でマージされたブランチは 1 件以上残る）、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る）。push すると答えたら `git push <upstream の remote> <branch>` に決まる。upstream の設定は残っており、push で追跡が戻るので `-u` は要らない（どれも Git 2.54.0 で実測） |
    | 空（upstream が無い）、または名前の違うブランチ | 1 行 | 無い、またはその remote | **初回 push として扱い、`git push -u <remote> <branch>` で確定とみなす** |
    | 空、または名前の違うブランチ | 2 行以上 | ある | **初回 push として扱い、`git push -u <名指しの remote> <branch>` で確定とみなす** |
