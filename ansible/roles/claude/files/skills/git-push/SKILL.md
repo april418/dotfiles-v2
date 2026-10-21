@@ -35,10 +35,6 @@ git status --porcelain --untracked-files=normal
 ```
 
 ```bash
-git branch -vv --contains HEAD
-```
-
-```bash
 git branch --show-current
 ```
 
@@ -63,6 +59,9 @@ git remote
    空なら detached HEAD で push するブランチが無いので、中止条件として扱う（`for-each-ref` は
    `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。空でなければ
    `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
+   `for-each-ref` の出力は前後の空白を除いてから表に当てる。upstream が無いと空白 1 文字の
+   行になり、これが表の「空」である。upstream との差が無いときも `origin/<branch> ` と
+   末尾に空白が付く（どちらも Git 2.54.0 で実測）。
 
    **remote の名指し**は、push を頼んだ指示が push 先の remote を名前で指定していること（「fork に push して」、`/git-push fork` の引数など）。
    指示として数えるのは、対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプトである。skill の引数は、1 語のときだけ名前として比べる（2 語以上なら一致しないものとして扱う）。push 先の remote を聞く確認（名指しが `git remote` のどれとも一致しない、2 行以上で名指しが無い）でユーザーが答えた remote も名指しに数え、表を引き直す。エージェントが自分で選んで skill の引数に入れた名前は数えない。
@@ -101,6 +100,18 @@ git remote
 
 以下の種別をすべて調べ、当てはまった種別はすべて対象にする（最初に当てはまった種別で止めない）。チェックを流す順は節の並び（Node.js → Python → Rust → Go → Ansible → Docker → Makefile → Taskfile）で、種別の中は表の行の順（Makefile / Taskfile は `lint` → `check` → `test` → `build` の順）である。
 
+表の条件の「`<ツール>` がインストール済み」は次のとおりに判定する。入っていなければ「流さないチェックの書き方」のスキップ行にする。
+
+| ツール | 判定 | 流すコマンド |
+| --- | --- | --- |
+| Python の表（`ruff` / `mypy` / `pytest`） | プロジェクトルートの `.venv/bin/<ツール>` が実行可能か。無ければ `command -v <ツール>` | `.venv/bin/<ツール>` で見つけたら、表のコマンドの先頭をそのパスにする（`.venv/bin/ruff check .`） |
+| `clippy` / `cargo-audit` | `cargo clippy --version` / `cargo audit --version` が exit 0 か | 表のとおり |
+| ほか（`golangci-lint` / `ansible-lint` / `hadolint`） | `command -v <ツール>` | 表のとおり |
+
+`.venv/bin` を先に見るのは、uv などがプロジェクトルートに作る `.venv` のツールは、venv を有効にしないと `PATH` に無いため。`PATH` の pytest は自分の環境で動くので、`.venv` に入れたプロジェクトの依存を import できない。
+`uv run` は使わない。`.venv` や `uv.lock` が無ければ作り、`pyproject.toml` と食い違う `uv.lock` を書き換える（uv 0.13.1 で実測）。
+`clippy` という実行ファイルは無く、`cargo clippy` の実体の `cargo-clippy` は rustup がコンポーネントの有無によらず置く proxy なので、`command -v` では判定できない。
+
 **Node.js プロジェクト（`package.json` が存在）:**
 
 パッケージマネージャー（PM）は上から順に見て、最初に決まったものを使う。
@@ -124,13 +135,25 @@ yarn 1 の終了コードは見つかった重大度の値の和（info 1 / low 
 bun は 1.2.15 で `bun audit` が入ったので、それより前の bun では失敗になる。
 pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 で失敗したら、package-manager skill のルール 5 の手順で pnpm 11 を使って流し直し、その結果で判定する。出力の `Node.js audit` の行には括弧で `pnpm 10 が 410 を返したため pnpm 11 で流し直した` と書き、ルール 5 が報告に添えるよう求めることも同じ括弧に入れる。
 
-**PATH 解決のフォールバック**: 非ログインシェル（subagent の Bash 等）では `nvm` 配下の `node` / `pnpm` / `npm` が `PATH` に入っていないことがある。`command -v <pm>` で見つからない場合は以下の優先順で探索する:
+**PATH 解決のフォールバック**: 非ログインシェル（subagent の Bash 等）では、nvm 配下やスタンドアロンのインストーラで入れた PM が `PATH` に入っていないことがある。`command -v <pm>` で見つからない場合は、下の表の場所を上の行から、行の中は左から順に見て、最初に見つかった実行ファイルを使う。
 
-1. `~/.nvm/versions/node/*/bin/<pm>` の最新版
-2. `~/.local/share/pnpm/<pm>` 等の標準的な install path
+| PM | 探す場所 |
+| --- | --- |
+| すべて | `$NVM_DIR/versions/node/*/bin/<pm>` のうち、Node.js の版を数値で比べて最も新しいもの（`sort -V`。文字列で比べると `v9` が `v24` より新しくなる） |
+| pnpm | `$PNPM_HOME/bin/pnpm`、`$PNPM_HOME/pnpm`（`pnpm setup` が pnpm 11 以降は前者、10 以前は後者に置く。プロジェクトが宣言した版では選ばず、両方見る） |
+| bun | `$BUN_INSTALL/bin/bun` |
+
+変数が空なら、各インストーラの既定の場所を使う。
+
+| 変数 | 空のときの場所 |
+| --- | --- |
+| `NVM_DIR` | `$XDG_CONFIG_HOME/nvm`（`XDG_CONFIG_HOME` も空なら `~/.nvm`） |
+| `PNPM_HOME` | `$XDG_DATA_HOME/pnpm`（`XDG_DATA_HOME` も空なら macOS は `~/Library/pnpm`、ほかは `~/.local/share/pnpm`） |
+| `BUN_INSTALL` | `~/.bun` |
 
 それでも見つからなければ `AskUserQuestion` でユーザーに PM の場所を確認する。
-非対話モード時は Node.js のチェックを流さずに失敗とし、push を中止する。出力は、流すはずだった Node.js のチェックのうち最初のものを `✗ Node.js build（失敗。pnpm が見つからない。探した場所: <command -v と上の 1・2 で見たパス>）` のように書き、残りの Node.js のチェックは前段失敗の行（`— <チェック名>（前段失敗のため未実行）`）にする。ほかの種別のチェックは、ほかの失敗と同じく「失敗時の優先規則」に従う。
+非対話モード時は Node.js のチェックを流さずに失敗とし、push を中止する。出力は、流すはずだった Node.js のチェックのうち最初のものを `✗ Node.js build（失敗。bun が見つからない。探した場所: PATH, ~/.nvm/versions/node/*/bin/bun, ~/.bun/bin/bun）` のように書き、残りの Node.js のチェックは前段失敗の行（`— <チェック名>（前段失敗のため未実行）`）にする。ほかの種別のチェックは、ほかの失敗と同じく「失敗時の優先規則」に従う。
+`探した場所:` には、`command -v` を `PATH` と書き、続けて表で見た場所を見た順に `, ` で区切って並べる。変数は展開した値で書き、ホームディレクトリは `~` と書き、glob は展開しない。
 `corepack <pm>@latest` で取ってくることはしない。Node.js 25 以降は corepack が同梱されず、`@latest` はプロジェクトが宣言した版を無視するため。
 流す Node.js のチェックが 1 つも無ければ（スキップ行だけなら）PM は探さず、見つからなくても失敗にしない。
 
@@ -226,7 +249,7 @@ syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。
 - 各チェックの実行結果（成功/失敗）をリアルタイムで表示する。
 - **失敗時の優先規則（同時発生時の判断）**:
   1. **1 つでもチェックが失敗した時点で残りのチェックは打ち切ってよい**（`audit は常に実行` のような原則よりも「失敗で中止」が優先）。打ち切ったチェックは出力で `— <チェック名>（前段失敗のため未実行）` と明記する
-  2. 失敗内容をユーザーに報告し push を中止する。`git status --porcelain --untracked-files=no` が空でなければ、チェックが書き換えたファイルも添える（Step 3 の取り直しは通過したときしか流れない）。Step 3 の「チェックが作った未追跡のファイル」も流す。どのモードでも同じで、skill の手順はそこで終わる。次の手を `AskUserQuestion` で聞くことも、直して流し直すことも、この skill の手順には含めない
+  2. 失敗内容をユーザーに報告し push を中止する。`git status --porcelain --untracked-files=no` が空でなければ、チェックが書き換えたファイルも添える（Step 3 の取り直しは通過したときしか流れない）。Step 3 の「チェックが作った未追跡のファイル」も、その節の条件で流す。どのモードでも同じで、skill の手順はそこで終わる。次の手を `AskUserQuestion` で聞くことも、直して流し直すことも、この skill の手順には含めない
 - プロジェクトの種別が検出できない場合、または流すチェックが 1 つもない場合（スキップ行だけになる場合を含む）は、チェックを流さずに Step 3 に進む。
   - **種別はプロジェクトルートにある上の構成ファイルだけで決め、拡張子からは推測しない。** `app.py` だけで `pyproject.toml` 等が無いリポジトリは検出 0 件になり、それで正しい。構成ファイルが無いのはプロジェクトがチェックを定めていないということで、推測で流すと合意の無い基準で push が止まる
   - **流すチェックが 0 件のときの出力**: 「品質チェック」セクションは残し、0 件になった理由を明示する。種別ごとに、`— <チェック名>（理由）` のスキップ行（上の「流さないチェックの書き方」や各節の規則で出すもの）があればそれを並べ、1 行も無い種別には下の表の行を書く
@@ -264,7 +287,8 @@ git push -u <remote> <branch>
 
 #### チェックが作った未追跡のファイル
 
-チェックを流したら、push したかどうか（失敗・書き換えで止めた場合を含む）にかかわらず、最終報告の前に流す。
+チェックのコマンド（表の「コマンド」列や make / task のターゲット。インストール済みの判定は数えない）を 1 つでも実行したら、push したかどうか（失敗・書き換えで止めた場合を含む）にかかわらず、最終報告の前に流す。
+1 つも実行していなければ（流すチェックが 0 件、PM が見つからず ✗ にしただけ）流さない。未追跡のファイルが無いことは Step 1 で確かめてあり、何も実行していなければ空になる。
 
 ```bash
 git status --porcelain --untracked-files=normal
