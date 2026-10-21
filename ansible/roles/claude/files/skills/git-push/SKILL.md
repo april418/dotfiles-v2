@@ -357,6 +357,7 @@ git status --porcelain --untracked-files=normal
 - スキルから自発的に force push を提案しない。
 - 統合ブランチ（`develop` / `master` / `main`）への force push も Step 1 の 2. で止める。push するコミットが 0 件でも、統合ブランチであることを理由に止める。detached HEAD も同じである。
 - 非対話モードでは、作業ブランチへの force push も、要求されていても行わない（git-workflow のルール 0）。Step 1 の 2. で中止条件として扱い、チェックは流さない。1. の未コミットの変更の方針、2. の表の確認、3. の 0 件の終わり方より先に当てる。push 節は `— push しない（非対話では force push を行わないため）` にし、出す方針はユーザーが手で force push する（推奨。`git push --force-with-lease <remote> <branch>`）か中断にする。対話で頼み直す方針は出さない。対話時も、巻き戻す force push は 3. の 0 件で終わり、Step 3 に force push のコマンドが無い。
+  コマンドの `<remote>` は、remote の名指しがあればその remote、無ければ upstream の remote、どちらも無く `git remote` が 1 行ならその remote にする。決まらなければ `<remote>` のまま書き、push 先の remote を確かめてから打つよう添える。2. の表より先に止めるので push 先は決まっておらず、推測した remote に他人のブランチがあると、fetch 済みなら `--force-with-lease` でも上書きする（Git 2.54.0 で実測）。
   巻き戻す force push は新しいコミットが無くてもリモートを変えるので、0 件でもこの理由で止める。チェックを流さないのは、push しないと決まっていて、その結果が使われないためである。
 
 ## push した後、人に確認を頼む前に
