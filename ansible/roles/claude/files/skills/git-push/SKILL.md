@@ -59,6 +59,9 @@ git remote
    空なら detached HEAD で push するブランチが無いので、中止条件として扱う（`for-each-ref` は
    `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。空でなければ
    `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
+   `for-each-ref` の出力は前後の空白を除いてから表に当てる。upstream が無いと空白 1 文字の
+   行になり、これが表の「空」である。upstream との差が無いときも `origin/<branch> ` と
+   末尾に空白が付く（どちらも Git 2.54.0 で実測）。
 
    **remote の名指し**は、push を頼んだ指示が push 先の remote を名前で指定していること（「fork に push して」、`/git-push fork` の引数など）。
    指示として数えるのは、対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプトである。skill の引数は、1 語のときだけ名前として比べる（2 語以上なら一致しないものとして扱う）。push 先の remote を聞く確認（名指しが `git remote` のどれとも一致しない、2 行以上で名指しが無い）でユーザーが答えた remote も名指しに数え、表を引き直す。エージェントが自分で選んで skill の引数に入れた名前は数えない。
