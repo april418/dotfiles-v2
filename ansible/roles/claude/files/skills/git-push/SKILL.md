@@ -22,7 +22,7 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 | Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く（チェックが作った未追跡のファイルがあれば、その扱いも） | 同じ選択肢を最終応答で提示する |
 
-非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 対話で force push を頼み直す / 中断等）を最終応答で 2〜4 択で提示する。
+非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / ユーザーが手で force push する / 中断等）を最終応答で 2〜4 択で提示する。
 upstream が `[gone]`、detached HEAD、統合ブランチでも、push するコミットが 0 件ならどのモードでも聞かず、0 件として終える（detached HEAD と統合ブランチは、未コミットの変更も無いとき。Step 1 の 2.）。
 ただし統合ブランチと detached HEAD で force push を頼まれたときと、非対話で作業ブランチへの force push を頼まれたときは、0 件でも止める（「force push について」）。
 
@@ -351,8 +351,8 @@ git status --porcelain --untracked-files=normal
 - `--force` や `--force-with-lease` は**ユーザーが明示的に要求した場合のみ**使用する。
 - スキルから自発的に force push を提案しない。
 - 統合ブランチ（`develop` / `master` / `main`）への force push も Step 1 の 2. で止める。push するコミットが 0 件でも、統合ブランチであることを理由に止める。
-- 非対話モードでは、作業ブランチへの force push も、要求されていても行わない（git-workflow のルール 0）。Step 1 の 2. で中止条件として扱い、チェックは流さない。1. の未コミットの変更の方針、2. の表の確認、3. の 0 件の終わり方より先に当てる。push 節は `— push しない（非対話では force push を行わないため）` にし、出す方針は対話で force push を頼み直すか中断にする。
-  巻き戻す force push は新しいコミットが無くてもリモートを変えるので、0 件でもこの理由で止める。チェックを流さないのは、頼み直すと Step 1 から流し直し、その結果が使われないためである。
+- 非対話モードでは、作業ブランチへの force push も、要求されていても行わない（git-workflow のルール 0）。Step 1 の 2. で中止条件として扱い、チェックは流さない。1. の未コミットの変更の方針、2. の表の確認、3. の 0 件の終わり方より先に当てる。push 節は `— push しない（非対話では force push を行わないため）` にし、出す方針はユーザーが手で force push するか中断にする。対話で頼み直す方針は出さない。対話時も、巻き戻す force push は 3. の 0 件で終わり、Step 3 に force push のコマンドが無い。
+  巻き戻す force push は新しいコミットが無くてもリモートを変えるので、0 件でもこの理由で止める。チェックを流さないのは、push しないと決まっていて、その結果が使われないためである。
 
 ## push した後、人に確認を頼む前に
 
