@@ -193,7 +193,7 @@ pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 
 
 | PM | 探す場所 |
 | --- | --- |
-| すべて | `$NVM_DIR/versions/node/*/bin/<pm>` のうち、Node.js の版を数値で比べて最も新しいもの（`sort -V`。文字列で比べると `v9` が `v24` より新しくなる） |
+| すべて | `$NVM_DIR/versions/node/*/bin/<pm>` のうち、プロジェクトが求める Node.js の版に合う最も新しいもの（下の「nvm の版の選び方」） |
 | pnpm | `$PNPM_HOME/bin/pnpm`、`$PNPM_HOME/pnpm`（`pnpm setup` が pnpm 11 以降は前者、10 以前は後者に置く。プロジェクトが宣言した版では選ばず、両方見る） |
 | bun | `$BUN_INSTALL/bin/bun` |
 
@@ -205,17 +205,39 @@ pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 
 | `PNPM_HOME` | `$XDG_DATA_HOME/pnpm`（`XDG_DATA_HOME` も空なら macOS は `~/Library/pnpm`、ほかは `~/.local/share/pnpm`） |
 | `BUN_INSTALL` | `~/.bun` |
 
+**nvm の版の選び方**: `bin/<pm>` が実行できる（`test -x`）版だけを候補にする。プロジェクトルートにある次の指定のすべてに合う候補のうち、最も新しい版を使う。中身が空か空白だけの指定は無いものとする。
+
+- `package.json` の `engines.node`
+- `.node-version` の中身
+- `.nvmrc` の中身
+
+package-manager skill のルール 2 と同じ確認先だが、優先順で 1 つに絞らない。`engines.node` が `>=18` のような下限だけだと、それだけで選んだ版は `.nvmrc` などで固定した版より新しくなりうる。
+指定が 1 つも無ければ、候補を `sort -V` で比べて最も新しい版を使う（文字列で比べると `v9` が `v24` より新しくなる）。
+指定があれば、合うかを npm が同梱する semver の CLI で決める。`<nvm>` は上の表で決めた `NVM_DIR` の場所で、展開した絶対パスで書く。
+`<最新>` は、候補に限らず `<nvm>/versions/node/` の下で `bin/node` が実行でき、`lib/node_modules/npm/node_modules/semver/bin/semver.js` がある（`test -f`）版のうち、`sort -V` で最も新しいもの。候補の版の npm を使わないのは、npm 6 が同梱する semver 5 系の CLI は `bin/semver` で `.js` が無いため（`npm view npm@6.14.18 dependencies.semver` が `^5.7.1`、`npm view semver@5.7.1 bin` が `./bin/semver`）。`<最新>` が無ければ版を比べられないので、合う版が無い扱いにする。
+指定は、読んだ値の前後の空白を除いて単一引用符で 1 つずつ `-r` に渡し、続けて候補の版を並べる。ファイルをシェルで読ませない。`"$(cat .nvmrc)"` は cwd が違うと空になり、`-r ''` はすべての版に合う。
+
+```bash
+'<nvm>/versions/node/<最新>/bin/node' '<nvm>/versions/node/<最新>/lib/node_modules/npm/node_modules/semver/bin/semver.js' -r '>=18' -r '24' v20.19.0 v24.15.0
+```
+
+すべての `-r` に合う版だけを、`v` を外して古い順に出す（この例では `24.15.0`）。最後の行に `v` を付けた版の `bin`（`<nvm>/versions/node/v24.15.0/bin`）が下の `<dir>` になる。合う版が無ければ何も出さずに exit 1 で終わる（semver 7.7.4 / npm 11.12.1 で実測）。0 以外で終わったら合う版が無い扱いにする。
+semver の範囲として読めない指定は、どの版にも合わない。nvm は `.nvmrc` の `#` から後ろをコメントとして除き、`lts/*`・`node` などの alias を版に置き換えて読むが、ここではどちらもせずにそのまま `-r` に渡す。指定が無いものとしても扱わない。
+合う版が無ければ、nvm の行では見つからなかった扱いにして次の行へ進む。
+
 表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。
 corepack が置く pnpm / yarn と npm は `#!/usr/bin/env node` で始まり、フルパスで呼んでも `node` が `PATH` に無いと `env: node: No such file or directory` で exit 127 になる。`<dir>/node <dir>/npm run build` と node をフルパスで呼んでも、scripts の中の `node` が `sh: node: command not found` で落ちる（どちらも npm 11.12.1 / pnpm 12.6.0 で実測）。nvm の `<dir>` にはその版の `node` がある。
 シンボリックリンクは辿らない。nvm の `bin/pnpm` などは `../lib/node_modules/` の下へのリンクで、辿った先のディレクトリに `node` は無い。
 `node` があるかは確かめない。`<dir>` にも `PATH` にも `node` が無ければ（スタンドアロンの pnpm など）、node を呼ぶチェックは失敗し、ほかの失敗と同じく push を止める。
 `<dir>` は展開した絶対パスで書き（引用符の中の `~` は展開されない）、コマンドごとに付ける。Bash の呼び出しの間で環境変数は引き継がれないことがある。
 出力では、流した Node.js のチェック（`yarn --version` の失敗で ✗ にした audit も数える）のうち最初の行の括弧の最後に `pnpm が PATH に無いため ~/.nvm/versions/node/v24.15.0/bin を PATH の先頭に足して流した` のように書く（ホームディレクトリは `~` と書く）。括弧にほかの説明（`失敗。`、410 で流し直したことなど）があれば、その後に `。` で区切って続ける。nvm ならパスから node の版が読め、CI と結果が違ったときの手がかりになる。
+nvm に候補があったのに合う版が無く、後ろの行かユーザーの答えの `<dir>` で流したときは、`流した` の後に `。nvm は engines.node の >=26 に合う版が無い。pnpm があるのは v24.15.0` のように続ける。`nvm は` の後は、下の `探した場所:` で nvm の場所に添える括弧の中身と同じである。
 
-表の場所でも見つからなければ `AskUserQuestion` でユーザーに PM の場所を確認する。
-答えが実行ファイルならその親を、ディレクトリならそれを `<dir>` にし、表の場所で見つけたときと同じに扱う。`<dir>/<pm>` が実行できなければ（`test -x`）見つからなかった扱いにして、`<dir>/<pm>` が実行できなかったことを添え、中断を選択肢に入れてもう一度聞く。`bin/` の下などを自分で探しには行かない。
+表の場所でも見つからなければ `AskUserQuestion` でユーザーに PM の場所を確認する。nvm に候補があったのに合う版が無かったときは、下の `探した場所:` で nvm の場所に添える括弧と同じ内容を質問に添える。
+答えが実行ファイルならその親を、ディレクトリならそれを `<dir>` にし、表の場所で見つけたときと同じに扱う。答えの `<dir>` の版は指定と照らさない。合わない版で流すかはユーザーが決める。`<dir>/<pm>` が実行できなければ（`test -x`）見つからなかった扱いにして、`<dir>/<pm>` が実行できなかったことを添え、中断を選択肢に入れてもう一度聞く。`bin/` の下などを自分で探しには行かない。
 非対話モード時は Node.js のチェックを流さずに失敗とし、push を中止する。出力は、流すはずだった Node.js のチェックのうち最初のものを `✗ Node.js build（失敗。bun が見つからない。探した場所: PATH, ~/.nvm/versions/node/*/bin/bun, ~/.bun/bin/bun）` のように書き、残りの Node.js のチェックは前段失敗の行（`— <チェック名>（前段失敗のため未実行）`）にする。ほかの種別のチェックは、ほかの失敗と同じく「失敗時の優先規則」に従う。
 `探した場所:` には、`command -v` を `PATH` と書き、続けて表で見た場所を見た順に `, ` で区切って並べる。変数は展開した値で書き、ホームディレクトリは `~` と書き、glob は展開しない。
+nvm に候補があったのに合う版が無かったときは、nvm の場所の後ろに `~/.nvm/versions/node/*/bin/pnpm（engines.node の >=26 に合う版が無い。pnpm があるのは v24.15.0）` のように括弧を付ける。指定は「nvm の版の選び方」の並びの順に `engines.node の >=18 と .nvmrc の 20` のように `と` でつなぎ（値の中の改行は空白 1 つにする）、候補の版は古い順に `, ` で区切って並べる。`<最新>` が無くて比べられなかったときは、括弧の前半を `semver を流せる版が無い` にする（`（semver を流せる版が無い。pnpm があるのは v14.21.3）`）。
 `corepack <pm>@latest` で取ってくることはしない。Node.js 25 以降は corepack が同梱されず、`@latest` はプロジェクトが宣言した版を無視するため。
 流す Node.js のチェックが 1 つも無ければ（スキップ行だけなら）PM は探さず、見つからなくても失敗にしない。
 
