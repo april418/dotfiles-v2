@@ -18,12 +18,12 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 
 | 場面 | 対話モード | 非対話モード |
 | --- | --- | --- |
-| Step 1 で確認が要るか中止条件を検出した（未コミット変更、push 先の remote が決まらない、名指しの remote が upstream の remote と違う、upstream が `[gone]`、detached HEAD、統合ブランチ、remote が 0 行） | 検出内容を伝え、次に取りうる方針を聞く | 下の段落 |
+| Step 1 で確認が要るか中止条件を検出した（未コミット変更、push 先の remote が決まらない、名指しの remote が upstream の remote と違う、upstream が `[gone]`（追跡 ref の残りを含む。Step 1 の 2.）、detached HEAD、統合ブランチ、remote が 0 行） | 検出内容を伝え、次に取りうる方針を聞く | 下の段落 |
 | 作業ブランチへの force push を頼まれ、Step 1 の 3. で push 先から消えるコミットがある | 消えるコミットと足すコミットを見せ、force push するか中断するかを聞く（git-workflow のルール 6） | 起きない（Step 1 の 2. で止める） |
 | Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く（チェックが作った未追跡のファイルがあれば、その扱いも） | 同じ選択肢を最終応答で提示する |
 
-非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 対話で force push を頼み直す / ユーザーが手で force push する / 中断等）を最終応答で 2〜4 択で提示する。
+非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]`（追跡 ref の残りを含む） / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 対話で force push を頼み直す / ユーザーが手で force push する / 中断等）を最終応答で 2〜4 択で提示する。
 upstream が `[gone]`、名指しの remote が upstream の remote と違う、detached HEAD、統合ブランチでも、push するコミットが 0 件ならどのモードでも聞かず、0 件として終える（detached HEAD と統合ブランチは、未コミットの変更も無いとき。Step 1 の 2.）。
 ただし統合ブランチと detached HEAD で force push を頼まれたときと、非対話で作業ブランチへの force push を頼まれたときは、0 件でも止める（「force push について」）。
 対話で作業ブランチへの force push を頼まれ、push 先から消えるコミットがあるときも、0 件で終えずに承認を聞く（Step 1 の 3.）。
@@ -113,26 +113,42 @@ git remote
    ブランチ）。そのままでは引数なしの `git push` が名前の不一致で拒否され、`-u` を付けずに
    push すると upstream がベースを指したまま残るので、初回 push として `-u` で付け替える。
 
-   対話で作業ブランチへの force push を頼まれたときは、表の行で push 先の remote が決まったら、その行の確認より先に次の 2 つを流し、
-   `for-each-ref` を流し直して表を引き直す（引き直した後は流さない）。push 先を聞く確認では、答えた remote で表を引き、
-   決まった行の確認より先に流す。表の行の数え方と確認は、3. の「force push を頼まれたとき」を当ててから使う。
+   表の行が 1 行目か upstream と違う remote の行に決まったら、その行の数え方と確認より先に、次の 2 つで push 先の追跡 ref が
+   リモートで消されたブランチの残りでないかを確かめる。ほかの行では、残りがあっても数え方も確認も変わらないので流さない。
+   同じ回の Step 1 の中では、同じ remote には 1 回だけ流す（Step 1 からやり直したときは流し直す）。
 
    ```bash
-   git fetch <remote>
-   git ls-remote --exit-code --heads <remote> refs/heads/<branch>
+   git rev-parse --verify --quiet refs/remotes/<remote>/<branch>
+   git ls-remote --exit-code --heads "$(git remote get-url --push <remote>)" refs/heads/<branch>
    ```
 
+   `ls-remote` は `rev-parse` が exit 0（追跡 ref がある）のときだけ流す（force push は下の段落）。`ls-remote` に remote の名前を渡すと
+   fetch の URL を見るので、`pushurl` で push 先を分けた remote では、この skill が push して作った追跡 ref まで残りに見える。
+   `get-url --push` は `pushurl` と `pushInsteadOf` を当てた URL を出す。
+   `rev-parse` が exit 0 で `ls-remote` が exit 2（push 先にブランチが無い）なら、その追跡 ref はリモートで消されたブランチの残りである。
+   fetch しても `fetch.prune` が無効（git の既定）ならその ref は消えず、通常の push はここまで fetch もしないので、`for-each-ref` は `[gone]` を
+   出さない（`[ahead 1]` などが付くか、差が無ければ何も付かない）。upstream がその ref なら、upstream を `[gone]` として表を引き直す。1 行目の
+   まま push すると、リモートで消されたブランチを確認なしで作り直す（`* [new branch]` で exit 0）。`[gone]` の行の 0 件の理由は、`[gone]` を
+   `リモートで消された（追跡 ref は残っている）` に替えて書く。`git branch -vv` などは gone を出さない。
+   `[gone]` として引いた行と upstream と違う remote の行では、`--not --remotes=<remote>` で数えるところを
+   `git log --oneline HEAD --not --exclude=<remote>/<branch> --remotes=<remote>` にする。残りを除かないと、その ref にあるコミットが数えられず、
+   push 先に無いのに 0 件で終わる。`--exclude` の値に `refs/remotes/` を付けると何も除かない。初回 push の行では（force push で残りが
+   分かったときも）除かない。除くと、`-u` を付けずに push してマージされたブランチが 1 件以上になり、確認なしで作り直す。
+   残りを `[gone]` として引いたとき、fetch していなければほかの追跡 ref もマージより前のままなので、merge commit でマージしたブランチの
+   コミットも数え、`[gone]` の行の 0 件では終わらずに作り直すかを聞く（どれも Git 2.54.0 で実測）。確認には、マージ済みのコミットも並びうる
+   ことを添える。数えすぎても確認か中止に倒れるだけなので、これを避けるための fetch はしない。
+   `ls-remote` が exit 2 以外の 0 でない終了なら、push 先にブランチがあるかが分からないので、聞かずに終える
+   （`— push しない（<remote> の <branch> を ls-remote で確かめられなかったため。<git が出した最初の fatal: の行>）`）。3. の fetch の失敗と同じく
+   中止条件に数えない。
+
+   対話で作業ブランチへの force push を頼まれたときは、表の行で push 先の remote が決まったら、どの行でも、上の 2 つより先に
+   `git fetch <remote>` を流し、`ls-remote` は `rev-parse` によらず流す。fetch も上の 2 つと同じく、同じ回の Step 1 の中では
+   同じ remote に 1 回だけ流す。その後 `for-each-ref` を流し直して表を引き直す。表の行の数え方と確認は、3. の
+   「force push を頼まれたとき」を当ててから使う。
    3. で push 先から消えるコミットを見せるには、push 先の今の先端とそのコミットが要る。`ls-remote` が先端の sha を出し、fetch が
-   そのコミットを手元に持ってくる。
-   `ls-remote` が exit 2（push 先にブランチが無い）なのに `git rev-parse --verify --quiet refs/remotes/<remote>/<branch>` が exit 0 なら、
-   その ref はリモートで消されたブランチの追跡 ref の残りである。`fetch.prune` が無効（git の既定）だと fetch はその ref を消さず、
-   `for-each-ref` は `[gone]` ではなく `[behind 1]` などを出す。upstream がその ref なら、upstream を `[gone]` として表を引く。
-   表の行でも 3. でも、`--not --remotes=<remote>` で数えるところは `git log --oneline HEAD --not --exclude=<remote>/<branch> --remotes=<remote>`
-   にする。残りを除かないと、その ref にあるコミットが数えられず、push 先に無いのに 0 件で終わる。`--exclude` の値に `refs/remotes/`
-   を付けると何も除かない（どれも Git 2.54.0 で実測）。
-   fetch か `ls-remote`（exit 2 以外の 0 でない終了）が失敗したら、消えるコミットを見せられないので聞かずに終える
-   （`— push しない（<remote> を fetch できなかったため。<git が出した最初の fatal: の行>）`。`ls-remote` なら `<remote> を fetch できなかった` を
-   `<remote> の <branch> を ls-remote で確かめられなかった` に替える）。
+   そのコミットを手元に持ってくる。`pushurl` で push 先を分けた remote では、push 先にしか無いコミットは fetch で手元に来ず、3. の
+   手元に無いときの終わり方になる（Git 2.54.0 で実測）。fetch が失敗したら、消えるコミットを見せられないので聞かずに終える
+   （`— push しない（<remote> を fetch できなかったため。<git が出した最初の fatal: の行>）`）。
 
    **作業ブランチへ移す**ときは、今の HEAD から切る。未コミットの変更もそのまま移る。
 
@@ -149,7 +165,7 @@ git remote
    対話で作業ブランチへの force push を頼まれたときは、0 件の判定より先に、この項の最後の「force push を頼まれたとき」を当てる。
    0 件は中止条件に数えない。取りうる方針が無いので、どのモードでも聞かず、選択肢も出さない。
    2. の表で push 先に同名のブランチがあると決まっていない行（upstream と違う remote、初回 push）で 0 件なら、
-   `git ls-remote --exit-code --heads <remote> refs/heads/<branch>` を流す。exit 2 のときだけ、リモートに
+   `git ls-remote --exit-code --heads "$(git remote get-url --push <remote>)" refs/heads/<branch>` を流す（2. の表の後の段落で流していれば、その結果を使う）。exit 2 のときだけ、リモートに
    ブランチが無いことを理由に添える（`— push しない（push するコミットが無いため。origin に feature/x が無く、ブランチだけ作るなら手で push する）`）。
    0 件でも push しないのは、base から切ったばかりのブランチは base より先のコミットが無く、GitHub の PR 作成 API が
    `No commits between <base> and <branch>` で拒否するためである。0 件は push 先の remote に無いコミットの数で、base との差ではない
@@ -162,10 +178,12 @@ git remote
 
    初回 push で `git log -5` のように件数で区切ると、自分のコミットが 0 件でもベースの
    コミットが並び、0 件を判定できない。`--not --remotes=<remote>` はその remote のどのブランチにも
-   無いコミットだけを出す。2. で追跡 ref の残りがあると分かったときは、2 本目に `--exclude=<remote>/<branch>` を足す（2. の force push の段落）。
+   無いコミットだけを出す。2. で追跡 ref の残りがあると分かったときは、初回 push の行を除き、2 本目に `--exclude=<remote>/<branch>` を足す（2. の表の後の段落）。
    数える前に `git for-each-ref --count=1 refs/remotes/<remote>/` が空なら、`git fetch <remote>` する（2. で fetch した remote には流さない）。
    一度も fetch していない remote には remote-tracking ref が無く、何も除かれずに push 済みのコミットまで
-   並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。fetch が失敗したら、push 済みのコミットを
+   並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。2. で残りがあると分かった remote では、`--exclude=refs/remotes/<remote>/<branch>` を
+   足して見る。fetch せずに push しただけの remote は残りだけで空にならず、数える側で残りを除くと push 済みのコミットまで並ぶ。
+   `for-each-ref` の `--exclude` は `log` と逆で、`refs/remotes/` から書かないと何も除かない（どれも Git 2.54.0 で実測）。fetch が失敗したら、push 済みのコミットを
    除けず数えられないので、聞かずに終える（`— push しない（<remote> を fetch できなかったため。<git が出した最初の fatal: の行>）`）。
    0 件と同じく中止条件に数えない。
 
