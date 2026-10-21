@@ -137,8 +137,8 @@ git remote
    無いコミットだけを出す。
    数える前に `git for-each-ref --count=1 refs/remotes/<remote>/` が空なら、`git fetch <remote>` する。
    一度も fetch していない remote には remote-tracking ref が無く、何も除かれずに push 済みのコミットまで
-   並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。fetch が失敗したら、push もその remote に
-   繋がらないので、聞かずに終える（`— push しない（<remote> を fetch できなかったため。<git が出した fatal: の行>）`）。
+   並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。fetch が失敗したら、push 済みのコミットを
+   除けず数えられないので、聞かずに終える（`— push しない（<remote> を fetch できなかったため。<git が出した最初の fatal: の行>）`）。
    0 件と同じく中止条件に数えない。
 
 ### Step 2: プロジェクトの品質チェックを自動検出・実行
