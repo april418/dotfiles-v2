@@ -119,10 +119,12 @@ git remote
 
    ```bash
    git rev-parse --verify --quiet refs/remotes/<remote>/<branch>
-   git ls-remote --exit-code --heads <remote> refs/heads/<branch>
+   git ls-remote --exit-code --heads "$(git remote get-url --push <remote>)" refs/heads/<branch>
    ```
 
-   `ls-remote` は `rev-parse` が exit 0（追跡 ref がある）のときだけ流す（force push は下の段落）。
+   `ls-remote` は `rev-parse` が exit 0（追跡 ref がある）のときだけ流す（force push は下の段落）。`ls-remote` に remote の名前を渡すと
+   fetch の URL を見るので、`pushurl` で push 先を分けた remote では、この skill が push して作った追跡 ref まで残りに見える。
+   `get-url --push` は `pushurl` と `pushInsteadOf` を当てた URL を出す。
    `rev-parse` が exit 0 で `ls-remote` が exit 2（push 先にブランチが無い）なら、その追跡 ref はリモートで消されたブランチの残りである。
    fetch しても `fetch.prune` が無効（git の既定）ならその ref は消えず、通常の push はここまで fetch もしないので、`for-each-ref` は `[gone]` を
    出さない（`[ahead 1]` などが付くか、差が無ければ何も付かない）。upstream がその ref なら、upstream を `[gone]` として表を引き直す。1 行目の
@@ -144,7 +146,8 @@ git remote
    同じ remote に 1 回だけ流す。その後 `for-each-ref` を流し直して表を引き直す。表の行の数え方と確認は、3. の
    「force push を頼まれたとき」を当ててから使う。
    3. で push 先から消えるコミットを見せるには、push 先の今の先端とそのコミットが要る。`ls-remote` が先端の sha を出し、fetch が
-   そのコミットを手元に持ってくる。fetch が失敗したら、消えるコミットを見せられないので聞かずに終える
+   そのコミットを手元に持ってくる。`pushurl` で push 先を分けた remote では、push 先にしか無いコミットは fetch で手元に来ず、3. の
+   手元に無いときの終わり方になる（Git 2.54.0 で実測）。fetch が失敗したら、消えるコミットを見せられないので聞かずに終える
    （`— push しない（<remote> を fetch できなかったため。<git が出した最初の fatal: の行>）`）。
 
    **作業ブランチへ移す**ときは、今の HEAD から切る。未コミットの変更もそのまま移る。
@@ -162,7 +165,7 @@ git remote
    対話で作業ブランチへの force push を頼まれたときは、0 件の判定より先に、この項の最後の「force push を頼まれたとき」を当てる。
    0 件は中止条件に数えない。取りうる方針が無いので、どのモードでも聞かず、選択肢も出さない。
    2. の表で push 先に同名のブランチがあると決まっていない行（upstream と違う remote、初回 push）で 0 件なら、
-   `git ls-remote --exit-code --heads <remote> refs/heads/<branch>` を流す（2. の表の後の段落で流していれば、その結果を使う）。exit 2 のときだけ、リモートに
+   `git ls-remote --exit-code --heads "$(git remote get-url --push <remote>)" refs/heads/<branch>` を流す（2. の表の後の段落で流していれば、その結果を使う）。exit 2 のときだけ、リモートに
    ブランチが無いことを理由に添える（`— push しない（push するコミットが無いため。origin に feature/x が無く、ブランチだけ作るなら手で push する）`）。
    0 件でも push しないのは、base から切ったばかりのブランチは base より先のコミットが無く、GitHub の PR 作成 API が
    `No commits between <base> and <branch>` で拒否するためである。0 件は push 先の remote に無いコミットの数で、base との差ではない
