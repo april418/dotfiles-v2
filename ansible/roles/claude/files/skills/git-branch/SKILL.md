@@ -218,8 +218,11 @@ git log --oneline <base-ref>..HEAD
 ブランチ切り替え・pull・ベース更新の前には必ず作業ツリーの状態を確認する。
 
 ```bash
-git status --short
+git status --porcelain --untracked-files=normal
 ```
+
+出力が空なら未コミット変更は無い。`--short` で判定しないのは、設定によって clean でも
+`## <branch>` の行を出し、未追跡のファイルを出さないことがあるためである（git-push skill の Step 1 の 1.）。
 
 未コミット変更がある状態でブランチ切り替えや pull を行おうとする場合、
 `AskUserQuestion` で選択させる。選択肢は最大で以下の 3 つだが、
@@ -277,7 +280,7 @@ git-pr のルール 11 の「`gh pr merge` を打つ前」）。対話時は「s
 引き連れない。持ち込むのは未コミット変更だけであり、安全なのは
 **その変更が新ブランチの作業に属する場合**である。
 
-作業ブランチ上でこの選択肢を勧める前と実行する前に、`git status --short` と `git diff HEAD` で
+作業ブランチ上でこの選択肢を勧める前と実行する前に、`git status --porcelain --untracked-files=normal` と `git diff HEAD` で
 中身が新ブランチの作業かを確かめる。git が派生を受け付けても、変更が現在の
 ブランチのコミット（そこで足した関数など）に依存していれば新ブランチでは動かない。
 

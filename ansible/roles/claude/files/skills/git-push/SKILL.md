@@ -22,7 +22,9 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 | Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く（チェックが作った未追跡のファイルがあれば、その扱いも） | 同じ選択肢を最終応答で提示する |
 
-非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 中断等）を最終応答で 2〜4 択で提示する。
+非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / ユーザーが手で force push する / 中断等）を最終応答で 2〜4 択で提示する。
+upstream が `[gone]`、名指しの remote が upstream の remote と違う、detached HEAD、統合ブランチでも、push するコミットが 0 件ならどのモードでも聞かず、0 件として終える（detached HEAD と統合ブランチは、未コミットの変更も無いとき。Step 1 の 2.）。
+ただし統合ブランチと detached HEAD で force push を頼まれたときと、非対話で作業ブランチへの force push を頼まれたときは、0 件でも止める（「force push について」）。
 
 確認への答えは、Step 1 からやり直した後も使い、同じことを聞き直さない（外したチェック、push 先の remote、`-u` で付け替えるか、`[gone]` のブランチを push するか、PM の場所）。
 
@@ -55,6 +57,7 @@ git remote
    `--short` ではなく `--porcelain` を使うのは、設定の `status.branch=true` で `--short` が clean でも `## <branch>` の行を出すため。`--untracked-files=normal` は `status.showUntrackedFiles=no` でも `??` を出すために付ける（どちらも Git 2.54.0 で実測）。`.gitignore` などで無視されたファイルは出ないので数えない。
    未コミットの変更がある場合は `AskUserQuestion` でユーザーに報告し、先にコミットするか stash するか確認する。片付くまで push は行わない。
    ただし今のブランチが統合ブランチか detached HEAD（2.）なら、1. では聞かず、2. の確認（作業ブランチへ移す / 中断）を先に出す。統合ブランチや detached HEAD でコミットすると git-workflow のルール 2 に反する。未コミットの変更は移った先へそのまま移り、やり直した Step 1 で扱う。
+   非対話で作業ブランチへの force push を頼まれたとき（2.）も、1. の方針は出さずに 2. で止め、未コミットの変更は検出内容として伝える。
    未追跡のファイルには無視する選択肢も出す。生成物は `.gitignore` に足してコミットする（git-commit skill。このコミットも push 対象に入る）。`.gitignore` を書き換えただけでは ` M .gitignore` が残る。自分だけが作るファイル（メモなど）は `.git/info/exclude` に足す（コミットは要らない）。
    stash は `git stash push -u -m "<branch>: git-push の前に退避 (<退避したパス>)"` にする。`-u` が無いと未追跡のファイルを退避せず、未追跡のファイルだけのときは `No local changes to save` と出して exit 0 で終わる（Git 2.54.0 で実測）。メッセージにパスを入れるのは、同じ文言の stash が 2 つ並ぶと `git stash list` で見分けられないため。
    片付けたら Step 1 からやり直す。stash は push の後も戻さず、退避したときのメッセージと戻し方を出力の「作業ツリー」節に書く。戻さないのは、チェックが作り直したファイルとパスが重なると、pop が一部だけ戻して exit 1 になり stash も残るためである。
@@ -72,7 +75,19 @@ git remote
    で実測）。`git remote` が 2 行以上なら添えない。
    detached HEAD と統合ブランチで出す方針は、作業ブランチへ移す（下の「作業ブランチへ移す」）か中断で、
    統合ブランチへ push する選択肢は出さない。
-   どちらでもなければ `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
+   止める前に、push していないコミットを数える。統合ブランチでは `git log --oneline @{upstream}..HEAD`
+   （upstream が無いか `[gone]` なら `git log --oneline HEAD --not --remotes`）、detached HEAD では
+   `git log --oneline HEAD --not --remotes` で数える。統合ブランチで upstream と比べるのは、ほかの名前で
+   push 済みのコミットも統合ブランチには残るからである。0 件で 1. の出力も空なら、移しても push する
+   ものが無いので、止めずに 3. の 0 件として終える。force push を頼まれたときは 0 件でも止める（「force push について」）。
+   そのとき 0 件なら、作業ブランチへ移す方針は出さない。移した先も 0 件で終わり、使わないブランチが残る。
+   force push はユーザーが手で行う旨を理由に添え（`— push しない（統合ブランチ main のため。force push は手で行う）`）、
+   出す方針はユーザーが手で force push するか中断にして、推奨を中断にする。
+   統合ブランチで数えた件数は控え、移したら出力の「作業ツリー」節に書く。移した先を push した後に
+   `--not --remotes` で数え直すと、そのコミットが除かれて 0 件になる（Git 2.54.0 で実測）。
+   どちらでもなく、非対話で force push を頼まれたときも、ここで中止条件として扱う（「force push について」）。
+   1. の未コミットの変更の方針、下の表の確認、3. の 0 件の終わり方より先に当てる。
+   どれでもなければ `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
    `for-each-ref` の出力は前後の空白を除いてから表に当てる。upstream が無いと空白 1 文字の
    行になり、これが表の「空」である。upstream との差が無いときも `origin/<branch> ` と
    末尾に空白が付く（どちらも Git 2.54.0 で実測）。
@@ -84,8 +99,8 @@ git remote
    | upstream（`for-each-ref` の出力） | `git remote` | remote の名指し | push 先 |
    | --- | --- | --- | --- |
    | 同名のリモートブランチ（`<remote>/<branch>`。`[ahead N]` / `[behind N]` / `[ahead N, behind N]` が続いてよい。`[gone]` で終わるものは下の `[gone]` の行） | — | 無い、または upstream の remote | `git push <remote> <branch>` |
-   | 同名のリモートブランチ（末尾が `[gone]` のものを含む） | — | upstream と違う remote | `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない（付け替えずに push すると upstream は変わらない）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる。どちらでも、3. は `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える。`@{upstream}..HEAD` は upstream の remote との差で、upstream の remote に push 済みなら 0 件になって push せずに終わる（Git 2.54.0 で実測）。`[gone]` では下の行のとおり使えない |
-   | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | 無い、または upstream の remote | `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る）。push すると答えたら `git push <upstream の remote> <branch>` に決まる。upstream の設定は残っており、push で追跡が戻るので `-u` は要らない。3. は `@{upstream}` が解決できず exit 128 になるので、`git log --oneline HEAD --not --remotes=<upstream の remote>` で数える（どちらも Git 2.54.0 で実測） |
+   | 同名のリモートブランチ（末尾が `[gone]` のものを含む） | — | upstream と違う remote | 聞く前に、3. のコミットを `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える。`@{upstream}..HEAD` は upstream の remote との差で、upstream の remote に push 済みなら 0 件になって push せずに終わる（Git 2.54.0 で実測）。`[gone]` では下の行のとおり使えない。0 件なら聞かずに 3. の 0 件として終える。1 件以上なら `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない（付け替えずに push すると upstream は変わらない）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる |
+   | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | 無い、または upstream の remote | 聞く前に、3. のコミットを `git log --oneline HEAD --not --remotes=<upstream の remote>` で数える（`@{upstream}` は解決できず exit 128 になる）。0 件なら聞かずに 3. の 0 件として終え、理由に `[gone]` を添える（`— push しない（push するコミットが無いため。upstream の origin/feature/x は [gone]）`）。merge commit でマージされたブランチはここで終わる。1 件以上なら `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり（squash でマージされたブランチは 1 件以上残る）、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る）。push すると答えたら `git push <upstream の remote> <branch>` に決まる。upstream の設定は残っており、push で追跡が戻るので `-u` は要らない（どれも Git 2.54.0 で実測） |
    | 空（upstream が無い）、または名前の違うブランチ | 1 行 | 無い、またはその remote | **初回 push として扱い、`git push -u <remote> <branch>` で確定とみなす** |
    | 空、または名前の違うブランチ | 2 行以上 | ある | **初回 push として扱い、`git push -u <名指しの remote> <branch>` で確定とみなす** |
    | 空、または名前の違うブランチ | 2 行以上 | 無い | `AskUserQuestion` でユーザーに push 先を確認する |
@@ -108,15 +123,26 @@ git remote
    - 移したら Step 1 からやり直す
 3. **push 対象のコミット** — 差分コミット一覧をユーザーに表示する。push するコミットが 0 件の場合は「push するコミットがない」旨を伝えて終了する。
    0 件は中止条件に数えない。取りうる方針が無いので、どのモードでも聞かず、選択肢も出さない。
+   2. の表で push 先に同名のブランチがあると決まっていない行（upstream と違う remote、初回 push）で 0 件なら、
+   `git ls-remote --exit-code --heads <remote> refs/heads/<branch>` を流す。exit 2 のときだけ、リモートに
+   ブランチが無いことを理由に添える（`— push しない（push するコミットが無いため。origin に feature/x が無く、ブランチだけ作るなら手で push する）`）。
+   0 件でも push しないのは、base から切ったばかりのブランチは base より先のコミットが無く、GitHub の PR 作成 API が
+   `No commits between <base> and <branch>` で拒否するためである。0 件は push 先の remote に無いコミットの数で、base との差ではない
+   （push 済みのブランチから切ったブランチは、0 件でも base より先のコミットを持つ）。
 
    ```bash
-   git log --oneline @{upstream}..HEAD               # upstream が同名のリモートブランチ
-   git log --oneline HEAD --not --remotes=<remote>   # 初回 push
+   git log --oneline @{upstream}..HEAD               # 表の 1 行目（upstream の remote へ push する）
+   git log --oneline HEAD --not --remotes=<remote>   # ほかの行（初回 push、[gone]、upstream と違う remote）。<remote> は push 先
    ```
 
    初回 push で `git log -5` のように件数で区切ると、自分のコミットが 0 件でもベースの
-   コミットが並び、0 件を判定できない。`--not --remotes=<remote>` はリモートのどのブランチにも
+   コミットが並び、0 件を判定できない。`--not --remotes=<remote>` はその remote のどのブランチにも
    無いコミットだけを出す。
+   数える前に `git for-each-ref --count=1 refs/remotes/<remote>/` が空なら、`git fetch <remote>` する。
+   一度も fetch していない remote には remote-tracking ref が無く、何も除かれずに push 済みのコミットまで
+   並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。fetch が失敗したら、push 済みのコミットを
+   除けず数えられないので、聞かずに終える（`— push しない（<remote> を fetch できなかったため。<git が出した最初の fatal: の行>）`）。
+   0 件と同じく中止条件に数えない。
 
 ### Step 2: プロジェクトの品質チェックを自動検出・実行
 
@@ -329,7 +355,10 @@ git status --porcelain --untracked-files=normal
 
 - `--force` や `--force-with-lease` は**ユーザーが明示的に要求した場合のみ**使用する。
 - スキルから自発的に force push を提案しない。
-- 統合ブランチ（`develop` / `master` / `main`）への force push も Step 1 の 2. で止める。
+- 統合ブランチ（`develop` / `master` / `main`）への force push も Step 1 の 2. で止める。push するコミットが 0 件でも、統合ブランチであることを理由に止める。detached HEAD も同じである。
+- 非対話モードでは、作業ブランチへの force push も、要求されていても行わない（git-workflow のルール 0）。Step 1 の 2. で中止条件として扱い、チェックは流さない。1. の未コミットの変更の方針、2. の表の確認、3. の 0 件の終わり方より先に当てる。push 節は `— push しない（非対話では force push を行わないため）` にし、出す方針はユーザーが手で force push する（推奨。`git push --force-with-lease <remote> <branch>`）か中断にする。対話で頼み直す方針は出さない。対話時も、巻き戻す force push は 3. の 0 件で終わり、Step 3 に force push のコマンドが無い。
+  コマンドの `<remote>` は、remote の名指しがあればその remote、無ければ upstream の remote、どちらも無く `git remote` が 1 行ならその remote にする。決まらなければ `<remote>` のまま書き、push 先の remote を確かめてから打つよう添える。2. の表より先に止めるので push 先は決まっておらず、推測した remote に他人のブランチがあると、fetch 済みなら `--force-with-lease` でも上書きする（Git 2.54.0 で実測）。
+  巻き戻す force push は新しいコミットが無くてもリモートを変えるので、0 件でもこの理由で止める。チェックを流さないのは、push しないと決まっていて、その結果が使われないためである。
 
 ## push した後、人に確認を頼む前に
 
@@ -436,7 +465,7 @@ Step 1 で止めたときと PM の確認で中断したときは、チェック
 | 作業ツリー | `` 書き換えたファイル: `<パス>` `` | 失敗時の優先規則 2 か Step 3 の取り直しで、`git status --porcelain --untracked-files=no` が空でなかった（1 ファイル 1 行） |
 | 作業ツリー | `` 未追跡のファイル: `<パス>`（`.gitignore` に足してコミットすることを勧める） `` | Step 3 の「チェックが作った未追跡のファイル」で `??` の行が出た（1 ファイル 1 行） |
 | 作業ツリー | `` stash: `<退避したときのメッセージ>`（戻し方: `git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`） `` | Step 1 の確認でユーザーが stash を選んだ |
-| 作業ツリー | `` 統合ブランチ: `<統合ブランチ>` に、`<作業ブランチ>` へ移したコミットが残っている（消すには git-workflow のルール 6 の承認が要る） `` | Step 1 で統合ブランチから作業ブランチへ移し、`git log --oneline <統合ブランチ> --not --remotes` が空でなかった |
+| 作業ツリー | `` 統合ブランチ: `<統合ブランチ>` に、`<作業ブランチ>` へ移したコミットが <N> 件残っている（消すには git-workflow のルール 6 の承認が要る） `` | Step 1 で統合ブランチから作業ブランチへ移し、移す前に 2. で数えた件数 <N> が 1 以上だった |
 | 次の手 | 番号付きの選択肢。推奨するものを 1. に置き、末尾に `（推奨）` を付ける | 非対話で Step 1 の中止条件か Step 3 の書き換えを検出した。対話時は `AskUserQuestion` で聞き終えているので書かない |
 
 Step 1 からやり直したときは、最後の回の結果だけを書く。「作業ツリー」節の stash と統合ブランチの行は、前の回のものも書く。
