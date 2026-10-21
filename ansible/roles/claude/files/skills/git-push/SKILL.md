@@ -11,22 +11,25 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 
 ## 実行モードと AskUserQuestion
 
-本スキルは、流すチェックの一覧にも push にも承認を取らない（`[gone]` のブランチを作り直すかは下の表の 1 行目で聞く）。Step 1 を通った時点で未コミット変更は無く push 先も 1 つに決まっており、作業ブランチへの通常の push（force を伴わない）は後から打ち消せる（git-workflow のルール 0）。
-チェックを外すのは push を頼む指示か、下の 3 場面で聞いた確認への答えで行う（「流さないチェックの書き方」）。
+本スキルは、流すチェックの一覧にも通常の push にも承認を取らない（`[gone]` のブランチを作り直すかは下の表の 1 行目で聞く）。対話で頼まれた force push だけは、表の 2 行目で承認を取る。Step 1 を通った時点で未コミット変更は無く push 先も 1 つに決まっており、作業ブランチへの通常の push（force を伴わない）は後から打ち消せる（git-workflow のルール 0）。
+チェックを外すのは push を頼む指示か、下の 4 場面で聞いた確認への答えで行う（「流さないチェックの書き方」）。
 
-`AskUserQuestion` で聞くのは次の 3 つの場面だけである。**非対話モード**（subagent 実行、CI、Auto Mode 等、ユーザーへの問い合わせができないコンテキスト）では、右の列のとおりにする。
+`AskUserQuestion` で聞くのは次の 4 つの場面だけである。**非対話モード**（subagent 実行、CI、Auto Mode 等、ユーザーへの問い合わせができないコンテキスト）では、右の列のとおりにする。
 
 | 場面 | 対話モード | 非対話モード |
 | --- | --- | --- |
 | Step 1 で確認が要るか中止条件を検出した（未コミット変更、push 先の remote が決まらない、名指しの remote が upstream の remote と違う、upstream が `[gone]`、detached HEAD、統合ブランチ、remote が 0 行） | 検出内容を伝え、次に取りうる方針を聞く | 下の段落 |
+| 作業ブランチへの force push を頼まれ、Step 1 の 3. で push 先から消えるコミットがある | 消えるコミットと足すコミットを見せ、force push するか中断するかを聞く（git-workflow のルール 6） | 起きない（Step 1 の 2. で止める） |
 | Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く（チェックが作った未追跡のファイルがあれば、その扱いも） | 同じ選択肢を最終応答で提示する |
 
 非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / ユーザーが手で force push する / 中断等）を最終応答で 2〜4 択で提示する。
 upstream が `[gone]`、名指しの remote が upstream の remote と違う、detached HEAD、統合ブランチでも、push するコミットが 0 件ならどのモードでも聞かず、0 件として終える（detached HEAD と統合ブランチは、未コミットの変更も無いとき。Step 1 の 2.）。
 ただし統合ブランチと detached HEAD で force push を頼まれたときと、非対話で作業ブランチへの force push を頼まれたときは、0 件でも止める（「force push について」）。
+対話で作業ブランチへの force push を頼まれ、push 先から消えるコミットがあるときも、0 件で終えずに承認を聞く（Step 1 の 3.）。
 
 確認への答えは、Step 1 からやり直した後も使い、同じことを聞き直さない（外したチェック、push 先の remote、`-u` で付け替えるか、`[gone]` のブランチを push するか、PM の場所）。
+force push の承認は、やり直した Step 1 の 2. の `ls-remote` が出した sha が、承認したときに控えた sha と同じ間だけ使う。違えば見せた一覧と lease に渡す sha が変わるので、聞き直す。
 
 **チェックが 1 つでも失敗したら、どのモードでも push しない。** 失敗内容を報告して終える（「失敗時の優先規則」）。
 
@@ -110,6 +113,27 @@ git remote
    ブランチ）。そのままでは引数なしの `git push` が名前の不一致で拒否され、`-u` を付けずに
    push すると upstream がベースを指したまま残るので、初回 push として `-u` で付け替える。
 
+   対話で作業ブランチへの force push を頼まれたときは、表の行で push 先の remote が決まったら、その行の確認より先に次の 2 つを流し、
+   `for-each-ref` を流し直して表を引き直す（引き直した後は流さない）。push 先を聞く確認では、答えた remote で表を引き、
+   決まった行の確認より先に流す。表の行の数え方と確認は、3. の「force push を頼まれたとき」を当ててから使う。
+
+   ```bash
+   git fetch <remote>
+   git ls-remote --exit-code --heads <remote> refs/heads/<branch>
+   ```
+
+   3. で push 先から消えるコミットを見せるには、push 先の今の先端とそのコミットが要る。`ls-remote` が先端の sha を出し、fetch が
+   そのコミットを手元に持ってくる。
+   `ls-remote` が exit 2（push 先にブランチが無い）なのに `git rev-parse --verify --quiet refs/remotes/<remote>/<branch>` が exit 0 なら、
+   その ref はリモートで消されたブランチの追跡 ref の残りである。`fetch.prune` が無効（git の既定）だと fetch はその ref を消さず、
+   `for-each-ref` は `[gone]` ではなく `[behind 1]` などを出す。upstream がその ref なら、upstream を `[gone]` として表を引く。
+   表の行でも 3. でも、`--not --remotes=<remote>` で数えるところは `git log --oneline HEAD --not --exclude=<remote>/<branch> --remotes=<remote>`
+   にする。残りを除かないと、その ref にあるコミットが数えられず、push 先に無いのに 0 件で終わる。`--exclude` の値に `refs/remotes/`
+   を付けると何も除かない（どれも Git 2.54.0 で実測）。
+   fetch か `ls-remote`（exit 2 以外の 0 でない終了）が失敗したら、消えるコミットを見せられないので聞かずに終える
+   （`— push しない（<remote> を fetch できなかったため。<git が出した最初の fatal: の行>）`。`ls-remote` なら `<remote> を fetch できなかった` を
+   `<remote> の <branch> を ls-remote で確かめられなかった` に替える）。
+
    **作業ブランチへ移す**ときは、今の HEAD から切る。未コミットの変更もそのまま移る。
 
    ```bash
@@ -122,6 +146,7 @@ git remote
    - 統合ブランチに残った手元のコミットはこの skill では消さない（消すのは git-workflow のルール 6 の要承認操作）
    - 移したら Step 1 からやり直す
 3. **push 対象のコミット** — 差分コミット一覧をユーザーに表示する。push するコミットが 0 件の場合は「push するコミットがない」旨を伝えて終了する。
+   対話で作業ブランチへの force push を頼まれたときは、0 件の判定より先に、この項の最後の「force push を頼まれたとき」を当てる。
    0 件は中止条件に数えない。取りうる方針が無いので、どのモードでも聞かず、選択肢も出さない。
    2. の表で push 先に同名のブランチがあると決まっていない行（upstream と違う remote、初回 push）で 0 件なら、
    `git ls-remote --exit-code --heads <remote> refs/heads/<branch>` を流す。exit 2 のときだけ、リモートに
@@ -137,12 +162,34 @@ git remote
 
    初回 push で `git log -5` のように件数で区切ると、自分のコミットが 0 件でもベースの
    コミットが並び、0 件を判定できない。`--not --remotes=<remote>` はその remote のどのブランチにも
-   無いコミットだけを出す。
-   数える前に `git for-each-ref --count=1 refs/remotes/<remote>/` が空なら、`git fetch <remote>` する。
+   無いコミットだけを出す。2. で追跡 ref の残りがあると分かったときは、2 本目に `--exclude=<remote>/<branch>` を足す（2. の force push の段落）。
+   数える前に `git for-each-ref --count=1 refs/remotes/<remote>/` が空なら、`git fetch <remote>` する（2. で fetch した remote には流さない）。
    一度も fetch していない remote には remote-tracking ref が無く、何も除かれずに push 済みのコミットまで
    並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。fetch が失敗したら、push 済みのコミットを
    除けず数えられないので、聞かずに終える（`— push しない（<remote> を fetch できなかったため。<git が出した最初の fatal: の行>）`）。
    0 件と同じく中止条件に数えない。
+
+   **force push を頼まれたとき**（対話の作業ブランチ）は、2. の `ls-remote` の結果で決める。
+   exit 0 なら、出力の先頭の sha（タブの前）で、push 先から消えるコミットと足すコミットを並べる。
+
+   ```bash
+   git log --oneline HEAD..<sha>   # push 先から消えるコミット
+   git log --oneline <sha>..HEAD   # 足すコミット
+   ```
+
+   `<remote>/<branch>` と書かないのは、同じ名前のローカルブランチがあると `refname is ambiguous` の警告だけでそちらを読むためである（Git 2.54.0 で実測）。
+   sha のコミットが手元に無いと `fatal: Invalid revision range` で exit 128 になる（`--single-branch` の clone など、fetch の refspec に
+   入らないブランチ。Git 2.54.0 で実測）。消えるコミットを見せられないので、2 本目を流さず、聞かずに終える
+   （`— push しない（<remote> の <branch> のコミットが手元に無く、消えるコミットを見せられないため）`）。
+   消えるコミットが 1 件以上なら、sha を控え、2 つの一覧を見せて `AskUserQuestion` で force push するか中断するかを聞く
+   （git-workflow のルール 6）。表の行に確認があれば（upstream と違う remote の `-u`）同じ確認で聞く。push 対象のコミットは
+   足すコミットで、表の行の数え方（上のコードブロックと、表の「聞く前に数える」）は使わない。足すコミットが 0 件でも 0 件として
+   終えない。巻き戻す force push（`git reset --hard HEAD~1` の後など）は足すコミットが無く `@{upstream}..HEAD` も空になるが、
+   push 先からコミットを消す（Git 2.54.0 で実測）。
+   force push すると答えたら、表の行で決まった push コマンドに `--force-with-lease=refs/heads/<branch>:<控えた sha>` を足したものに
+   決まる（`git push -u --force-with-lease=refs/heads/feature/x:<sha> origin feature/x`）。
+   exit 2（push 先にブランチが無い）か、消えるコミットが 0 件なら、上書きするものが無く force は要らない。表の行と上の数え方の
+   とおりに数え、force を付けずに push する。
 
 ### Step 2: プロジェクトの品質チェックを自動検出・実行
 
@@ -302,7 +349,7 @@ syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。
 
   | 流さない理由 | `<理由>` |
   | --- | --- |
-  | ユーザーが push を頼んだ指示（対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプト。エージェントが自分で決めて外したものは数えない）か、この skill が `AskUserQuestion` で聞いた確認（冒頭の 3 場面）への答えで外した | `ユーザーの指示でスキップ` |
+  | ユーザーが push を頼んだ指示（対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプト。エージェントが自分で決めて外したものは数えない）か、この skill が `AskUserQuestion` で聞いた確認（冒頭の 4 場面）への答えで外した | `ユーザーの指示でスキップ` |
   | 表の条件のうち「`<ツール>` がインストール済み」だけを満たさない | `<ツール> が入っていないためスキップ`（`— Python lint（ruff が入っていないためスキップ）`） |
 
   ツールが入っているかは環境で変わり、別の環境や CI では流れて落ちうるので書く。`scripts.build` が無い、`Dockerfile` が無いなど、プロジェクトがそのチェックを定めていないために条件を満たさないものは、各節が書き方を決めたもの（npm init の既定の test、ロックファイルも依存も無い audit）を除いて書かない。
@@ -349,6 +396,14 @@ git push <remote> <branch>
 git push -u <remote> <branch>
 ```
 
+#### force push（Step 1 の 3. で force push の承認を取った場合）
+
+```bash
+git push --force-with-lease=refs/heads/<branch>:<控えた sha> <remote> <branch>
+```
+
+表の行が `-u` 付きなら `-u` も付ける。push 先の `<branch>` が控えた sha のままなら上書きし、承認の後にほかの人が push したかブランチを消したなら ` ! [rejected]        <branch> -> <branch> (stale info)` で exit 1 になる（Git 2.54.0 で実測）。聞き直さずに、push コマンドが失敗した行で終える。
+
 #### チェックが作った未追跡のファイル
 
 チェックのコマンド（表の「コマンド」列や make / task のターゲット。インストール済みの判定は数えない）を 1 つでも実行したら、push したかどうか（失敗・書き換えで止めた場合を含む）にかかわらず、最終報告の前に流す。Step 3 で書き換えを提示する前に流したなら、その結果を使う。
@@ -362,10 +417,12 @@ git status --porcelain --untracked-files=normal
 
 ### force push について
 
-- `--force` や `--force-with-lease` は**ユーザーが明示的に要求した場合のみ**使用する。
+- force push を頼まれたとして扱うのは、push を頼んだ指示が force push を求めたとき（「force push して」、`--force` や `--force-with-lease` の指定など）だけである。指示として数えるものは remote の名指しと同じで、通常の push が拒否されたことや、エージェントが自分で決めたことは数えない。
 - スキルから自発的に force push を提案しない。
 - 統合ブランチ（`develop` / `master` / `main`）への force push も Step 1 の 2. で止める。push するコミットが 0 件でも、統合ブランチであることを理由に止める。detached HEAD も同じである。
-- 非対話モードでは、作業ブランチへの force push も、要求されていても行わない（git-workflow のルール 0）。Step 1 の 2. で中止条件として扱い、チェックは流さない。1. の未コミットの変更の方針、2. の表の確認、3. の 0 件の終わり方より先に当てる。push 節は `— push しない（非対話では force push を行わないため）` にし、出す方針はユーザーが手で force push する（推奨。`git push --force-with-lease <remote> <branch>`）か中断にする。対話で頼み直す方針は出さない。対話時も、巻き戻す force push は 3. の 0 件で終わり、Step 3 に force push のコマンドが無い。
+- 対話モードでは、作業ブランチへの force push は Step 1 の 2. で push 先を fetch して `ls-remote` で先端の sha を取り、3. で push 先から消えるコミットを見せて `AskUserQuestion` で承認を取ってから行う（git-workflow のルール 6）。チェックは通常の push と同じく流す（push 先に残るのは HEAD である）。
+  `--force` は使わず、承認したときに控えた sha を `--force-with-lease=refs/heads/<branch>:<sha>` で渡す。sha を渡さない `--force-with-lease` は remote-tracking ref と比べるので、承認の後に fetch が走ると、見せていないコミットまで上書きする（`git push --help`）。`--force-if-includes` は、sha を渡した lease と一緒では効かないので付けない（同）。
+- 非対話モードでは、作業ブランチへの force push も、要求されていても行わない（git-workflow のルール 0）。Step 1 の 2. で中止条件として扱い、チェックは流さない。1. の未コミットの変更の方針、2. の表の確認、3. の 0 件の終わり方より先に当てる。push 節は `— push しない（非対話では force push を行わないため）` にし、出す方針はユーザーが手で force push する（推奨。`git push --force-with-lease <remote> <branch>`）か中断にする。対話で頼み直す方針は出さない。
   コマンドの `<remote>` は、remote の名指しがあればその remote、無ければ upstream の remote、どちらも無く `git remote` が 1 行ならその remote にする。決まらなければ `<remote>` のまま書き、push 先の remote を確かめてから打つよう添える。2. の表より先に止めるので push 先は決まっておらず、推測した remote に他人のブランチがあると、fetch 済みなら `--force-with-lease` でも上書きする（Git 2.54.0 で実測）。
   巻き戻す force push は新しいコミットが無くてもリモートを変えるので、0 件でもこの理由で止める。チェックを流さないのは、push しないと決まっていて、その結果が使われないためである。
 
@@ -453,15 +510,18 @@ preview 環境も無かった。**見る場所が存在しなかった。** 前�
 - — push しない（チェックが失敗したため）
 ```
 
+Step 1 の 3. で force push の承認を聞いたときは（中断と答えたときも）、「コミット数」と「push 対象コミット」を足すコミットで書き（0 件なら「push 対象コミット」は `- （無し）`）、その後に「push 先から消えるコミット」の節を同じ形で書く。
+
 「push」の節は次のどれか 1 行で書く。
 
 | 場合 | 行 |
 | --- | --- |
 | push した | `` ✓ `<流した push コマンド>` `` |
+| force push を頼まれたが、push 先から消えるコミットが無く force を付けずに push した（Step 1 の 3.） | `` ✓ `<流した push コマンド>`（push 先から消えるコミットが無いため force を付けなかった） `` |
 | push コマンドが 0 以外で終わった | `` ✗ `<流した push コマンド>`（失敗。<git が出した `!` / `error:` / `fatal:` の行>） `` |
 | チェックが失敗した（追跡ファイルの書き換えを伴う場合を含む） | `— push しない（チェックが失敗したため）` |
 | 全チェックが通った後、Step 3 で追跡ファイルの書き換えを検出した | `— push しない（チェックが追跡ファイルを書き換えたため）` |
-| Step 1 で止めた（push 対象 0 件、確認に中断と答えた場合を含む） | `— push しない（<止めた理由>）` |
+| Step 1 で止めた（push 対象 0 件、確認に中断と答えた場合を含む） | `— push しない（<止めた理由>）`（force push の承認に中断と答えたら `— push しない（force push の確認で中断したため）`） |
 | Step 2 の PM の確認に中断と答えた | `— push しない（PM の確認で中断したため）` |
 
 リモートに手元に無いコミットがあるときの理由の行は、追跡ブランチが古ければ ` ! [rejected]        <branch> -> <branch> (fetch first)`、fetch 済みで分岐していれば末尾が `(non-fast-forward)` になる（どちらも exit 1。Git 2.54.0 で実測）。拒否されても force push は提案しない（「force push について」）。
