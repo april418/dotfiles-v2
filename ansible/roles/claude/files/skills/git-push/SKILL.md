@@ -135,13 +135,25 @@ yarn 1 の終了コードは見つかった重大度の値の和（info 1 / low 
 bun は 1.2.15 で `bun audit` が入ったので、それより前の bun では失敗になる。
 pnpm 10 以下の `pnpm audit --prod` が `ERR_PNPM_AUDIT_BAD_RESPONSE` の 410 で失敗したら、package-manager skill のルール 5 の手順で pnpm 11 を使って流し直し、その結果で判定する。出力の `Node.js audit` の行には括弧で `pnpm 10 が 410 を返したため pnpm 11 で流し直した` と書き、ルール 5 が報告に添えるよう求めることも同じ括弧に入れる。
 
-**PATH 解決のフォールバック**: 非ログインシェル（subagent の Bash 等）では `nvm` 配下の `node` / `pnpm` / `npm` が `PATH` に入っていないことがある。`command -v <pm>` で見つからない場合は以下の優先順で探索する:
+**PATH 解決のフォールバック**: 非ログインシェル（subagent の Bash 等）では、nvm 配下やスタンドアロンのインストーラで入れた PM が `PATH` に入っていないことがある。`command -v <pm>` で見つからない場合は、下の表の場所を上の行から、行の中は左から順に見て、最初に見つかった実行ファイルを使う。
 
-1. `~/.nvm/versions/node/*/bin/<pm>` の最新版
-2. `~/.local/share/pnpm/<pm>` 等の標準的な install path
+| PM | 探す場所 |
+| --- | --- |
+| すべて | `$NVM_DIR/versions/node/*/bin/<pm>` のうち、Node.js の版を数値で比べて最も新しいもの（`sort -V`。文字列で比べると `v9` が `v24` より新しくなる） |
+| pnpm | `$PNPM_HOME/bin/pnpm`、`$PNPM_HOME/pnpm`（`pnpm setup` が pnpm 11 以降は前者、10 以前は後者に置く。プロジェクトが宣言した版では選ばず、両方見る） |
+| bun | `$BUN_INSTALL/bin/bun` |
+
+変数が空なら、各インストーラの既定の場所を使う。
+
+| 変数 | 空のときの場所 |
+| --- | --- |
+| `NVM_DIR` | `$XDG_CONFIG_HOME/nvm`（`XDG_CONFIG_HOME` も空なら `~/.nvm`） |
+| `PNPM_HOME` | `$XDG_DATA_HOME/pnpm`（`XDG_DATA_HOME` も空なら macOS は `~/Library/pnpm`、ほかは `~/.local/share/pnpm`） |
+| `BUN_INSTALL` | `~/.bun` |
 
 それでも見つからなければ `AskUserQuestion` でユーザーに PM の場所を確認する。
-非対話モード時は Node.js のチェックを流さずに失敗とし、push を中止する。出力は、流すはずだった Node.js のチェックのうち最初のものを `✗ Node.js build（失敗。pnpm が見つからない。探した場所: <command -v と上の 1・2 で見たパス>）` のように書き、残りの Node.js のチェックは前段失敗の行（`— <チェック名>（前段失敗のため未実行）`）にする。ほかの種別のチェックは、ほかの失敗と同じく「失敗時の優先規則」に従う。
+非対話モード時は Node.js のチェックを流さずに失敗とし、push を中止する。出力は、流すはずだった Node.js のチェックのうち最初のものを `✗ Node.js build（失敗。bun が見つからない。探した場所: PATH, ~/.nvm/versions/node/*/bin/bun, ~/.bun/bin/bun）` のように書き、残りの Node.js のチェックは前段失敗の行（`— <チェック名>（前段失敗のため未実行）`）にする。ほかの種別のチェックは、ほかの失敗と同じく「失敗時の優先規則」に従う。
+`探した場所:` には、`command -v` を `PATH` と書き、続けて表で見た場所を見た順に `, ` で区切って並べる。変数は展開した値で書き、ホームディレクトリは `~` と書き、glob は展開しない。
 `corepack <pm>@latest` で取ってくることはしない。Node.js 25 以降は corepack が同梱されず、`@latest` はプロジェクトが宣言した版を無視するため。
 流す Node.js のチェックが 1 つも無ければ（スキップ行だけなら）PM は探さず、見つからなくても失敗にしない。
 
