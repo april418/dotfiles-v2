@@ -35,10 +35,6 @@ git status --porcelain --untracked-files=normal
 ```
 
 ```bash
-git branch -vv --contains HEAD
-```
-
-```bash
 git branch --show-current
 ```
 
