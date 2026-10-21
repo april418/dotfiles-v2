@@ -12,17 +12,19 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 ## 実行モードと AskUserQuestion
 
 本スキルは、流すチェックの一覧にも push にも承認を取らない（`[gone]` のブランチを作り直すかは下の表の 1 行目で聞く）。Step 1 を通った時点で未コミット変更は無く push 先も 1 つに決まっており、作業ブランチへの通常の push（force を伴わない）は後から打ち消せる（git-workflow のルール 0）。
-チェックを外すのは push を頼む指示で行う（「流さないチェックの書き方」）。
+チェックを外すのは push を頼む指示か、下の 3 場面で聞いた確認への答えで行う（「流さないチェックの書き方」）。
 
 `AskUserQuestion` で聞くのは次の 3 つの場面だけである。**非対話モード**（subagent 実行、CI、Auto Mode 等、ユーザーへの問い合わせができないコンテキスト）では、右の列のとおりにする。
 
 | 場面 | 対話モード | 非対話モード |
 | --- | --- | --- |
-| Step 1 で確認が要るか中止条件を検出した（未コミット変更、push 先の remote が決まらない、名指しの remote が upstream の remote と違う、upstream が `[gone]`、detached HEAD、remote が 0 行） | 検出内容を伝え、次に取りうる方針を聞く | 下の段落 |
+| Step 1 で確認が要るか中止条件を検出した（未コミット変更、push 先の remote が決まらない、名指しの remote が upstream の remote と違う、upstream が `[gone]`、detached HEAD、統合ブランチ、remote が 0 行） | 検出内容を伝え、次に取りうる方針を聞く | 下の段落 |
 | Step 2 で Node.js の PM が見つからない | PM の場所を聞く | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
-| Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く | 同じ選択肢を最終応答で提示する |
+| Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く（チェックが作った未追跡のファイルがあれば、その扱いも） | 同じ選択肢を最終応答で提示する |
 
-非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / push 対象 0 件 / detached HEAD / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / push 先の remote の指定 / 中断等）を最終応答で 3〜4 択で提示する。
+非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]` / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 中断等）を最終応答で 2〜4 択で提示する。
+
+確認への答えは、Step 1 からやり直した後も使い、同じことを聞き直さない（外したチェック、push 先の remote、`-u` で付け替えるか、`[gone]` のブランチを push するか、PM の場所）。
 
 **チェックが 1 つでも失敗したら、どのモードでも push しない。** 失敗内容を報告して終える（「失敗時の優先規則」）。
 
@@ -52,13 +54,25 @@ git remote
    チェックは作業ツリーを読むので、push しないファイルのせいでチェックが通ったり落ちたりする（新しく足したファイルの `git add` し忘れは、手元で通って CI で落ちる）。
    `--short` ではなく `--porcelain` を使うのは、設定の `status.branch=true` で `--short` が clean でも `## <branch>` の行を出すため。`--untracked-files=normal` は `status.showUntrackedFiles=no` でも `??` を出すために付ける（どちらも Git 2.54.0 で実測）。`.gitignore` などで無視されたファイルは出ないので数えない。
    未コミットの変更がある場合は `AskUserQuestion` でユーザーに報告し、先にコミットするか stash するか確認する。片付くまで push は行わない。
+   ただし今のブランチが統合ブランチか detached HEAD（2.）なら、1. では聞かず、2. の確認（作業ブランチへ移す / 中断）を先に出す。統合ブランチや detached HEAD でコミットすると git-workflow のルール 2 に反する。未コミットの変更は移った先へそのまま移り、やり直した Step 1 で扱う。
    未追跡のファイルには無視する選択肢も出す。生成物は `.gitignore` に足してコミットする（git-commit skill。このコミットも push 対象に入る）。`.gitignore` を書き換えただけでは ` M .gitignore` が残る。自分だけが作るファイル（メモなど）は `.git/info/exclude` に足す（コミットは要らない）。
    stash は `git stash push -u -m "<branch>: git-push の前に退避 (<退避したパス>)"` にする。`-u` が無いと未追跡のファイルを退避せず、未追跡のファイルだけのときは `No local changes to save` と出して exit 0 で終わる（Git 2.54.0 で実測）。メッセージにパスを入れるのは、同じ文言の stash が 2 つ並ぶと `git stash list` で見分けられないため。
-   片付けたら Step 1 からやり直す。stash は push の後も戻さず、最終応答に退避したときのメッセージと戻し方（`git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`）を書く。戻さないのは、チェックが作り直したファイルとパスが重なると、pop が一部だけ戻して exit 1 になり stash も残るためである。
+   片付けたら Step 1 からやり直す。stash は push の後も戻さず、退避したときのメッセージと戻し方を出力の「作業ツリー」節に書く。戻さないのは、チェックが作り直したファイルとパスが重なると、pop が一部だけ戻して exit 1 になり stash も残るためである。
 2. **push 先のリモート・ブランチ** — まず `git branch --show-current` が空でないことを確かめる。
    空なら detached HEAD で push するブランチが無いので、中止条件として扱う（`for-each-ref` は
-   `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。空でなければ
-   `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
+   `refs/heads/` を引くことになり、全ブランチの upstream を並べる）。
+   `develop` / `master` / `main` なら統合ブランチで、これも中止条件として扱う。git-workflow のルール 2 は
+   統合ブランチへの直接の push を禁じており、push を頼まれていても force push でも、リモートにまだその
+   ブランチが無くても例外にしない。`git remote` が 1 行で、`git ls-remote --exit-code --heads <remote> refs/heads/<branch>`
+   が exit 2（リモートにそのブランチが無い）なら、まだリモートに無い統合ブランチの初回の push なので、ユーザーが
+   手で行う旨を push 節の理由に添え（`— push しない（統合ブランチ main のため。リモートに main が無く、初回の push は手で行う）`）、
+   推奨する方針を中断にする。対話時は確認の文にも同じことを書く。upstream で決めないのは、`git remote add` と
+   `git fetch` の後もリモートにブランチがあるのに upstream は空のままだからである。`refs/heads/` を付けるのは、
+   `main` だけだと `feature/main` のように末尾が一致するブランチでも exit 0 になるためである（どちらも Git 2.54.0
+   で実測）。`git remote` が 2 行以上なら添えない。
+   detached HEAD と統合ブランチで出す方針は、作業ブランチへ移す（下の「作業ブランチへ移す」）か中断で、
+   統合ブランチへ push する選択肢は出さない。
+   どちらでもなければ `for-each-ref` の出力、`git remote` の行数、remote の名指しで決める。
    `for-each-ref` の出力は前後の空白を除いてから表に当てる。upstream が無いと空白 1 文字の
    行になり、これが表の「空」である。upstream との差が無いときも `origin/<branch> ` と
    末尾に空白が付く（どちらも Git 2.54.0 で実測）。
@@ -70,7 +84,7 @@ git remote
    | upstream（`for-each-ref` の出力） | `git remote` | remote の名指し | push 先 |
    | --- | --- | --- | --- |
    | 同名のリモートブランチ（`<remote>/<branch>`。`[ahead N]` / `[behind N]` / `[ahead N, behind N]` が続いてよい。`[gone]` で終わるものは下の `[gone]` の行） | — | 無い、または upstream の remote | `git push <remote> <branch>` |
-   | 同名のリモートブランチ（末尾が `[gone]` のものを含む） | — | upstream と違う remote | `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない。付け替えずに push すると upstream は変わらず、3. の `@{upstream}..HEAD` は upstream の remote との差しか出さない（upstream の remote に push 済みなら 0 件になり、push せずに終わる。Git 2.54.0 で実測）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる。どちらでも、3. は `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える |
+   | 同名のリモートブランチ（末尾が `[gone]` のものを含む） | — | upstream と違う remote | `AskUserQuestion` で確認する。`-u` で upstream を名指しの remote へ付け替えるかが決まらない（付け替えずに push すると upstream は変わらない）。答えで `git push -u <名指しの remote> <branch>` か `git push <名指しの remote> <branch>` に決まる。どちらでも、3. は `git log --oneline HEAD --not --remotes=<名指しの remote>` で数える。`@{upstream}..HEAD` は upstream の remote との差で、upstream の remote に push 済みなら 0 件になって push せずに終わる（Git 2.54.0 で実測）。`[gone]` では下の行のとおり使えない |
    | 末尾が `[gone]`（upstream のリモートブランチが消えた） | — | 無い、または upstream の remote | `AskUserQuestion` で確認する。PR がマージ済みでブランチが消された可能性があり、push するとマージ済みのブランチを作り直す（git-pr のルール 11「マージした直後にベースを最新へ戻す」を見る）。push すると答えたら `git push <upstream の remote> <branch>` に決まる。upstream の設定は残っており、push で追跡が戻るので `-u` は要らない。3. は `@{upstream}` が解決できず exit 128 になるので、`git log --oneline HEAD --not --remotes=<upstream の remote>` で数える（どちらも Git 2.54.0 で実測） |
    | 空（upstream が無い）、または名前の違うブランチ | 1 行 | 無い、またはその remote | **初回 push として扱い、`git push -u <remote> <branch>` で確定とみなす** |
    | 空、または名前の違うブランチ | 2 行以上 | ある | **初回 push として扱い、`git push -u <名指しの remote> <branch>` で確定とみなす** |
@@ -80,7 +94,20 @@ git remote
    `origin/<base>` から切ったブランチは upstream が `origin/<base>` になる（名前の違う
    ブランチ）。そのままでは引数なしの `git push` が名前の不一致で拒否され、`-u` を付けずに
    push すると upstream がベースを指したまま残るので、初回 push として `-u` で付け替える。
+
+   **作業ブランチへ移す**ときは、今の HEAD から切る。未コミットの変更もそのまま移る。
+
+   ```bash
+   git switch -c <作業ブランチ> HEAD --no-track
+   ```
+
+   - git-branch のルール 3 の (a)(b) とルール 7 の確認は踏まない。ほかのベースから切ると手元のコミットを置いていき、(b) の `git pull --rebase` は手元のコミットを付け直す。未コミットの変更は持ち込み、やり直した Step 1 で扱う
+   - 名前は git-workflow のルール 1 で決め、候補は `git show-ref --verify --quiet refs/heads/<名前>` が失敗する（まだ無い）名前から出す。対話時は候補を Step 1 の確認の選択肢に入れ、別に聞かない。ユーザーが入力した名前が既にあれば `git switch -c` が exit 128 になるので、`-C` で上書きせず聞き直す
+   - git-branch のルール 3 の (d) は流さない。ベースを選んでいないので `<base-ref>` が無い。`git branch --show-current` が新しいブランチであることだけを確かめる。移したコミットは、やり直した Step 1 の 3. に並ぶ
+   - 統合ブランチに残った手元のコミットはこの skill では消さない（消すのは git-workflow のルール 6 の要承認操作）
+   - 移したら Step 1 からやり直す
 3. **push 対象のコミット** — 差分コミット一覧をユーザーに表示する。push するコミットが 0 件の場合は「push するコミットがない」旨を伝えて終了する。
+   0 件は中止条件に数えない。取りうる方針が無いので、どのモードでも聞かず、選択肢も出さない。
 
    ```bash
    git log --oneline @{upstream}..HEAD               # upstream が同名のリモートブランチ
@@ -240,7 +267,7 @@ syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。
 
   | 流さない理由 | `<理由>` |
   | --- | --- |
-  | ユーザーが push を頼んだ指示（対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプト。エージェントが自分で決めて外したものは数えない）で外した | `ユーザーの指示でスキップ` |
+  | ユーザーが push を頼んだ指示（対話時と Auto Mode ではユーザーの発言、subagent ではタスクの指示文、CI ではジョブが渡したプロンプト。エージェントが自分で決めて外したものは数えない）か、この skill が `AskUserQuestion` で聞いた確認（冒頭の 3 場面）への答えで外した | `ユーザーの指示でスキップ` |
   | 表の条件のうち「`<ツール>` がインストール済み」だけを満たさない | `<ツール> が入っていないためスキップ`（`— Python lint（ruff が入っていないためスキップ）`） |
 
   ツールが入っているかは環境で変わり、別の環境や CI では流れて落ちうるので書く。`scripts.build` が無い、`Dockerfile` が無いなど、プロジェクトがそのチェックを定めていないために条件を満たさないものは、各節が書き方を決めたもの（npm init の既定の test、ロックファイルも依存も無い audit）を除いて書かない。
@@ -248,7 +275,7 @@ syntax-check はプロジェクトルートの `playbook.yml` にだけ流す。
   種別名の無い指示（「lint は飛ばして」）は、すべての種別のその名前のチェック（`make lint` / `task lint` を含む）を外す。条件を満たさず書かないチェックは、外しても書かない。
 - 各チェックの実行結果（成功/失敗）をリアルタイムで表示する。
 - **失敗時の優先規則（同時発生時の判断）**:
-  1. **1 つでもチェックが失敗した時点で残りのチェックは打ち切ってよい**（`audit は常に実行` のような原則よりも「失敗で中止」が優先）。打ち切ったチェックは出力で `— <チェック名>（前段失敗のため未実行）` と明記する
+  1. **1 つでもチェックが失敗したら、その時点で残りのチェックを打ち切る**（`audit は常に実行` のような原則よりも「失敗で中止」が優先）。残りを流しても push しないことは変わらない。打ち切ったチェックは出力で `— <チェック名>（前段失敗のため未実行）` と明記する
   2. 失敗内容をユーザーに報告し push を中止する。`git status --porcelain --untracked-files=no` が空でなければ、チェックが書き換えたファイルも添える（Step 3 の取り直しは通過したときしか流れない）。Step 3 の「チェックが作った未追跡のファイル」も、その節の条件で流す。どのモードでも同じで、skill の手順はそこで終わる。次の手を `AskUserQuestion` で聞くことも、直して流し直すことも、この skill の手順には含めない
 - プロジェクトの種別が検出できない場合、または流すチェックが 1 つもない場合（スキップ行だけになる場合を含む）は、チェックを流さずに Step 3 に進む。
   - **種別はプロジェクトルートにある上の構成ファイルだけで決め、拡張子からは推測しない。** `app.py` だけで `pyproject.toml` 等が無いリポジトリは検出 0 件になり、それで正しい。構成ファイルが無いのはプロジェクトがチェックを定めていないということで、推測で流すと合意の無い基準で push が止まる
@@ -271,6 +298,8 @@ git status --porcelain --untracked-files=no
 ```
 
 出力が空でなければ、チェックが追跡ファイルを書き換えている（`eslint --fix` や整形ツールなど）。通ったのは書き換えた後の作業ツリーで、push するコミットではないので、どのモードでも push しない。書き換わったファイルを報告し、コミットしてから push し直すか中断するかを提示する（対話時は `AskUserQuestion`、非対話時は最終応答）。push を頼まれていてもこの問いは省略しない。push の依頼は、書き換わったファイルのコミットまでは含まない。
+提示する前に下の「チェックが作った未追跡のファイル」を流し、`??` の行があれば、その扱い（`.gitignore` に足して一緒にコミットする / `.git/info/exclude` に足す）も同じ確認で聞く。聞かずにやり直すと、Step 1 の 1. がそのファイルで止まる。stash は出さない。やり直しで流すチェックが同じファイルを作り直し、後で戻すときに衝突する。
+コミットしてから push し直すと答えたら、書き換わったファイルを git-commit skill でコミットし、Step 1 からやり直す（チェックも流し直す）。push 対象のコミットが増えるうえ、コミット時のフックが中身を変えうるので、通ったときの作業ツリーをそのまま push できるとはみなさない。
 未追跡のファイルは見ない。チェックを流す前からあった未追跡のファイルは Step 1 で止めているので、この時点にある未追跡のファイルはチェックが作ったもの（ビルドの生成物など）で、チェックした内容と push するコミットの違いにはならない。
 
 出力が空なら、Step 1 で決めた push コマンドで push する。
@@ -287,7 +316,7 @@ git push -u <remote> <branch>
 
 #### チェックが作った未追跡のファイル
 
-チェックのコマンド（表の「コマンド」列や make / task のターゲット。インストール済みの判定は数えない）を 1 つでも実行したら、push したかどうか（失敗・書き換えで止めた場合を含む）にかかわらず、最終報告の前に流す。
+チェックのコマンド（表の「コマンド」列や make / task のターゲット。インストール済みの判定は数えない）を 1 つでも実行したら、push したかどうか（失敗・書き換えで止めた場合を含む）にかかわらず、最終報告の前に流す。Step 3 で書き換えを提示する前に流したなら、その結果を使う。
 1 つも実行していなければ（流すチェックが 0 件、PM が見つからず ✗ にしただけ）流さない。未追跡のファイルが無いことは Step 1 で確かめてあり、何も実行していなければ空になる。
 
 ```bash
@@ -300,7 +329,7 @@ git status --porcelain --untracked-files=normal
 
 - `--force` や `--force-with-lease` は**ユーザーが明示的に要求した場合のみ**使用する。
 - スキルから自発的に force push を提案しない。
-- main / master ブランチへの force push をユーザーが要求した場合は、リスクを警告する。
+- 統合ブランチ（`develop` / `master` / `main`）への force push も Step 1 の 2. で止める。
 
 ## push した後、人に確認を頼む前に
 
@@ -399,3 +428,31 @@ preview 環境も無かった。**見る場所が存在しなかった。** 前�
 
 リモートに手元に無いコミットがあるときの理由の行は、追跡ブランチが古ければ ` ! [rejected]        <branch> -> <branch> (fetch first)`、fetch 済みで分岐していれば末尾が `(non-fast-forward)` になる（どちらも exit 1。Git 2.54.0 で実測）。拒否されても force push は提案しない（「force push について」）。
 Step 1 で止めたときと PM の確認で中断したときは、チェックを流す前なので「品質チェック」の節は書かない。Step 1 で止めたときは、決まらなかった欄（push 先、コミット数、push 対象コミット）も書かない。
+
+「push」の節の後に、当てはまるものがあれば「作業ツリー」「次の手」の節をこの順で書く。当てはまるものが無い節は見出しごと書かない。
+
+| 節 | 行 | 書くとき |
+| --- | --- | --- |
+| 作業ツリー | `` 書き換えたファイル: `<パス>` `` | 失敗時の優先規則 2 か Step 3 の取り直しで、`git status --porcelain --untracked-files=no` が空でなかった（1 ファイル 1 行） |
+| 作業ツリー | `` 未追跡のファイル: `<パス>`（`.gitignore` に足してコミットすることを勧める） `` | Step 3 の「チェックが作った未追跡のファイル」で `??` の行が出た（1 ファイル 1 行） |
+| 作業ツリー | `` stash: `<退避したときのメッセージ>`（戻し方: `git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`） `` | Step 1 の確認でユーザーが stash を選んだ |
+| 作業ツリー | `` 統合ブランチ: `<統合ブランチ>` に、`<作業ブランチ>` へ移したコミットが残っている（消すには git-workflow のルール 6 の承認が要る） `` | Step 1 で統合ブランチから作業ブランチへ移し、`git log --oneline <統合ブランチ> --not --remotes` が空でなかった |
+| 次の手 | 番号付きの選択肢。推奨するものを 1. に置き、末尾に `（推奨）` を付ける | 非対話で Step 1 の中止条件か Step 3 の書き換えを検出した。対話時は `AskUserQuestion` で聞き終えているので書かない |
+
+Step 1 からやり直したときは、最後の回の結果だけを書く。「作業ツリー」節の stash と統合ブランチの行は、前の回のものも書く。
+
+非対話で、全チェックが通った後に Step 3 で書き換えを検出した例:
+
+```
+### push
+- — push しない（チェックが追跡ファイルを書き換えたため）
+
+### 作業ツリー
+- 書き換えたファイル: `src/a.ts`
+- 未追跡のファイル: `dist/`（`.gitignore` に足してコミットすることを勧める）
+
+### 次の手
+1. 書き換わったファイルをコミットし、`dist/` を `.gitignore` に足して一緒にコミットしてから push し直す（推奨）
+2. 書き換わったファイルをコミットし、`dist/` を `.git/info/exclude` に足してから push し直す
+3. 中断する
+```
