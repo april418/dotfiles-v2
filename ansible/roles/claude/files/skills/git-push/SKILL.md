@@ -123,7 +123,9 @@ git remote
    2. の表で push 先に同名のブランチがあると決まっていない行（upstream と違う remote、初回 push）で 0 件なら、
    `git ls-remote --exit-code --heads <remote> refs/heads/<branch>` を流す。exit 2 のときだけ、リモートに
    ブランチが無いことを理由に添える（`— push しない（push するコミットが無いため。origin に feature/x が無く、ブランチだけ作るなら手で push する）`）。
-   0 件でも push しないのは、コミットの無いブランチから GitHub は PR を作らない（`No commits between <base> and <branch>`）ためである。
+   0 件でも push しないのは、base から切ったばかりのブランチは base より先のコミットが無く、GitHub の PR 作成 API が
+   `No commits between <base> and <branch>` で拒否するためである。0 件は push 先の remote に無いコミットの数で、base との差ではない
+   （push 済みのブランチから切ったブランチは、0 件でも base より先のコミットを持つ）。
 
    ```bash
    git log --oneline @{upstream}..HEAD               # 表の 1 行目（upstream の remote へ push する）
