@@ -30,7 +30,7 @@ git-pr のルール 11 の合格条件は「空」ではなく「説明文と一
 ### まず切り分ける
 
 ```bash
-git status --short                              # 作業ツリーが clean か（ルート 1 の前提）
+git status --porcelain --untracked-files=normal # 作業ツリーが clean か（ルート 1 の前提）
 git log --oneline <base-ref>..HEAD              # 混入しているコミットの SHA を得る
 git branch --contains <混入コミットの SHA>        # 他のブランチにも記録が残っているか
 git rev-parse --verify origin/<現在のブランチ>    # push 済みか（成功すれば push 済み）
@@ -90,7 +90,7 @@ git-pr のルール 11 の内容確認をやり直す。名指しが無ければ
 **前提条件（必ず先に確認する）**
 
 ```bash
-git status --short    # 空であること
+git status --porcelain --untracked-files=normal    # 空であること
 ```
 
 `<base-ref>` が `origin/<base>` の場合、**この節から直接入ってきたなら
