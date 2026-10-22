@@ -83,7 +83,9 @@
       "Bash(git commit:*)",
       "Bash(git diff:*)",
       "Bash(git fetch:*)",
+      "Bash(git for-each-ref:*)",
       "Bash(git log:*)",
+      "Bash(git ls-remote:*)",
       "Bash(git pull:*)",
       "Bash(git rebase:*)",
       "Bash(git remote:*)",
@@ -94,6 +96,7 @@
       "Bash(git status:*)",
       "Bash(git switch:*)",
       "Bash(git tag:*)",
+      "Bash(git worktree:*)",
       "Bash(head:*)",
       "Bash(jot:*)",
       "Bash(ls:*)",
@@ -128,6 +131,10 @@
       "Bash(wc:*)",
       "Bash(which:*)",
       "Bash(xargs:*)"
+    ],
+    "ask": [
+      "Bash(git worktree prune:*)",
+      "Bash(git worktree remove:*)"
     ],
     "deny": [
       "Bash(chmod:*)",
