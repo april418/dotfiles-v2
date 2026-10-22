@@ -323,8 +323,8 @@ semver の範囲として読めない指定（`lts/*`・`node`・`#` のコメ�
 '<nvm>/versions/node/<最新>/bin/node' -p 'require(process.argv[1]).validRange(process.argv[2])' '<nvm>/versions/node/<最新>/lib/node_modules/npm/node_modules/semver' '<指定>'
 ```
 
-semver 7.7.4 では `lts/*`・`node`・`24 # pinned` が `null` を出し、読める指定は `>=24.0.0 <25.0.0-0` のような範囲を出す（どちらも exit 0）。0 以外で終わったら、残りの指定には流さず、照らさずに流す。注記は `semver の validRange が exit <N> で終わったため node の版を照らさなかった`。
-外した指定の注記は `.nvmrc の lts/* は semver の範囲として読めないため照らさなかった` のように書く。
+semver 7.7.4 では `lts/*`・`node`・`24 # pinned` が `null` を出し、読める指定は `>=24.0.0 <25.0.0-0` のような範囲を出す（どちらも exit 0）。0 以外で終わったら、残りの指定には流さず、照らさずに流す。注記は `semver の validRange が exit <N> で終わったため node の版を照らさなかった` だけにする（それまでに外した指定の注記も書かない）。
+外した指定の注記は `.nvmrc の lts/* は semver の範囲として読めないため照らさなかった` のように書く。指定の書き方は `探した場所:` の括弧と同じで、値の中の改行は空白 1 つにし、2 つ以上なら `と` でつないで 1 文にする（`.node-version の node と .nvmrc の lts/* は semver の範囲として読めないため照らさなかった`）。
 
 残った指定を「nvm の版の選び方」と同じく `-r` に渡し、続けて PATH の版を 1 つだけ並べる。exit 0 ならそのまま流す。
 0 以外なら、`<nvm>/versions/node/` の下で `bin/node` が実行できる版を同じ `-r` の後ろに並べ、最後の行に `v` を付けた版を選ぶ。nvm の行と違って `bin/<pm>` で絞らない。`<pm>` の無い版でも、PATH の `<pm>` がその版の node で動くからである（`node` だけを置いた版の `bin` を PATH の先頭に足すと、PATH にある pnpm 12.6.0 の corepack のシムはその `node` で起動した）。`corepack enable` はシムを corepack の隣に置くので、nvm では版ごとに `bin/pnpm` があったり無かったりする。選んだ版に `<pm>` があれば、PATH の `<pm>` ではなくそちらが動く（npm は nvm のどの版にもある）。
