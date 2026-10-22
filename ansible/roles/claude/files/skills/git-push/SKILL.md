@@ -20,7 +20,7 @@ description: リモートへの push 前に品質チェック（build, lint, tes
 | --- | --- | --- |
 | Step 1 で確認が要るか中止条件を検出した（未コミット変更、push 先の remote が決まらない、名指しの remote が upstream の remote と違う、upstream が `[gone]`（追跡 ref の残りを含む。Step 1 の 2.）、detached HEAD、統合ブランチ、remote が 0 行） | 検出内容を伝え、次に取りうる方針を聞く | 下の段落 |
 | 作業ブランチへの force push を頼まれ、Step 1 の 3. で push 先から消えるコミットがある | 消えるコミットと足すコミットを見せ、force push するか中断するかを聞く（git-workflow のルール 6） | 起きない（Step 1 の 2. で止める） |
-| Step 2 で Node.js の PM が見つからない（PATH の PM の node が指定に合わず、nvm にも合う版が無いときを含む） | PM の場所を聞く（node が合わないときは、合う node か PM の場所） | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」） |
+| Step 2 で Node.js の PM が見つからない（PATH の PM の node を指定と照らして合わず、nvm にも合う版が無いときを含む。照らさずに流す場面は当たらない） | PM の場所を聞く（node が合わないときは、合う node か PM の場所） | Node.js のチェックを失敗にする（「PATH 解決のフォールバック」と「PATH で見つけた PM の node の版」） |
 | Step 3 でチェックが追跡ファイルを書き換えた | コミットしてから push し直すか、中断するかを聞く（チェックが作った未追跡のファイルがあれば、その扱いも） | 同じ選択肢を最終応答で提示する |
 
 非対話モードで Step 1 の中止条件を検出した場合（未コミット変更あり / detached HEAD / 統合ブランチ / upstream が `[gone]`（追跡 ref の残りを含む） / push 先の remote が決まらない / 名指しの remote が upstream の remote と違う / force push を頼まれた 等）は、push は実行せず、検出内容と次に取りうる方針（コミット / `.gitignore` か `.git/info/exclude` に足す / stash / 作業ブランチへ移す / push 先の remote の指定 / 対話で force push を頼み直す / ユーザーが手で force push する / 中断等）を最終応答で 2〜4 択で提示する。
@@ -294,7 +294,7 @@ package-manager skill のルール 2 と同じ確認先だが、優先順で 1 �
 semver の範囲として読めない指定は、どの版にも合わない。nvm は `.nvmrc` の `#` から後ろをコメントとして除き、`lts/*`・`node` などの alias を版に置き換えて読むが、ここではどちらもせずにそのまま `-r` に渡す。指定が無いものとしても扱わない。
 合う版が無ければ、nvm の行では見つからなかった扱いにして次の行へ進む。
 
-表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。
+表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。nvm の行は指定に合う版を選ぶが、後ろの行（`PNPM_HOME` / `BUN_INSTALL`）で見つけたときは node の版を指定と照らさない。
 corepack が置く pnpm / yarn と npm は `#!/usr/bin/env node` で始まり、フルパスで呼んでも `node` が `PATH` に無いと `env: node: No such file or directory` で exit 127 になる。`<dir>/node <dir>/npm run build` と node をフルパスで呼んでも、scripts の中の `node` が `sh: node: command not found` で落ちる（どちらも npm 11.12.1 / pnpm 12.6.0 で実測）。nvm の `<dir>` にはその版の `node` がある。
 シンボリックリンクは辿らない。nvm の `bin/pnpm` などは `../lib/node_modules/` の下へのリンクで、辿った先のディレクトリに `node` は無い。
 `node` があるかは確かめない。`<dir>` にも `PATH` にも `node` が無ければ（スタンドアロンの pnpm など）、node を呼ぶチェックは失敗し、ほかの失敗と同じく push を止める。
@@ -317,7 +317,7 @@ nvm に候補があったのに合う版が無かったときは、nvm の場所
 
 - 指定が 1 つも無い
 - `command -v node` が空か、`node --version` が 0 以外で終わった（上の「`node` があるかは確かめない」と同じく、node を呼ぶチェックの失敗に任せる）
-- 「nvm の版の選び方」の `<最新>` が無い。切り替える先も無いので、nvm の無い環境で毎回止めない。注記は `semver を流せる版が無いため node の版を照らさなかった`
+- 「nvm の版の選び方」の `<最新>` が無い。切り替える先も無いので、nvm の無い環境で毎回止めない。注記は `~/.nvm/versions/node に semver を流せる版が無いため、PATH の node v24.15.0 を指定と照らさなかった` のように、探した `<nvm>/versions/node` と PATH の node の版を添える
 - 下で外した結果、読める指定が残らない。注記は外した指定の注記だけ
 
 semver の範囲として読めない指定（`lts/*`・`node`・`#` のコメントを含む値など）は外して照らす。合わない扱いにすると、`.nvmrc` が `lts/*` のプロジェクト（nvm 0.40.8 の README が載せる例）は PATH の node にも nvm のどの版にも合わず、毎回失敗する。nvm の行の扱い（どの版にも合わない）は変えない。
@@ -327,8 +327,8 @@ semver の範囲として読めない指定（`lts/*`・`node`・`#` のコメ�
 '<nvm>/versions/node/<最新>/bin/node' -p 'require(process.argv[1]).validRange(process.argv[2])' '<nvm>/versions/node/<最新>/lib/node_modules/npm/node_modules/semver' '<指定>'
 ```
 
-semver 7.7.4 では `lts/*`・`node`・`24 # pinned` が `null` を出し、読める指定は `>=24.0.0 <25.0.0-0` のような範囲を出す（どちらも exit 0）。0 以外で終わったら、残りの指定には流さず、照らさずに流す。注記は `semver の validRange が exit <N> で終わったため node の版を照らさなかった`。
-外した指定の注記は `.nvmrc の lts/* は semver の範囲として読めないため照らさなかった` のように書く。
+semver 7.7.4 では `lts/*`・`node`・`24 # pinned` が `null` を出し、読める指定は `>=24.0.0 <25.0.0-0` のような範囲を出す（どちらも exit 0）。0 以外で終わったら、残りの指定には流さず、照らさずに流す。注記は `semver の validRange が exit <N> で終わったため、PATH の node v24.15.0 を指定と照らさなかった` だけにする（それまでに外した指定の注記も書かない）。
+外した指定の注記は `.nvmrc の lts/* は semver の範囲として読めないため照らさなかった` のように書く。指定の書き方は `探した場所:` の括弧と同じで、値の中の改行は空白 1 つにし、2 つ以上なら `と` でつないで 1 文にする（`.node-version の node と .nvmrc の lts/* は semver の範囲として読めないため照らさなかった`）。
 
 残った指定を「nvm の版の選び方」と同じく `-r` に渡し、続けて PATH の版を 1 つだけ並べる。exit 0 ならそのまま流す。
 0 以外なら、`<nvm>/versions/node/` の下で `bin/node` が実行できる版を同じ `-r` の後ろに並べ、最後の行に `v` を付けた版を選ぶ。nvm の行と違って `bin/<pm>` で絞らない。`<pm>` の無い版でも、PATH の `<pm>` がその版の node で動くからである（`node` だけを置いた版の `bin` を PATH の先頭に足すと、PATH にある pnpm 12.6.0 の corepack のシムはその `node` で起動した）。`corepack enable` はシムを corepack の隣に置くので、nvm では版ごとに `bin/pnpm` があったり無かったりする。選んだ版に `<pm>` があれば、PATH の `<pm>` ではなくそちらが動く（npm は nvm のどの版にもある）。
