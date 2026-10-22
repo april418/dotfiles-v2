@@ -9,6 +9,7 @@ description: パッケージマネージャー（pnpm, npm, yarn, uv 等）や�
 **常に意識すべき原則** をまとめたものである。
 
 対象ツール:
+
 - **Node.js**: pnpm, npm, yarn
 - **Python**: uv, pip
 - **ランタイム管理**: nvm, mise
@@ -48,9 +49,9 @@ Linux は `~/.config/pnpm`。pnpm 11 以降は `rc` を読まず、`.npmrc` か�
 
 **Python (uv):**
 
-| 階層 | ファイル | 例 |
-|------|---------|-----|
-| グローバル | `~/.config/uv/uv.toml` | `exclude-newer = "1 week"` |
+| 階層         | ファイル                                   | 例                         |
+| ------------ | ------------------------------------------ | -------------------------- |
+| グローバル   | `~/.config/uv/uv.toml`                     | `exclude-newer = "1 week"` |
 | プロジェクト | `pyproject.toml` の `[tool.uv]`, `uv.toml` | `exclude-newer = "1 week"` |
 
 ### 禁止される操作
@@ -172,12 +173,12 @@ lockfile を再生成して整合性を取る。
 
 1つのプロジェクトで複数のパッケージマネージャーを混在させない。
 
-| lockfile | 使用すべきマネージャー |
-|----------|---------------------|
-| `pnpm-lock.yaml` | pnpm |
-| `package-lock.json` | npm |
-| `yarn.lock` | yarn |
-| `uv.lock` | uv |
+| lockfile            | 使用すべきマネージャー |
+| ------------------- | ---------------------- |
+| `pnpm-lock.yaml`    | pnpm                   |
+| `package-lock.json` | npm                    |
+| `yarn.lock`         | yarn                   |
+| `uv.lock`           | uv                     |
 
 `package.json` に `packageManager` があればそれに、無ければ `devEngines.packageManager` があればそれに、ロックファイルより優先して従う（配列ならロックファイルの PM が含まれていればそれ、無ければ先頭）。
 

@@ -1,0 +1,54 @@
+---
+- name: Read installed prettier package
+  ansible.builtin.slurp:
+    src: "{{ prettier_dir }}/node_modules/prettier/package.json"
+  register: prettier_package
+  failed_when: false
+
+- name: Set installed prettier version
+  ansible.builtin.set_fact:
+    prettier_installed: "{{ (prettier_package.content | b64decode | from_json).version if prettier_package.content is defined else '' }}"
+
+# node ロールは nvm だけを入れ、node は入れない。node が無ければ prettier は動かないので、入れずに知らせる。
+- name: Check node is available
+  ansible.builtin.shell:
+    cmd: . "$NVM_DIR/nvm.sh" && command -v npm
+    executable: /bin/bash
+  environment:
+    NVM_DIR: "{{ node_nvm_dir }}"
+  register: prettier_npm
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: prettier_installed != prettier_version and ansible_facts['os_family'] != 'Windows'
+
+- name: Debug node is not available
+  ansible.builtin.debug:
+    msg: "npm が見つからないため prettier {{ prettier_version }} を入れていない。nvm で node を入れてから流し直す。"
+  when: prettier_npm.rc is defined and prettier_npm.rc != 0
+
+# npm の bin は #!/usr/bin/env node で動くので、nvm.sh で node を PATH に載せたシェルから呼ぶ。
+- name: Install prettier
+  ansible.builtin.shell:
+    cmd: . "$NVM_DIR/nvm.sh" && npm install --prefix "$PRETTIER_DIR" "prettier@$PRETTIER_VERSION"
+    executable: /bin/bash
+  environment:
+    NVM_DIR: "{{ node_nvm_dir }}"
+    PRETTIER_DIR: "{{ prettier_dir }}"
+    PRETTIER_VERSION: "{{ prettier_version }}"
+  register: prettier_install
+  when: prettier_npm.rc is defined and prettier_npm.rc == 0
+  changed_when: true
+
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Link prettier into local bin
+  ansible.builtin.file:
+    src: "{{ prettier_dir }}/node_modules/.bin/prettier"
+    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/prettier"
+    state: link
+  when: prettier_installed == prettier_version or prettier_install is changed

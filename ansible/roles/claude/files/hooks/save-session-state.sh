@@ -70,7 +70,10 @@ collect() {
   printf '## 作業ツリーの状態（自動収集 / trigger=%s）\n\n' "${TRIGGER:-unknown}"
   printf 'cwd: `%s`\n\n' "$CWD"
 
-  [ -n "$REPOS" ] || { printf '（作業中のリポジトリを特定できなかった）\n'; return; }
+  [ -n "$REPOS" ] || {
+    printf '（作業中のリポジトリを特定できなかった）\n'
+    return
+  }
 
   local repo
   while IFS= read -r repo; do
@@ -89,7 +92,7 @@ collect() {
 
     log="$(git -C "$repo" log --oneline -5 2>/dev/null)"
     [ -n "$log" ] && printf -- '- 直近のコミット:\n\n```\n%s\n```\n\n' "$log"
-  done <<< "$REPOS"
+  done <<<"$REPOS"
 }
 
 AUTO="$(collect)"

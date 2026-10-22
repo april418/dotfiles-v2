@@ -1,0 +1,4 @@
+---
+# playbook では ruff が uv より前に並ぶ。uv tool で入れるので、uv と uv.toml（exclude-newer）を先に置く。
+dependencies:
+  - role: uv

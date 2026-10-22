@@ -27,7 +27,7 @@
     dest: "/usr/share/fonts/truetype/{{ item }}"
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   become: true
   with_items: "{{ fonts_font_files }}"
   when: (ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat') and not is_wsl
@@ -38,7 +38,7 @@
     dest: /etc/fonts/local.conf
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   become: true
   when: is_wsl
 

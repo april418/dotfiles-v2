@@ -55,7 +55,7 @@ CWD="$(extract cwd)"
 
 # 解析器の不具合が無関係なコマンドに及ばないよう、どの語も無いものは解析しない。
 case "$COMMAND" in
-  *switch*|*checkout*|*worktree*) ;;
+  *switch* | *checkout* | *worktree*) ;;
   *) exit 0 ;;
 esac
 
@@ -68,9 +68,12 @@ BRANCHES="$(printf '%s' "$COMMAND" | python3 "$HOOK_DIR/guard-branch-base-parse.
 CURRENT=""
 while IFS= read -r branch; do
   case "$branch" in
-    feature/*|hotfix/*) CURRENT="$branch"; break ;;
+    feature/* | hotfix/*)
+      CURRENT="$branch"
+      break
+      ;;
   esac
-done <<< "$BRANCHES"
+done <<<"$BRANCHES"
 [ -n "$CURRENT" ] || exit 0
 
 WORKTREE_NOTE=""

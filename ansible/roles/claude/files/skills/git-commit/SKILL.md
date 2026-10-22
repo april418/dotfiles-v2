@@ -62,11 +62,11 @@ untracked ファイルに `.env`、credentials、`node_modules`、一時ファ�
      パスで**次の表を上から順に見て決める。**前例の scope が今回の変更対象を
      指していなければ使わない**（前例が `login` だけで今回は README なら `login` は付けない）
 
-     | 順 | 見るもの | 決め方 |
-     | --- | --- | --- |
-     | 1 | `git log --no-merges -n 20 --format=%s -- <そのコミットに入れるパス>` | そのパスに付いてきた scope のうち、今回の変更対象を指しているものを使う。複数あれば、パスに含まれるいずれかのディレクトリ名、またはファイル名（拡張子なし。大文字小文字は区別しない）と一致するもの。一致が無ければ件数の多いもの、同数なら新しいもの。指しているものが無ければ 2 へ |
-     | 2 | `git log --no-merges -n 30 --format=%s --name-only` | scope がパスのどの階層の名前かを読み、今回のパスの同じ階層の名前を付ける（前例が `ansible/roles/zsh/` に `zsh` なら、`ansible/roles/node/` には `node`）。今回のパスがその階層で複数にまたがるなら、この 30 件の中で同じ組み合わせにまたがる前例の scope を使う。無ければ 3 へ |
-     | 3 | 下のフォールバック | 1・2 で決まらないとき（階層が読めない、今回のパスにその階層が無い等） |
+     | 順  | 見るもの                                                              | 決め方                                                                                                                                                                                                                                                                               |
+     | --- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+     | 1   | `git log --no-merges -n 20 --format=%s -- <そのコミットに入れるパス>` | そのパスに付いてきた scope のうち、今回の変更対象を指しているものを使う。複数あれば、パスに含まれるいずれかのディレクトリ名、またはファイル名（拡張子なし。大文字小文字は区別しない）と一致するもの。一致が無ければ件数の多いもの、同数なら新しいもの。指しているものが無ければ 2 へ |
+     | 2   | `git log --no-merges -n 30 --format=%s --name-only`                   | scope がパスのどの階層の名前かを読み、今回のパスの同じ階層の名前を付ける（前例が `ansible/roles/zsh/` に `zsh` なら、`ansible/roles/node/` には `node`）。今回のパスがその階層で複数にまたがるなら、この 30 件の中で同じ組み合わせにまたがる前例の scope を使う。無ければ 3 へ       |
+     | 3   | 下のフォールバック                                                    | 1・2 で決まらないとき（階層が読めない、今回のパスにその階層が無い等）                                                                                                                                                                                                                |
 
    - **フォールバック**:
      - 単一ファイル変更: ファイル名から拡張子を除いたもの（`parser.py` → `parser`）
@@ -106,18 +106,30 @@ ruff format .
 上の行から見て、最初に当たった形で流す。`lint:fix` が eslint だけを呼び、CI が
 `prettier --check` を流しているなら、eslint は 1、prettier は 2 で流す。
 
-| 順 | 手がかり | 流すもの |
-| --- | --- | --- |
-| 1 | `package.json` の `format` / `fix` / `lint:fix`、`Makefile` / `Taskfile.yml` の `fmt` / `format` | そのスクリプト・ターゲット |
-| 2 | `.github/workflows/*.yml` の整形チェック | 書き込む形に直したもの（`prettier --check` → `prettier --write`、`cargo fmt --check` → `cargo fmt`、`ruff format --check` → `ruff format`） |
-| 3 | `.prettierrc*`、`pyproject.toml` の `[tool.ruff.format]` / `[tool.black]`、`.pre-commit-config.yaml` | そのツールを、コミットに入れるファイル（削除したものを除く）だけに流す（`prettier --write --ignore-unknown <files>` / `ruff format <files>` / `black <files>` / `pre-commit run --files <files>`） |
+| 順  | 手がかり                                                                                             | 流すもの                                                                                                                                                                                                                                         |
+| --- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `package.json` の `format` / `fix` / `lint:fix`、`Makefile` / `Taskfile.yml` の `fmt` / `format`     | そのスクリプト・ターゲット                                                                                                                                                                                                                       |
+| 2   | `.github/workflows/*.yml` の整形チェック                                                             | 書き込む形に直したもの（`prettier --check` → `prettier --write`、`shfmt --diff` → `shfmt --write`、`gofmt -l` → `gofmt -w`、`cargo fmt --check` → `cargo fmt`、`ruff format --check` → `ruff format`、`terraform fmt -check` → `terraform fmt`） |
+| 3   | `.prettierrc*`、`pyproject.toml` の `[tool.ruff.format]` / `[tool.black]`、`.pre-commit-config.yaml` | そのツールを、コミットに入れるファイル（削除したものを除く）だけに流す（`prettier --write --ignore-unknown <files>` / `ruff format <files>` / `black <files>` / `pre-commit run --files <files>`）                                               |
 
-2 で `--check` を外すだけにしない。`prettier <file>` は整形結果を標準出力に出すだけで
-ファイルを書き換えず、exit 0 で終わる。3 でリポジトリ全体に流さないのは、変更して
-いないファイルまで書き換わって差分が膨らむためである。prettier は扱えないファイルや
-存在しないファイルを渡すと exit 2 になるので、`--ignore-unknown` を付けて削除したものを
-除く。`pre-commit run` はフックがファイルを書き換えると exit 1 になる。もう一度流して
-exit 0 なら整形済みである。
+2 でチェック用のフラグを外せば書き込む、と決めつけない。prettier・shfmt・gofmt は
+フラグを外しただけだと、整形結果を標準出力に出すだけでファイルを書き換えず、exit 0 で
+終わる。表に無いツールは、書き込む形を `--help` で確かめる。
+
+2 のコマンドが `git ls-files` で対象を集めるなら、作業ツリーに無いパスを除いてから
+渡す。削除を stage する前は、消したファイルも `git ls-files` に出る。shfmt はそのパスを
+`lstat` のエラーにし、残りを書き換えたうえで exit 1 で終わるので、整形の失敗と見分け
+にくい。`git rm --cached` で index から外す形にはしない。Step 3 でコミットを分けるとき、
+先に stage した削除が最初のコミットに紛れ込む。
+
+```bash
+git ls-files -z -- '*.sh' | while IFS= read -r -d '' f; do [ -e "$f" ] && printf '%s\0' "$f"; done | xargs -0 shfmt --write
+```
+
+3 でリポジトリ全体に流さないのは、変更していないファイルまで書き換わって差分が
+膨らむためである。prettier は扱えないファイルや存在しないファイルを渡すと exit 2 に
+なるので、`--ignore-unknown` を付けて削除したものを除く。`pre-commit run` はフックが
+ファイルを書き換えると exit 1 になる。もう一度流して exit 0 なら整形済みである。
 
 **手がかりが 1 つも無い、または手がかりのツールが入っていなくて流せないときは、
 `AskUserQuestion` で「整形せずにコミットする」か「整形コマンドを指定する」かを
@@ -130,10 +142,10 @@ Step 2 でコミット計画を確認するなら、同じ質問にまとめて�
 **型チェックは整形の後に、git-push skill の Step 2 の表の型チェックと同じものを流す。**
 条件はプロジェクトルートのファイルで見る。
 
-| 種別 | 条件 | 流すもの |
-| --- | --- | --- |
-| Node.js（`package.json` がある） | `scripts.typecheck` / `scripts.type-check` が定義されている | `<pm> run typecheck` / `<pm> run type-check`。両方あれば両方 |
-| Python（`pyproject.toml` / `setup.py` / `setup.cfg` がある） | `mypy` が入っている（`.venv/bin/mypy` が実行可能か。無ければ `command -v mypy`） | `mypy .`。`.venv/bin` で見つけたら `.venv/bin/mypy .` |
+| 種別                                                         | 条件                                                                             | 流すもの                                                     |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Node.js（`package.json` がある）                             | `scripts.typecheck` / `scripts.type-check` が定義されている                      | `<pm> run typecheck` / `<pm> run type-check`。両方あれば両方 |
+| Python（`pyproject.toml` / `setup.py` / `setup.cfg` がある） | `mypy` が入っている（`.venv/bin/mypy` が実行可能か。無ければ `command -v mypy`） | `mypy .`。`.venv/bin` で見つけたら `.venv/bin/mypy .`        |
 
 `<pm>` は git-push の Step 2 の Node.js の PM の決め方（`packageManager` →
 `devEngines.packageManager` → ロックファイル → `npm`）で決める。どの行にも当たらなければ
@@ -149,6 +161,7 @@ push 前のチェックとも食い違う。
 ルール 1 の例外）。`config get` が 0 以外で終わったときも前置し、`undefined` 以外なら
 前置せずにその値に従う。判定は git-push skill の Step 2 の `verifyDepsBeforeRun` の段落と
 同じで、値の読み方と版ごとの違いもそこにある。
+
 - `config get` は整形や型チェックと同じディレクトリで流す（`-C <dir>` を付けるなら同じ指定で）。
   流すディレクトリが複数あれば、ディレクトリごとに 1 回流す。値は流したディレクトリから
   見える pnpm-workspace.yaml で変わる
@@ -165,6 +178,7 @@ store に無い依存は registry に取りに行く。
 整形や型チェックが 0 以外で終わり、package.json の依存に宣言されたもの（ツール本体・
 プラグイン・設定パッケージ）が見つからないと出力にあれば、`node_modules` が無いか
 ロックファイルとずれていて、そのコマンドは流れていない。出力は次のような形になる。
+
 - `command not found`、`: not found`（dash）、`Command "<tool>" not found`（`pnpm exec`）
 - `Cannot find module '<pkg>'`、`Cannot find package '<pkg>'`
 - `couldn't find the plugin`、`couldn't find the config`（ESLint）
@@ -191,6 +205,7 @@ store に無い依存は registry に取りに行く。
 
 **型チェックが 0 以外で終わり、上の依存の欠けにも pnpm が流さなかったときにも当たらなければ、
 診断で分ける。**
+
 - ファイルの位置（`<path>(<line>,<col>)` や `<path>:<line>`）を指す診断があれば、型エラーとして扱う。
   シェルのエラーの `(eval):1:` や `sh: 1:` は位置に数えない
 - 位置を指す診断が 1 つも無ければ（PM が PATH に無い、`ERR_PNPM_UNSUPPORTED_ENGINE`、mypy の
@@ -305,6 +320,7 @@ EOF
 以下の手順で Edit ツールを使い、最後に検証する。
 
 **前提条件:**
+
 - 新規ファイル（untracked）は hunk 分割の対象外。必ずファイル単位でコミットする。
 - 対象は tracked なテキストファイルのみ。binary / symlink は対象外。
 - 開始時に clean index であること（staged 変更がない状態）。
@@ -381,16 +397,16 @@ git stash drop
 
 複数の type に当てはまりそうな変更でブレないように、以下を優先採用する。
 
-| ケース | 採用 type | 理由 |
-|---|---|---|
-| 型ヒント・型注釈の追加（挙動不変） | `refactor` | 公開シグネチャの契約変更で、後で `refactor` でも `feat` でも grep されうるが、振る舞い不変なら `refactor` に寄せて履歴の意味を一貫させる |
-| f-string 化・文字列結合の書き換え（挙動不変） | `refactor` | 可読性目的のコード書き換え。`style` はフォーマッタ任せの空白/改行調整に限定 |
-| import 並び替え・空白/改行調整のみ | `style` | フォーマッタ準拠の見た目だけの変更 |
-| 依存パッケージのバージョン更新 | `chore` | ビルド/リリース関連の運用作業。挙動差は `fix` / `feat` の範疇に入れず `chore(deps)` |
-| 設定ファイル（lint / CI / editorconfig 等）の調整 | `chore` または `ci` | CI 設定は `ci`、それ以外の運用設定は `chore` |
-| テストコードのみ追加・修正 | `test` | 本番コードを触らない場合 |
-| ドキュメント（README / コメント / CHANGELOG）のみ | `docs` | 挙動に影響しない記述のみ |
-| エラーメッセージ・例外メッセージの改善 | `fix` if 既存バグ起因、`refactor` if 可読性目的 | ユーザー体験影響の有無で振り分け |
+| ケース                                            | 採用 type                                       | 理由                                                                                                                                     |
+| ------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 型ヒント・型注釈の追加（挙動不変）                | `refactor`                                      | 公開シグネチャの契約変更で、後で `refactor` でも `feat` でも grep されうるが、振る舞い不変なら `refactor` に寄せて履歴の意味を一貫させる |
+| f-string 化・文字列結合の書き換え（挙動不変）     | `refactor`                                      | 可読性目的のコード書き換え。`style` はフォーマッタ任せの空白/改行調整に限定                                                              |
+| import 並び替え・空白/改行調整のみ                | `style`                                         | フォーマッタ準拠の見た目だけの変更                                                                                                       |
+| 依存パッケージのバージョン更新                    | `chore`                                         | ビルド/リリース関連の運用作業。挙動差は `fix` / `feat` の範疇に入れず `chore(deps)`                                                      |
+| 設定ファイル（lint / CI / editorconfig 等）の調整 | `chore` または `ci`                             | CI 設定は `ci`、それ以外の運用設定は `chore`                                                                                             |
+| テストコードのみ追加・修正                        | `test`                                          | 本番コードを触らない場合                                                                                                                 |
+| ドキュメント（README / コメント / CHANGELOG）のみ | `docs`                                          | 挙動に影響しない記述のみ                                                                                                                 |
+| エラーメッセージ・例外メッセージの改善            | `fix` if 既存バグ起因、`refactor` if 可読性目的 | ユーザー体験影響の有無で振り分け                                                                                                         |
 
 ### 記載ルール
 

@@ -11,7 +11,7 @@
 br() {
   local columns=$(tput cols)
   local i=0
-  for ((i=0; i < columns; i++)); do
+  for ((i = 0; i < columns; i++)); do
     printf "-"
   done
   printf "\n"
@@ -21,12 +21,12 @@ text_center() {
   local columns=$(tput cols)
   local line=
   if [ -p /dev/stdin ]; then
-    while IFS= read -r line  || [ -n "$line" ]; do
-      printf "%*s\n" $(( (${#line} + columns) / 2)) "$line"
-    done < /dev/stdin
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf "%*s\n" $(((${#line} + columns) / 2)) "$line"
+    done </dev/stdin
   else
     line="$@"
-    printf "%*s\n" $(( (${#line} + columns) / 2)) "$line"
+    printf "%*s\n" $(((${#line} + columns) / 2)) "$line"
   fi
 }
 
@@ -40,7 +40,7 @@ max_length() {
       if [ $length -gt $max_length ]; then
         max_length=$length
       fi
-    done < /dev/stdin
+    done </dev/stdin
     echo $max_length
   else
     line="$@"
@@ -53,13 +53,13 @@ with_indent() {
   local line=
   local indent=
   local i=
-  for ((i=0; i < length; i++)); do
+  for ((i = 0; i < length; i++)); do
     indent="$indent "
   done
   if [ -p /dev/stdin ]; then
     while IFS= read -r line || [ -n "$line" ]; do
       echo "${indent}${line}"
-    done < /dev/stdin
+    done </dev/stdin
   else
     shift
     line="$@"
@@ -95,4 +95,3 @@ text_center 'Enjoy your development!!'
 echo
 br
 echo
-

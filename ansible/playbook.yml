@@ -100,7 +100,10 @@
     - node
     - npm
     - pnpm
+    - prettier
+    - ruff
     - screen
+    - shfmt
     - uv
     - vim
     - zsh

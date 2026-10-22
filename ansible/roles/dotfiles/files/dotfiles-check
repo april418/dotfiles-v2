@@ -16,12 +16,8 @@ import time
 import traceback
 
 HOME = os.path.expanduser("~")
-STATE_DIR = os.path.join(
-    os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state"), "dotfiles"
-)
-CACHE_DIR = os.path.join(
-    os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"), "dotfiles"
-)
+STATE_DIR = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state"), "dotfiles")
+CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"), "dotfiles")
 # ansible/roles/dotfiles/tasks/record.yml が書く。
 APPLIED_FILE = os.path.join(STATE_DIR, "applied.json")
 REFRESH_FILE = os.path.join(CACHE_DIR, "refresh.json")
@@ -34,9 +30,7 @@ UPDATE_DECLINED_FILE = os.path.join(STATE_DIR, "update-declined.json")
 UPDATE_LOCK_FILE = os.path.join(CACHE_DIR, "update.lock")
 DEFAULT_REPO = os.path.join(HOME, ".dotfiles")
 # .zshrc の ZINIT_HOME と同じ規則。
-ZINIT_DIR = os.path.join(
-    os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "zinit"
-)
+ZINIT_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "zinit")
 NVM_REPO_URL = "https://github.com/nvm-sh/nvm.git"
 GITHUB_API = "https://api.github.com"
 # native インストーラーの配布元。<チャンネル> を引くと、そのチャンネルの版だけを返す。
@@ -97,8 +91,13 @@ def run(args, timeout):
         # 子の子まで止められるよう、別のプロセスグループで起動する。brew は brew update を子として走らせ、
         # 直接の子だけを kill すると update のロックを握ったまま残る。
         p = subprocess.Popen(
-            args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, env=CHILD_ENV, start_new_session=True,
+            args,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=CHILD_ENV,
+            start_new_session=True,
         )
     except OSError as e:
         raise FetchError(str(e))
@@ -114,7 +113,9 @@ def run(args, timeout):
         lines = [line.strip() for line in stderr.splitlines() if line.strip()]
         # 最終行は複数行のメッセージの続き（"and the repository exists." など）になりがち。
         # brew は "Error:" と大文字で始める。
-        reason = next((line for line in lines if re.match(r"(fatal|error):", line, re.IGNORECASE)), lines[0] if lines else None)
+        reason = next(
+            (line for line in lines if re.match(r"(fatal|error):", line, re.IGNORECASE)), lines[0] if lines else None
+        )
         raise FetchError(reason or f"{os.path.basename(args[0])} が {p.returncode} で終了した")
     return stdout, stderr
 
@@ -201,7 +202,7 @@ def shown(path):
     """コマンド例にそのまま貼れる形にする。"""
     if path.startswith(HOME + os.sep):
         # ~ はクォートの内側に入れると展開されない。
-        return "~/" + shlex.quote(path[len(HOME) + 1:])
+        return "~/" + shlex.quote(path[len(HOME) + 1 :])
     return shlex.quote(path)
 
 
@@ -230,8 +231,12 @@ def notice(summary, short, commands, details=None, steps=None, keys=None):
     取り込み先の版や SHA を渡す。件数だと、上げた後に同じ件数の更新が来たときに断ったものと区別できない。
     """
     return {
-        "summary": summary, "short": short, "commands": commands, "details": details,
-        "steps": steps or [], "keys": keys or [summary],
+        "summary": summary,
+        "short": short,
+        "commands": commands,
+        "details": details,
+        "steps": steps or [],
+        "keys": keys or [summary],
     }
 
 
@@ -315,7 +320,9 @@ def check_dotfiles():
     # 子プロセスを起動せずに分かる範囲で、シェルを開くたびに確かめる。
     problem = "見つからない" if playbook_bin is None else interpreter_problem(playbook_bin)
     if problem:
-        result["warnings"].append(f"ansible-playbook が起動しない（{problem}）。{shown(os.path.join(repo, 'install'))} を流し直す")
+        result["warnings"].append(
+            f"ansible-playbook が起動しない（{problem}）。{shown(os.path.join(repo, 'install'))} を流し直す"
+        )
         # 流しても失敗するので、update の手順にしない。pull だけを済ませても配置はされない。
         apply_steps = []
     remote = git(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
@@ -336,16 +343,28 @@ def check_dotfiles():
             # 配置用の checkout にローカルのコミットがあれば、書き換えずに止める。
             pull = f"git -C {shown(repo)} pull --ff-only origin {branch}"
             commands = [pull, apply]
-            steps = [(pull, ["git", "-C", repo, "pull", "--ff-only", "origin", branch])] + apply_steps if apply_steps else []
+            steps = (
+                [(pull, ["git", "-C", repo, "pull", "--ff-only", "origin", branch])] + apply_steps
+                if apply_steps
+                else []
+            )
         else:
             # 作業ブランチで取り込み方を決めつけると、rebase などを勧めることになるため手順は出さない。
             summary += f"（{branch or 'detached HEAD'} を checkout 中）"
             commands = steps = []
-        result["notices"].append(notice(summary, summary, commands, steps=steps, keys=[f"dotfiles:pull:{git(repo, 'rev-parse', remote)}"]))
+        result["notices"].append(
+            notice(summary, summary, commands, steps=steps, keys=[f"dotfiles:pull:{git(repo, 'rev-parse', remote)}"])
+        )
         return result
 
     def apply_notice(summary):
-        return notice(summary, summary, [apply], steps=apply_steps, keys=[f"dotfiles:apply:{git(repo, 'rev-parse', f'HEAD:{DEPLOYED_PATH}')}"])
+        return notice(
+            summary,
+            summary,
+            [apply],
+            steps=apply_steps,
+            keys=[f"dotfiles:apply:{git(repo, 'rev-parse', f'HEAD:{DEPLOYED_PATH}')}"],
+        )
 
     if applied is None:
         result["notices"].append(apply_notice("適用したコミットの記録が無い"))
@@ -359,7 +378,11 @@ def check_dotfiles():
     trees = git(repo, "rev-parse", f"{commit}:{DEPLOYED_PATH}", f"HEAD:{DEPLOYED_PATH}")
     if trees is None or len(set(trees.split())) > 1:
         unapplied = count(repo, f"{commit}..HEAD", DEPLOYED_PATH)
-        result["notices"].append(apply_notice(f"取り込み済みの {unapplied} コミットが未適用" if unapplied else "checkout と適用済みの内容が違う"))
+        result["notices"].append(
+            apply_notice(
+                f"取り込み済みの {unapplied} コミットが未適用" if unapplied else "checkout と適用済みの内容が違う"
+            )
+        )
     return result
 
 
@@ -435,8 +458,11 @@ class Uv(Tool):
         # uv self update は uv の設定の exclude-newer を見ずに最新を入れるので、公開日時で選んで版を名指しする。
         # 1 件に 40 を超えるアセットが付き、100 件だと 8 MB を超える。待ちを過ぎた版は直近の数十件にある。
         releases = github_api("/repos/astral-sh/uv/releases?per_page=20")
-        tags = [r["tag_name"] for r in releases if re.fullmatch(r"\d+\.\d+\.\d+", str(r.get("tag_name")))
-                and not r.get("draft") and not r.get("prerelease")]
+        tags = [
+            r["tag_name"]
+            for r in releases
+            if re.fullmatch(r"\d+\.\d+\.\d+", str(r.get("tag_name"))) and not r.get("draft") and not r.get("prerelease")
+        ]
         if not tags:
             raise FetchError("uv のリリースが見つからない")
         data = release_cooldown("astral-sh", "uv", tags, releases)
@@ -480,8 +506,12 @@ class Uv(Tool):
         summary = f"uv {installed} → {settled}"
         # uv self update はインストーラを流し直す。UV_NO_MODIFY_PATH が無いとシェルの rc を書き換えうる（uv ロールと同じ）。
         command = f"UV_NO_MODIFY_PATH=1 uv self update {settled}"
-        return notice(summary, summary, [command],
-                      steps=[(command, ["/usr/bin/env", "UV_NO_MODIFY_PATH=1", self.path, "self", "update", settled])])
+        return notice(
+            summary,
+            summary,
+            [command],
+            steps=[(command, ["/usr/bin/env", "UV_NO_MODIFY_PATH=1", self.path, "self", "update", settled])],
+        )
 
     def remark(self, data):
         if data.get("unsupported") or not data.get("newest"):
@@ -501,14 +531,18 @@ class Nvm(Tool):
     def locate():
         # .zshenv の NVM_DIR と同じ規則。
         directory = os.environ.get("NVM_DIR") or (
-            os.path.join(os.environ["XDG_CONFIG_HOME"], "nvm") if os.environ.get("XDG_CONFIG_HOME")
+            os.path.join(os.environ["XDG_CONFIG_HOME"], "nvm")
+            if os.environ.get("XDG_CONFIG_HOME")
             else os.path.join(HOME, ".nvm")
         )
         return directory if os.path.isfile(os.path.join(directory, "nvm.sh")) else None
 
     def fetch(self):
-        args = ["git", "-C", self.directory, "ls-remote", "--tags", "--refs", "origin"] if self.is_git \
+        args = (
+            ["git", "-C", self.directory, "ls-remote", "--tags", "--refs", "origin"]
+            if self.is_git
             else ["git", "ls-remote", "--tags", "--refs", NVM_REPO_URL]
+        )
         tags = re.findall(r"refs/tags/(v\d+\.\d+\.\d+)$", run(args, FETCH_TIMEOUT)[0], re.MULTILINE)
         if not tags:
             raise FetchError("リリースのタグが見つからない")
@@ -543,7 +577,9 @@ class Nvm(Tool):
         else:
             # PROFILE=/dev/null が無いと、install.sh が .zshrc に読み込み行を書き足す（.zshenv で読み込み済み）。
             # pipefail と -f が無いと、取得に失敗しても空の入力を bash が読んで 0 で終わる。
-            command = f"curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/{latest}/install.sh | PROFILE=/dev/null bash"
+            command = (
+                f"curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/{latest}/install.sh | PROFILE=/dev/null bash"
+            )
             steps = [(command, ["bash", "-o", "pipefail", "-c", command])]
         summary = f"nvm {installed} → {latest.lstrip('v')}"
         return notice(summary, summary, [display for display, _ in steps], steps=steps)
@@ -660,7 +696,14 @@ class GitTool(Tool):
         if not hasattr(self, "_settled"):
             # 本流だけを辿る。枝のコミットは、取り込んだマージが待ちを過ぎるまで選ばない。選ぶと早送りできないか、
             # 本流に一度も無かった状態に進めてしまう（本流の親が枝のコミットより古いとき）。
-            self._settled = git(self.path, "rev-list", "-1", "--first-parent", f"--before={int(time.time() - PIN_COOLDOWN)}", "@{upstream}")
+            self._settled = git(
+                self.path,
+                "rev-list",
+                "-1",
+                "--first-parent",
+                f"--before={int(time.time() - PIN_COOLDOWN)}",
+                "@{upstream}",
+            )
         return self._settled
 
     def evaluate(self, data):
@@ -680,23 +723,34 @@ class GitTool(Tool):
             compile_display = f"zinit compile {self.spec}"
             zinit_zsh = os.path.join(ZINIT_DIR, "zinit.git", "zinit.zsh")
             # zinit はシェル関数なので、rc を読まない zsh に読み込んで呼ぶ。
-            steps.append((compile_display, ["zsh", "-fc", 'source "$1" && zinit compile "$2"', "zsh", zinit_zsh, self.spec]))
+            steps.append(
+                (compile_display, ["zsh", "-fc", 'source "$1" && zinit compile "$2"', "zsh", zinit_zsh, self.spec])
+            )
         else:
             # zinit self-update が pull の後に作り直す wordcode と同じもの（zinit-autoload.zsh の .zinit-self-update）。
             # self-update は先に *.zwc を消すが、zcompile は上書きし、ソースより古い .zwc は zsh が使わないので消さない。
-            script = ('zcompile -U "$1/zinit.zsh" && zcompile -U "$1"/zinit-{side,install,autoload,additional}.zsh'
-                      ' && zcompile -U "$1/share/git-process-output.zsh"')
+            script = (
+                'zcompile -U "$1/zinit.zsh" && zcompile -U "$1"/zinit-{side,install,autoload,additional}.zsh'
+                ' && zcompile -U "$1/share/git-process-output.zsh"'
+            )
             compile_display = f"zsh -fc {shlex.quote(script)} zsh {shown(self.path)}"
             steps.append((compile_display, ["zsh", "-fc", script, "zsh", self.path]))
         return notice(
-            f"{self.label} に {behind} コミットの更新がある", f"{self.label}（{behind} コミット）",
-            [display for display, _ in steps], steps=steps, keys=[f"{self.key}@{target}"],
+            f"{self.label} に {behind} コミットの更新がある",
+            f"{self.label}（{behind} コミット）",
+            [display for display, _ in steps],
+            steps=steps,
+            keys=[f"{self.key}@{target}"],
         )
 
     def remark(self, data):
         target = self.settled()
         young = git(self.path, "rev-list", "--count", "--no-merges", f"{target or 'HEAD'}..@{{upstream}}")
-        if not young or young == "0" or git(self.path, "merge-base", "--is-ancestor", "@{upstream}", "HEAD") is not None:
+        if (
+            not young
+            or young == "0"
+            or git(self.path, "merge-base", "--is-ancestor", "@{upstream}", "HEAD") is not None
+        ):
             return None
         # 枝のコミットは、取り込んだマージコミットが待ち期間を過ぎるまで待つ（追跡ブランチに入ったのはそのとき）。
         return f"{young} コミットは {PIN_COOLDOWN // (24 * 60 * 60)} 日の待ち期間が過ぎるまで待っている"
@@ -724,12 +778,14 @@ class Brew(Tool):
                     continue
                 # tap の formula は user/tap/name で出るが、Cellar のディレクトリは name だけ。
                 name = item["name"].rsplit("/", 1)[-1]
-                packages.append({
-                    "name": name,
-                    "dir": os.path.join(prefix, kind, name),
-                    "installed": item.get("installed_versions") or [],
-                    "latest": item.get("current_version"),
-                })
+                packages.append(
+                    {
+                        "name": name,
+                        "dir": os.path.join(prefix, kind, name),
+                        "installed": item.get("installed_versions") or [],
+                        "latest": item.get("current_version"),
+                    }
+                )
         return {"packages": packages}
 
     def remark(self, data):
@@ -887,10 +943,15 @@ def settled_tag(owner, name, tags, releases=None):
 
 
 def make_diff(old, new, old_name, new_name):
-    lines = list(difflib.unified_diff(
-        old.decode("utf-8", "replace").splitlines(), new.decode("utf-8", "replace").splitlines(),
-        old_name, new_name, lineterm="",
-    ))
+    lines = list(
+        difflib.unified_diff(
+            old.decode("utf-8", "replace").splitlines(),
+            new.decode("utf-8", "replace").splitlines(),
+            old_name,
+            new_name,
+            lineterm="",
+        )
+    )
     if len(lines) > DIFF_MAX_LINES:
         lines = lines[:DIFF_MAX_LINES] + [f"…（以下 {len(lines) - DIFF_MAX_LINES} 行を省略）"]
     return "\n".join(lines)
@@ -924,7 +985,9 @@ class RawPin(Pin):
         # SHA は更新で変わるので、キーには含めない。
         super().__init__(
             f"raw:{rel}:{self.owner}/{self.name}/{self.file}#{occurrence}",
-            os.path.basename(os.path.dirname(self.file)) or self.file, rel, line,
+            os.path.basename(os.path.dirname(self.file)) or self.file,
+            rel,
+            line,
         )
 
     def raw_url(self, ref, file=None):
@@ -963,7 +1026,9 @@ class RawPin(Pin):
         if old == new:
             return {"pinned": self.sha, "suggested": None}
         return {
-            "pinned": self.sha, "suggested": suggested, "date": date,
+            "pinned": self.sha,
+            "suggested": suggested,
+            "date": date,
             "diff": make_diff(old, new, f"{self.sha[:7]}/{self.file}", f"{suggested[:7]}/{self.file}"),
         }
 
@@ -978,7 +1043,8 @@ class RawPin(Pin):
             return data
         old, new = self.download(self.sha), self.download(suggested, moved[0])
         data.update(
-            suggested=suggested, date=date,
+            suggested=suggested,
+            date=date,
             diff=make_diff(old, new, f"{self.sha[:7]}/{self.file}", f"{suggested[:7]}/{moved[0]}"),
         )
         return data
@@ -1095,7 +1161,10 @@ class ActionPin(Pin):
                 f"{self.label} のコメントの {self.current} が、固定した SHA とは別のコミットを指している"
                 "（タグの付け替えか、コメントの書き間違い）",
                 f"{self.label}（タグと SHA が不一致）",
-                [f"確かめるまで上げない。固定中: {commit}/{self.sha}", f"いまの {self.current}: {commit}/{tags[self.current]}"],
+                [
+                    f"確かめるまで上げない。固定中: {commit}/{self.sha}",
+                    f"いまの {self.current}: {commit}/{tags[self.current]}",
+                ],
             )
         if latest is None or self.sha == data.get("sha") or version_key(self.current) >= version_key(latest):
             return None
@@ -1135,12 +1204,15 @@ def find_pins(repo):
                 found.append(RawPin(rel, i + 1, m, occurrence(f"raw:{owner}/{name}/{file}")))
             uses = USES_SHA.search(text)
             if uses and uses.start() < code_end:
-                found.append(ActionPin(rel, i + 1, uses, occurrence(f"action:{uses.group(1)}/{uses.group(2)}{uses.group(3)}")))
+                found.append(
+                    ActionPin(rel, i + 1, uses, occurrence(f"action:{uses.group(1)}/{uses.group(2)}{uses.group(3)}"))
+                )
             marker = TAG_MARKER.search(text)
             if marker:
                 target = KEY_VALUE.match(lines[i + 1]) if i + 1 < len(lines) else None
                 found.append(
-                    TagPin(rel, i + 2, marker.group(1), target) if target
+                    TagPin(rel, i + 2, marker.group(1), target)
+                    if target
                     else BrokenPin(rel, i + 1, '目印の次の行から版を読めない（key: "vX.Y.Z" の形で書く）')
                 )
     return found
@@ -1256,16 +1328,27 @@ def refresh(wait):
         same_repo = previous.get("repo") == repo
         if not wait and not needs_refresh(repo):
             return None
-        if wait and same_repo and not previous.get("error") and isinstance(previous.get("at"), (int, float)) \
-                and previous["at"] >= requested:
+        if (
+            wait
+            and same_repo
+            and not previous.get("error")
+            and isinstance(previous.get("at"), (int, float))
+            and previous["at"] >= requested
+        ):
             return None
         failing_since = previous.get("failing_since") if same_repo else None
         started = time.time()
         # 取得前に試行を記録する。並んで起動した notify が同じ取得を重ねて始めないため。
         # 途中で落ちたときは失敗扱いになり、RETRY_INTERVAL 後に再試行される。
-        write_json(REFRESH_FILE, {
-            "repo": repo, "at": started, "error": "取得が完了しなかった", "failing_since": failing_since or started,
-        })
+        write_json(
+            REFRESH_FILE,
+            {
+                "repo": repo,
+                "at": started,
+                "error": "取得が完了しなかった",
+                "failing_since": failing_since or started,
+            },
+        )
 
         tools = find_tools()
         pins = find_pins(repo) if repo else []
@@ -1277,21 +1360,34 @@ def refresh(wait):
         error = dotfiles.result()[1] if dotfiles else None
 
         old = (read_json(TOOLS_FILE) or {}).get("tools") or {}
-        write_json(TOOLS_FILE, {
-            "at": time.time(),
-            "tools": {key: next_state(old.get(key), *future.result(), started) for key, future in fetched.items()},
-        })
+        write_json(
+            TOOLS_FILE,
+            {
+                "at": time.time(),
+                "tools": {key: next_state(old.get(key), *future.result(), started) for key, future in fetched.items()},
+            },
+        )
         old_pins = read_json(PINS_FILE) or {}
         old = (old_pins.get("pins") or {}) if old_pins.get("repo") == repo else {}
-        write_json(PINS_FILE, {
-            "repo": repo,
-            "at": time.time(),
-            "pins": {key: next_state(old.get(key), *future.result(), started) for key, future in fetched_pins.items()},
-        })
-        write_json(REFRESH_FILE, {
-            "repo": repo, "at": time.time(), "error": error,
-            "failing_since": (failing_since or started) if error else None,
-        })
+        write_json(
+            PINS_FILE,
+            {
+                "repo": repo,
+                "at": time.time(),
+                "pins": {
+                    key: next_state(old.get(key), *future.result(), started) for key, future in fetched_pins.items()
+                },
+            },
+        )
+        write_json(
+            REFRESH_FILE,
+            {
+                "repo": repo,
+                "at": time.time(),
+                "error": error,
+                "failing_since": (failing_since or started) if error else None,
+            },
+        )
         # 取得で見つかった更新を、次に開くシェルで聞けるようにする。
         sync_pending(update_groups(check_dotfiles(), check_tools()))
         return error
@@ -1407,12 +1503,21 @@ PL_END = "\033[0m\033[38;5;236m\ue0b0\033[0m"
 PL_SEP = " \033[38;5;244m\ue0b1\033[38;5;007m "
 PL_DEFAULT = "\033[38;5;007m"
 PL_COLORS = {
-    "warn": "\033[38;5;003m", "error": "\033[38;5;001m", "update": "\033[38;5;014m", "info": "\033[38;5;245m",
-    "ok": "\033[38;5;002m", "progress": "\033[38;5;014m",
+    "warn": "\033[38;5;003m",
+    "error": "\033[38;5;001m",
+    "update": "\033[38;5;014m",
+    "info": "\033[38;5;245m",
+    "ok": "\033[38;5;002m",
+    "progress": "\033[38;5;014m",
 }
 PL_ICONS = {
-    "dotfiles": "\ue0a0", "tools": "\uf0ad", "pins": "\uf08d", "warn": "\uf071", "info": "\uf05a",
-    "ok": "\uf00c", "question": "\uf059",
+    "dotfiles": "\ue0a0",
+    "tools": "\uf0ad",
+    "pins": "\uf08d",
+    "warn": "\uf071",
+    "info": "\uf05a",
+    "ok": "\uf00c",
+    "question": "\uf059",
 }
 NOTIFY_FOOTER = "詳細と更新手順は dotfiles-check で表示する"
 UPDATE_FOOTER = "詳細は dotfiles-check、更新は dotfiles-check update で行う"
@@ -1558,7 +1663,9 @@ def print_pins_markdown(items):
         if not details:
             continue
         mark = fence(details)
-        block = f"\n\n<details><summary>{md(item['label'])} の差分</summary>\n\n{mark}diff\n{details}\n{mark}\n\n</details>"
+        block = (
+            f"\n\n<details><summary>{md(item['label'])} の差分</summary>\n\n{mark}diff\n{details}\n{mark}\n\n</details>"
+        )
         omitted = f"\n\n{md(item['label'])} の差分は長いため省いた。直し方の行のリンクから確かめる。"
         text += block if fits(text + block) else omitted
     print(text)
@@ -1574,7 +1681,11 @@ def fits(text):
 # リポジトリを直す必要があるので含めない。
 
 
-UPDATE_GROUPS = [("dotfiles", "d", "dotfiles", "dotfiles"), ("tools", "t", "ツール", "tools"), ("brew", "b", "Homebrew", "tools")]
+UPDATE_GROUPS = [
+    ("dotfiles", "d", "dotfiles", "dotfiles"),
+    ("tools", "t", "ツール", "tools"),
+    ("brew", "b", "Homebrew", "tools"),
+]
 # 質問の選択肢に添える。Homebrew は版の公開日時を持たず、待ち期間なしで上げる。Claude Code も待たないが、
 # 起動すれば自分で上がる版へ上げるだけなので、ツールには添えない。
 UPDATE_NOTES = {"brew": "待ち期間なし"}
@@ -1587,8 +1698,16 @@ def update_groups(dotfiles, tools):
         if item["notice"] and item["notice"]["steps"]:
             found[2 if item["key"] == "brew" else 1].append(item["notice"])
     return [
-        {"id": gid, "letter": letter, "title": title, "icon": icon, "notices": notices, "keys": [k for n in notices for k in n["keys"]]}
-        for (gid, letter, title, icon), notices in zip(UPDATE_GROUPS, found) if notices
+        {
+            "id": gid,
+            "letter": letter,
+            "title": title,
+            "icon": icon,
+            "notices": notices,
+            "keys": [k for n in notices for k in n["keys"]],
+        }
+        for (gid, letter, title, icon), notices in zip(UPDATE_GROUPS, found)
+        if notices
     ]
 
 
@@ -1644,7 +1763,9 @@ def ask(groups, style, startup):
     """選ばれたグループを返す。n なら []、Enter や Ctrl-C など答えを得られなければ None。"""
     import termios
 
-    choices = [(g["letter"], g["title"] + (f"（{UPDATE_NOTES[g['id']]}）" if g["id"] in UPDATE_NOTES else "")) for g in groups]
+    choices = [
+        (g["letter"], g["title"] + (f"（{UPDATE_NOTES[g['id']]}）" if g["id"] in UPDATE_NOTES else "")) for g in groups
+    ]
     if len(groups) > 1:
         choices.append(("a", "すべて"))
     choices += [("n", "しない"), ("Enter", "あとで")]
@@ -1800,7 +1921,7 @@ class Live:
         self.last_draw, self.stale = now, False
         width = max((shutil.get_terminal_size().columns or 80) - 3, 10)
         # 改行の無い行は描かない。入力待ちのプロンプトなら、打った文字が窓の下に出て戻る位置がずれる。
-        shown = list(self.tail)[-self.height:]
+        shown = list(self.tail)[-self.height :]
         # 幅の数え違いがあっても折り返さないよう、描く間は自動の折り返しを止める。戻るのは描いた行数だけでよい。
         lines = "".join(f"\033[2m  {clip(line, width)}\033[0m\r\n" for line in shown)
         self.write(self.erase_sequence() + "\033[?7l" + lines + "\033[?7h")
@@ -1820,8 +1941,10 @@ class Live:
         間引いてまだ出していない行（プロンプトの直前の行やプロンプトそのもの）は、窓の下に書き足す。
         子が端末を raw にしていても崩れないよう、行は \r\n で終える。
         """
-        unseen = list(self.tail)[-(self.fed - self.shown):] if self.fed > self.shown else []
-        self.write(("\r\n" if newline else "") + "".join(f"\033[2m  {line}\033[0m\r\n" for line in unseen) + self.partial)
+        unseen = list(self.tail)[-(self.fed - self.shown) :] if self.fed > self.shown else []
+        self.write(
+            ("\r\n" if newline else "") + "".join(f"\033[2m  {line}\033[0m\r\n" for line in unseen) + self.partial
+        )
         # 書き足した最後の行が改行で終わっていなければ、続く結果の行の前に改行が要る。
         self.line_open = bool(self.partial)
         self.frozen, self.dirty, self.drawn, self.shown, self.partial = True, True, 0, self.fed, ""
@@ -1990,7 +2113,15 @@ def run_update(startup, only, style):
 def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_error):
     rows = notify_rows(repo, dotfiles, tools)
     if fetch_error:
-        rows.insert(0, ("warn", "error", dotfiles["label"], [f"リモートを取得できなかったため、前回取得した状態で判定した（{fetch_error}）"]))
+        rows.insert(
+            0,
+            (
+                "warn",
+                "error",
+                dotfiles["label"],
+                [f"リモートを取得できなかったため、前回取得した状態で判定した（{fetch_error}）"],
+            ),
+        )
     if rows:
         print(render(rows, style))
     if not groups:
@@ -2066,7 +2197,14 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
                 live.keep()
             print()
             for i, group in enumerate(chosen[done:]):
-                show(("warn", "error", group["title"], ["中断した" if done + i < started else "中断したため実行していない"]))
+                show(
+                    (
+                        "warn",
+                        "error",
+                        group["title"],
+                        ["中断した" if done + i < started else "中断したため実行していない"],
+                    )
+                )
         sync_pending(update_groups(check_dotfiles(), check_tools()))
     hints = []
     if "dotfiles" in updated:
@@ -2123,7 +2261,9 @@ def main():
             "終了コードは 0 = 更新した（更新が無いときも）、1 = 失敗したものがある、2 = 対象を選べなかった"
         ),
     )
-    update.add_argument("--only", type=parse_only, help="聞かずに更新する対象。dotfiles・tools・brew・all をカンマで並べる")
+    update.add_argument(
+        "--only", type=parse_only, help="聞かずに更新する対象。dotfiles・tools・brew・all をカンマで並べる"
+    )
     update.add_argument(
         "--startup",
         action="store_true",
@@ -2132,7 +2272,9 @@ def main():
             "n で断った内容は変わるまで聞かない。~/.zshenv.local などで export DOTFILES_UPDATE_ASK=always にすると毎回、never にすると聞かない"
         ),
     )
-    update.add_argument("--style", choices=["plain", "powerline"], default="plain", help="powerline は Nerd Font の記号と 256 色で描く")
+    update.add_argument(
+        "--style", choices=["plain", "powerline"], default="plain", help="powerline は Nerd Font の記号と 256 色で描く"
+    )
     sub.add_parser("refresh", help="リモートを取得する。notify がバックグラウンドで起動する")
     pins = sub.add_parser("pins", help="キャッシュを使わずに固定バージョンだけを確かめる。GitHub Actions から呼ぶ")
     pins.add_argument("--repo", default=".", help="走査するリポジトリ")

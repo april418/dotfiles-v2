@@ -25,6 +25,6 @@
     dest: /etc/motd
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   become: true
   when: ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat'

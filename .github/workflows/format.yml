@@ -1,0 +1,70 @@
+name: Format
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions: {}
+
+# 既定の bash -e には pipefail が無く、パイプの左の失敗が隠れる。
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # 版は手元に入れるロールの vars から読み、手元と揃える。固定の更新は dotfiles-check pins が知らせる。
+      - name: Read pinned versions
+        id: versions
+        run: |
+          for tool in prettier ruff shfmt; do
+            vars="ansible/roles/${tool}/vars/main.yml"
+            version="$(yq -r ".${tool}_version" "$vars")"
+            # 空のまま進むと、npm は版を付けずに最新を入れてしまう。
+            if [[ ! "$version" =~ ^v?[0-9]+(\.[0-9]+)+$ ]]; then
+              echo "::error file=${vars}::${tool}_version を版として読めない（${version}）"
+              exit 1
+            fi
+            echo "${tool}=${version}" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Install formatters
+        id: install
+        env:
+          PRETTIER_VERSION: ${{ steps.versions.outputs.prettier }}
+          RUFF_VERSION: ${{ steps.versions.outputs.ruff }}
+          SHFMT_VERSION: ${{ steps.versions.outputs.shfmt }}
+        run: |
+          npm install --global "prettier@${PRETTIER_VERSION}"
+          pipx install "ruff==${RUFF_VERSION}"
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL -o "$RUNNER_TEMP/bin/shfmt" \
+            "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
+          chmod +x "$RUNNER_TEMP/bin/shfmt"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # 1 つが落ちても残りの結果を出す。
+      - name: prettier
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: prettier --check .
+
+      # shfmt はディレクトリを辿ると .bashrc などの隠しファイルを飛ばすので、名指しで渡す。
+      # zsh のファイルは意味の変わる書き換えをするので渡さない。
+      - name: shfmt
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: git ls-files -z -- '*.sh' install '*/.bashrc' '*/.bash_profile' | xargs -0 shfmt --diff
+
+      - name: ruff
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: ruff format --check
