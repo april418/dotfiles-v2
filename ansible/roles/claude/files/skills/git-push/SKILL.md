@@ -290,7 +290,7 @@ package-manager skill のルール 2 と同じ確認先だが、優先順で 1 �
 semver の範囲として読めない指定は、どの版にも合わない。nvm は `.nvmrc` の `#` から後ろをコメントとして除き、`lts/*`・`node` などの alias を版に置き換えて読むが、ここではどちらもせずにそのまま `-r` に渡す。指定が無いものとしても扱わない。
 合う版が無ければ、nvm の行では見つからなかった扱いにして次の行へ進む。
 
-表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。
+表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。nvm の行は指定に合う版を選ぶが、後ろの行（`PNPM_HOME` / `BUN_INSTALL`）で見つけたときは node の版を指定と照らさない。
 corepack が置く pnpm / yarn と npm は `#!/usr/bin/env node` で始まり、フルパスで呼んでも `node` が `PATH` に無いと `env: node: No such file or directory` で exit 127 になる。`<dir>/node <dir>/npm run build` と node をフルパスで呼んでも、scripts の中の `node` が `sh: node: command not found` で落ちる（どちらも npm 11.12.1 / pnpm 12.6.0 で実測）。nvm の `<dir>` にはその版の `node` がある。
 シンボリックリンクは辿らない。nvm の `bin/pnpm` などは `../lib/node_modules/` の下へのリンクで、辿った先のディレクトリに `node` は無い。
 `node` があるかは確かめない。`<dir>` にも `PATH` にも `node` が無ければ（スタンドアロンの pnpm など）、node を呼ぶチェックは失敗し、ほかの失敗と同じく push を止める。
