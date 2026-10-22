@@ -96,7 +96,7 @@ untracked ファイルに `.env`、credentials、`node_modules`、一時ファ�
 
 ```bash
 # 下の表の 1・2 で決まる例。プロジェクトに合わせる
-pnpm run fix        # prettier / eslint --fix
+pnpm run fix        # prettier / eslint --fix。前置するかは下の pnpm の段落で決める
 cargo fmt
 ruff format .
 ```
@@ -118,6 +118,53 @@ ruff format .
 存在しないファイルを渡すと exit 2 になるので、`--ignore-unknown` を付けて削除したものを
 除く。`pre-commit run` はフックがファイルを書き換えると exit 1 になる。もう一度流して
 exit 0 なら整形済みである。
+
+**整形と型チェックを pnpm で流すとき（1 の `pnpm run <script>`、2・3 の `pnpm exec <tool>`、
+型チェックの `pnpm run typecheck` / `pnpm run type-check` / `pnpm exec tsc --noEmit` など）は、
+その前に `pnpm config get verifyDepsBeforeRun` を 1 回流す。出力が `undefined` なら、それらに
+`PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false` を前置する**
+（`PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm run fix`。package-manager skill の
+ルール 1 の例外）。`config get` が 0 以外で終わったときも前置し、`undefined` 以外なら
+前置せずにその値に従う。判定は git-push skill の Step 2 の `verifyDepsBeforeRun` の段落と
+同じで、値の読み方と版ごとの違いもそこにある。
+- `config get` は整形や型チェックと同じディレクトリで流す（`-C <dir>` を付けるなら同じ指定で）。
+  流すディレクトリが複数あれば、ディレクトリごとに 1 回流す。値は流したディレクトリから
+  見える pnpm-workspace.yaml で変わる
+- 前置するときは `pnpm run <script>` か `pnpm exec <tool>` の形で流し、`pnpm fix` のように省略しない
+- Makefile / Taskfile のターゲットと pre-commit には前置しない。プロジェクトが定めた入口である
+
+pnpm 11 以降はこの設定の既定が `install` で、`pnpm run` と `pnpm exec` は `node_modules` が
+ずれていれば install を流す。コミットの直前に `pnpm-lock.yaml` と `node_modules` を作ったり
+書き換えたりする（`pnpm run fix`・`pnpm fix`・`pnpm exec` のどれも 11.9.0 / 12.6.0 で実測）。
+store に無い依存は registry に取りに行く。
+
+pnpm で流したものが 0 以外で終わり、package.json の依存に宣言されたもの（ツール本体・
+プラグイン・設定パッケージ）が見つからないと出力にあれば、`node_modules` が無いか
+ロックファイルとずれていて、そのコマンドは流れていない。出力は次のような形になる。
+- `command not found`、`: not found`（dash）、`Command "<tool>" not found`（`pnpm exec`）
+- `Cannot find module '<pkg>'`、`Cannot find package '<pkg>'`
+- `couldn't find the plugin`、`couldn't find the config`（ESLint）
+
+型チェックの診断（tsc の `TS2307` など）は、見つからないものが package.json に宣言された
+パッケージのときだけ当たる。相対パス・パスのエイリアス・宣言されていないパッケージの
+import はコードの誤りで、この段落にも下の段落にも当たらない。整形や型チェックのツール本体と
+そのプラグイン・設定パッケージが見つからず、package.json に宣言されていなければ、下の
+「手がかりのツールが入っていなくて流せないとき」に従う。
+出力に `ERR_PNPM_VERIFY_DEPS_BEFORE_RUN` か `Would you like to run "pnpm install"` が出たとき
+（`error` / `prompt` の指定。10.33.0 の `prompt` はスクリプトを流さずに exit 0 で終わる）も、
+そのコマンドは流れていない。
+依存が見つからないときと pnpm が流さなかったときは、対話時は `AskUserQuestion` で出力の
+該当行を添えて「`pnpm install` を流してから流し直す」か「流さずにコミットする」かを聞く。
+非対話時は流さずにコミットし、最終応答に流していないコマンドと出力の該当行を 1 行書く。
+前置を外して流し直さない。
+0 以外で終わったことだけでは、流れていないとみなさない。`eslint --fix` は、直せない指摘が
+残ると書き換えたうえで 0 以外を返す。
+
+型チェックの後（コミットの直前）に `git status --porcelain --untracked-files=normal` を流し、
+コミット計画に無いロックファイル（`pnpm-lock.yaml` など）の行があれば、計画に足さずに
+ユーザーに伝える。整形の前からあった変更かは区別しないが、Step 2 の確認で外すと決めた
+ものは聞かない。対話時は `AskUserQuestion` で計画に足すか残すかを聞き、非対話時は残して
+最終応答に書く。残すときは、次の git-push が Step 1 で止まることも添える。
 
 **手がかりが 1 つも無い、または手がかりのツールが入っていなくて流せないときは、
 `AskUserQuestion` で「整形せずにコミットする」か「整形コマンドを指定する」かを
@@ -233,6 +280,10 @@ EOF
 # 4. 全コミット完了後、検証
 git diff $STASH_OID HEAD
 # → 空なら変更漏れなし。差分が出たら漏れまたは余計な変更がある。
+# 計画に入れずに残したファイル（Step 2.5 のロックファイルなど）があれば、それを除いて見る。
+# パスごとに ':(top,exclude)<パス>' を並べる。<パス> は git status --porcelain が出した
+# リポジトリルートからのパス:
+# git diff $STASH_OID HEAD -- ':(top,exclude)<パス 1>' ':(top,exclude)<パス 2>'
 ```
 
 ```bash
@@ -302,7 +353,7 @@ git stash drop
 
 ## 品質チェック
 
-- **最後の編集の後に整形コマンドを流したか**（Step 2.5。整形コマンドが無ければ、ユーザーに確認したか。非対話なら、流していないことを最終応答に書いたか）
+- **最後の編集の後に整形コマンドを流したか**（Step 2.5。整形コマンドが無ければ、ユーザーに確認したか。非対話なら、流していないことを最終応答に書いたか。整形や型チェックを pnpm で流したなら、`pnpm config get verifyDepsBeforeRun` を見て前置を決めたか）
 - このコミットは単独で revert 可能か
 - 最小の論理単位になっているか
 - 変更の背景・意図が body に明確に書かれているか（自明な変更を除く）
