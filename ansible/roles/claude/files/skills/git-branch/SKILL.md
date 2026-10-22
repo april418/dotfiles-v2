@@ -194,7 +194,7 @@ git log --oneline <base-ref>..HEAD
 | 同じブランチの上で rebase / stash pop をした | `git log --oneline <base-ref>..HEAD` がそのブランチの作業だけであること |
 | 統合ブランチへ切り替えた（pull の前後） | `git status -sb` の 1 行目のブランチ名が切り替え先で、`[ahead N]` が無いこと（統合ブランチに自分のコミットは無いはず） |
 | `origin/<base>` に detach した | `git branch --show-current` の出力が空で、`git rev-parse HEAD origin/<base>` の 2 行が同じであること |
-| 別の作業ブランチへ切り替えた | `git branch --show-current` が切り替え先であることと、`git log --oneline @{upstream}..HEAD` が push 前の自分のコミットだけであること（upstream が無ければ `<base-ref>..HEAD`） |
+| 別の作業ブランチへ切り替えた | `git branch --show-current` が切り替え先であることと、`git log --oneline '@{upstream}..HEAD'` が push 前の自分のコミットだけであること（upstream が無ければ `<base-ref>..HEAD`） |
 
 切り替えでも要るのは、**直前のコマンドが失敗していても気づけない**ため。
 たとえば未コミット変更があると `git switch <base>` は失敗するが、続けて
