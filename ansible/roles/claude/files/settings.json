@@ -141,6 +141,12 @@
       "Bash(which:*)"
     ],
     "ask": [
+      "Bash(git fetch *--upl*)",
+      "Bash(git ls-remote *--exe*)",
+      "Bash(git ls-remote *--u*)",
+      "Bash(git pull *--upl*)",
+      "Bash(git rebase *--ex*)",
+      "Bash(git rebase *-x*)",
       "Bash(git worktree prune:*)",
       "Bash(git worktree remove:*)"
     ],
