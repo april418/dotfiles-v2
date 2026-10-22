@@ -19,7 +19,6 @@
       "Bash(cp:*)",
       "Bash(date:*)",
       "Bash(df:*)",
-      "Bash(docker:*)",
       "Bash(du:*)",
       "Bash(echo:*)",
       "Bash(find:*)",
@@ -124,14 +123,11 @@
       "Bash(sort:*)",
       "Bash(source:*)",
       "Bash(tail:*)",
-      "Bash(tar:*)",
       "Bash(touch:*)",
       "Bash(tree:*)",
       "Bash(unzip:*)",
-      "Bash(uv:*)",
       "Bash(wc:*)",
-      "Bash(which:*)",
-      "Bash(xargs:*)"
+      "Bash(which:*)"
     ],
     "ask": [
       "Bash(git worktree prune:*)",
