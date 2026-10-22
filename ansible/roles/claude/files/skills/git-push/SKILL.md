@@ -62,6 +62,7 @@ git remote
    ただし今のブランチが統合ブランチか detached HEAD（2.）なら、1. では聞かず、2. の確認（作業ブランチへ移す / 中断）を先に出す。統合ブランチや detached HEAD でコミットすると git-workflow のルール 2 に反する。未コミットの変更は移った先へそのまま移り、やり直した Step 1 で扱う。
    非対話で作業ブランチへの force push を頼まれたとき（2.）も、1. の方針は出さずに 2. で止め、未コミットの変更は検出内容として伝える。
    未追跡のファイルには無視する選択肢も出す。生成物は `.gitignore` に足してコミットする（git-commit skill。このコミットも push 対象に入る）。`.gitignore` を書き換えただけでは ` M .gitignore` が残る。自分だけが作るファイル（メモなど）は `.git/info/exclude` に足す（コミットは要らない）。
+   ロックファイル（Step 3 の「チェックが作った未追跡のファイル」の段落で決めたもの）には `.gitignore` の選択肢を出さず、コミットするか `.git/info/exclude` に足すかを出す。
    stash は `git stash push -u -m "<branch>: git-push の前に退避 (<退避したパス>)"` にする。`-u` が無いと未追跡のファイルを退避せず、未追跡のファイルだけのときは `No local changes to save` と出して exit 0 で終わる（Git 2.54.0 で実測）。メッセージにパスを入れるのは、同じ文言の stash が 2 つ並ぶと `git stash list` で見分けられないため。
    片付けたら Step 1 からやり直す。stash は push の後も戻さず、退避したときのメッセージと戻し方を出力の「作業ツリー」節に書く。戻さないのは、チェックが作り直したファイルとパスが重なると、pop が一部だけ戻して exit 1 になり stash も残るためである。
 2. **push 先のリモート・ブランチ** — まず `git branch --show-current` が空でないことを確かめる。
@@ -294,7 +295,7 @@ package-manager skill のルール 2 と同じ確認先だが、優先順で 1 �
 semver の範囲として読めない指定は、どの版にも合わない。nvm は `.nvmrc` の `#` から後ろをコメントとして除き、`lts/*`・`node` などの alias を版に置き換えて読むが、ここではどちらもせずにそのまま `-r` に渡す。指定が無いものとしても扱わない。
 合う版が無ければ、nvm の行では見つからなかった扱いにして次の行へ進む。
 
-表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。nvm の行は指定に合う版を選ぶが、後ろの行（`PNPM_HOME` / `BUN_INSTALL`）で見つけたときは node の版を指定と照らさない。
+表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表の後の `pnpm config get verifyDepsBeforeRun`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。nvm の行は指定に合う版を選ぶが、後ろの行（`PNPM_HOME` / `BUN_INSTALL`）で見つけたときは node の版を指定と照らさない。
 corepack が置く pnpm / yarn と npm は `#!/usr/bin/env node` で始まり、フルパスで呼んでも `node` が `PATH` に無いと `env: node: No such file or directory` で exit 127 になる。`<dir>/node <dir>/npm run build` と node をフルパスで呼んでも、scripts の中の `node` が `sh: node: command not found` で落ちる（どちらも npm 11.12.1 / pnpm 12.6.0 で実測）。nvm の `<dir>` にはその版の `node` がある。
 シンボリックリンクは辿らない。nvm の `bin/pnpm` などは `../lib/node_modules/` の下へのリンクで、辿った先のディレクトリに `node` は無い。
 `node` があるかは確かめない。`<dir>` にも `PATH` にも `node` が無ければ（スタンドアロンの pnpm など）、node を呼ぶチェックは失敗し、ほかの失敗と同じく push を止める。
@@ -353,11 +354,20 @@ semver 7.7.4 では `lts/*`・`node`・`24 # pinned` が `null` を出し、読�
 
 `scripts.typecheck` と `scripts.type-check` が両方定義されていれば両方流す。中身が違いうるので、片方だけでは取りこぼす。
 
+**PM が pnpm で、表の `pnpm run` のチェック（audit 以外）を 1 つでも流すなら、その前に `pnpm config get verifyDepsBeforeRun` を 1 回流す。出力が `undefined` なら、`pnpm run` のチェックに `PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false` を前置して流す**（package-manager skill のルール 1 の例外）。`<dir>` を足すときは `PATH="<dir>:$PATH" PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm run build` と並べる。
+pnpm 11 以降はこの設定の既定が `install` で、`pnpm run` が `node_modules` を確かめ、ずれていれば install を流す。依存もロックファイルも無ければ `pnpm-lock.yaml` と `node_modules` を作り、package.json がロックファイルより新しければ `pnpm-lock.yaml` を書き換え、store に無い依存は registry へ取りに行く（11.9.0 は store にあっても supply-chain の検証でメタデータを取りに行く）。registry に届かなければ、12.6.0 は 1 分以上、11.9.0 は約 3 分 30 秒再試行してから exit 1 で終わり、スクリプトは流れない（どれもプロジェクトルートの `pnpm run build` を 11.9.0 / 12.6.0 で実測。10.33.0 は既定が `false` で何もしない）。`pnpm audit` は install を流さない。
+切ると、package.json だけ変えてロックファイルを直し忘れたコミットも、手元のチェックは通りうる（既定の install ならロックファイルを書き換え、Step 3 で止まる）。この食い違いは npm と pnpm 10 でも同じで、CI の frozen install が見つける（pnpm は `ERR_PNPM_OUTDATED_LOCKFILE`。11.9.0 / 12.6.0 で `CI=true` の `pnpm run build` が同じエラーで exit 1）。
+Makefile / Taskfile のターゲットには前置しない。プロジェクトが定めた入口なので、中の `pnpm run` が作ったり書き換えたりしたファイルは、ほかのチェックが作ったファイルと同じく扱う。
+`config get` は、その版の `run` が従う指定の値を、設定ファイルと環境変数のどちらから来たものでも出し、どこにも無ければ `undefined` を出す（10.33.0 / 11.9.0 / 12.6.0 で実測。pnpm-workspace.yaml のキーは camelCase で書いたもの。10.33.0 は kebab-case のキーも出すが `run` は従わず、既定が `false` なので結果は同じ）。`undefined` 以外なら前置せずにその値に従い、環境変数は別に調べない。11.9.0 は環境変数の `error` / `warn` を読まずに install するが、`config get` もそれを出さないので前置され、install は止まる。`config get` が 0 以外で終わったら前置して流す。
+`error` と、11.9.0 / 12.6.0 で端末が無いときの `prompt` は、`node_modules` がずれていると `ERR_PNPM_VERIFY_DEPS_BEFORE_RUN` で exit 1 になる。これもほかの失敗と同じく失敗である。10.33.0 の `prompt` は答えを読めず、スクリプトを流さないまま exit 0 で終わる。出力に `Would you like to run "pnpm install"` が出たら、exit 0 でも `✗ Node.js build（失敗。verifyDepsBeforeRun の prompt に答えられず、スクリプトが流れなかった）` のように失敗とする。
+CLI の `--config.verify-deps-before-run=false` は使わない。`run build` の後ろに置くとスクリプトの引数になって効かず、ルール 1 が禁止する形そのものでもある。`npm_config_verify_deps_before_run` は 11.9.0 / 12.6.0 が読まない。
+前置して流したチェックが失敗し、依存を宣言していて（下の audit の段落に並べた package.json と pnpm-workspace.yaml の欄のどれかが空でない）、プロジェクトルートに `node_modules` が無ければ、失敗の行の括弧の `失敗。` の直後（ほかの注記より前）に `node_modules が無い。pnpm install を流してから push し直す` を続ける（`✗ Node.js build（失敗。node_modules が無い。pnpm install を流してから push し直す）`）。依存のコマンドは `sh: tsc: command not found`（exit 127）で落ち、12.6.0 は 10.33.0 と違って `node_modules` が無いことを知らせない。
+
 **`scripts.test` の値が `npm init` / `pnpm init` の既定の `echo "Error: no test specified" && exit 1` と完全に一致するときは、定義されていないものとして扱う。** package.json 上は `"test": "echo \"Error: no test specified\" && exit 1"` と書かれている。test 行の条件を満たさないので流さず、検出されなかったチェックと同じく push の可否の判定にも入れない。結果の出力には `— Node.js test（scripts.test が npm init の既定のままのためスキップ）` と書き、前段の失敗で打ち切ったときもこの書き方を変えない。
 空白やコマンドを足したもの（末尾に `&& jest` を足したもの等）は定義されているものとして流し、0 でない終了コードは失敗である。判定は PM によらない（`npm init` で作ってから別の PM に移したプロジェクトにも残る）。
 
 **ロックファイル（`bun.lock` / `bun.lockb` / `pnpm-lock.yaml` / `yarn.lock` / `package-lock.json` / `npm-shrinkwrap.json`）がどれも無く、`package.json` の `dependencies` / `devDependencies` / `optionalDependencies` / `peerDependencies` / `workspaces` と `pnpm-workspace.yaml` の `packages` もどれも無いか空のときは、audit を流さない。** ロックファイルが無いと、`npm audit` は `ENOLOCK`、`pnpm audit` は `ERR_PNPM_AUDIT_NO_LOCKFILE` で exit 1 になる。依存が無ければ、ロックファイルを作って流しても脆弱性 0 件（exit 0）で終わる。検出されなかったチェックと同じく push の可否の判定には入れず、結果の出力には `— Node.js audit（ロックファイルも依存も無いためスキップ）` と書く。前段の失敗で打ち切ったときもこの書き方を変えない。
-ロックファイルが無くても上のどれかが空でなければ流し、ロックファイルが無いことによる失敗も失敗である。ロックファイルを作るコマンド（`npm audit` のエラーが案内する `npm i --package-lock-only`、`pnpm install --lockfile-only` 等）はスキルから流さない（未コミットのファイルが増える）。
+ロックファイルが無くても上のどれかが空でなければ流し、ロックファイルが無いことによる失敗も失敗である。ロックファイルを作るコマンド（`npm audit` のエラーが案内する `npm i --package-lock-only`、`pnpm install --lockfile-only` 等）はスキルから流さない（未コミットのファイルが増える）。pnpm 11 以降の `pnpm run` が既定で流す install は、上の `verifyDepsBeforeRun` の段落のとおりに切る。
 
 **Python プロジェクト（`pyproject.toml` / `setup.py` / `setup.cfg` が存在）:**
 
@@ -456,7 +466,7 @@ git status --porcelain --untracked-files=no
 ```
 
 出力が空でなければ、チェックが追跡ファイルを書き換えている（`eslint --fix` や整形ツールなど）。通ったのは書き換えた後の作業ツリーで、push するコミットではないので、どのモードでも push しない。書き換わったファイルを報告し、コミットしてから push し直すか中断するかを提示する（対話時は `AskUserQuestion`、非対話時は最終応答）。push を頼まれていてもこの問いは省略しない。push の依頼は、書き換わったファイルのコミットまでは含まない。
-提示する前に下の「チェックが作った未追跡のファイル」を流し、`??` の行があれば、その扱い（`.gitignore` に足して一緒にコミットする / `.git/info/exclude` に足す）も同じ確認で聞く。聞かずにやり直すと、Step 1 の 1. がそのファイルで止まる。stash は出さない。やり直しで流すチェックが同じファイルを作り直し、後で戻すときに衝突する。
+提示する前に下の「チェックが作った未追跡のファイル」を流し、`??` の行があれば、その扱い（`.gitignore` に足して一緒にコミットする / `.git/info/exclude` に足す。ロックファイルには `.gitignore` の代わりに「そのまま一緒にコミットする」を出す）も同じ確認で聞く。聞かずにやり直すと、Step 1 の 1. がそのファイルで止まる。stash は出さない。やり直しで流すチェックが同じファイルを作り直し、後で戻すときに衝突する。
 コミットしてから push し直すと答えたら、書き換わったファイルを git-commit skill でコミットし、Step 1 からやり直す（チェックも流し直す）。push 対象のコミットが増えるうえ、コミット時のフックが中身を変えうるので、通ったときの作業ツリーをそのまま push できるとはみなさない。
 未追跡のファイルは見ない。チェックを流す前からあった未追跡のファイルは Step 1 で止めているので、この時点にある未追跡のファイルはチェックが作ったもの（ビルドの生成物など）で、チェックした内容と push するコミットの違いにはならない。
 
@@ -490,6 +500,7 @@ git status --porcelain --untracked-files=normal
 ```
 
 `??` の行は、チェックが作り、無視されていない生成物である。作業ツリーに残り、次の push の Step 1 で止まるので、報告に添えて `.gitignore` に足してコミットするよう勧める。
+ただしロックファイル（パスの末尾のファイル名が、Node.js の節の audit の段落に並べたもののどれか）は `.gitignore` に足すよう勧めない。`.gitignore` に足すと、ロックファイルをコミットしない方針をプロジェクトに入れることになり、CI と手元で依存の版が揃わなくなる。そのままコミットするか `.git/info/exclude` に足すかを添え、どちらにするかはユーザーに任せる。Step 2 で決めた PM のものとは限らない（make のターゲットが別の PM で install したものなど）。
 
 ### force push について
 
@@ -608,10 +619,11 @@ Step 1 で止めたときと PM の確認で中断したときは、チェック
 | 節 | 行 | 書くとき |
 | --- | --- | --- |
 | 作業ツリー | `` 書き換えたファイル: `<パス>` `` | 失敗時の優先規則 2 か Step 3 の取り直しで、`git status --porcelain --untracked-files=no` が空でなかった（1 ファイル 1 行） |
-| 作業ツリー | `` 未追跡のファイル: `<パス>`（`.gitignore` に足してコミットすることを勧める） `` | Step 3 の「チェックが作った未追跡のファイル」で `??` の行が出た（1 ファイル 1 行） |
+| 作業ツリー | `` 未追跡のファイル: `<パス>`（`.gitignore` に足してコミットすることを勧める） `` | Step 3 の「チェックが作った未追跡のファイル」で `??` の行が出た（1 ファイル 1 行。ロックファイルは次の行） |
+| 作業ツリー | `` 未追跡のファイル: `<パス>`（ロックファイルのため `.gitignore` には足さない。コミットするか `.git/info/exclude` に足す） `` | 同じく `??` の行が出て、それがロックファイルだった（1 ファイル 1 行） |
 | 作業ツリー | `` stash: `<退避したときのメッセージ>`（戻し方: `git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`） `` | Step 1 の確認でユーザーが stash を選んだ |
 | 作業ツリー | `` 統合ブランチ: `<統合ブランチ>` に、`<作業ブランチ>` へ移したコミットが <N> 件残っている（消すには git-workflow のルール 6 の承認が要る） `` | Step 1 で統合ブランチから作業ブランチへ移し、移す前に 2. で数えた件数 <N> が 1 以上だった |
-| 次の手 | 番号付きの選択肢。推奨するものを 1. に置き、末尾に `（推奨）` を付ける | 非対話で Step 1 の中止条件か Step 3 の書き換えを検出した。対話時は `AskUserQuestion` で聞き終えているので書かない |
+| 次の手 | 番号付きの選択肢。推奨するものを 1. に置き、末尾に `（推奨）` を付ける。ロックファイルの扱いだけが違う選択肢には付けない（Step 3 の「チェックが作った未追跡のファイル」） | 非対話で Step 1 の中止条件か Step 3 の書き換えを検出した。対話時は `AskUserQuestion` で聞き終えているので書かない |
 
 Step 1 からやり直したときは、最後の回の結果だけを書く。「作業ツリー」節の stash と統合ブランチの行は、前の回のものも書く。
 
