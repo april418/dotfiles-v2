@@ -96,6 +96,7 @@
       "Bash(git status:*)",
       "Bash(git switch:*)",
       "Bash(git tag:*)",
+      "Bash(git worktree:*)",
       "Bash(head:*)",
       "Bash(jot:*)",
       "Bash(ls:*)",
@@ -130,6 +131,10 @@
       "Bash(wc:*)",
       "Bash(which:*)",
       "Bash(xargs:*)"
+    ],
+    "ask": [
+      "Bash(git worktree prune:*)",
+      "Bash(git worktree remove:*)"
     ],
     "deny": [
       "Bash(chmod:*)",
