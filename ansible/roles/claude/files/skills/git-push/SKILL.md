@@ -294,7 +294,7 @@ package-manager skill のルール 2 と同じ確認先だが、優先順で 1 �
 semver の範囲として読めない指定は、どの版にも合わない。nvm は `.nvmrc` の `#` から後ろをコメントとして除き、`lts/*`・`node` などの alias を版に置き換えて読むが、ここではどちらもせずにそのまま `-r` に渡す。指定が無いものとしても扱わない。
 合う版が無ければ、nvm の行では見つからなかった扱いにして次の行へ進む。
 
-表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。nvm の行は指定に合う版を選ぶが、後ろの行（`PNPM_HOME` / `BUN_INSTALL`）で見つけたときは node の版を指定と照らさない。
+表の場所で見つけたら、その実行ファイルのあるディレクトリを `<dir>` とし、以降 PM と node を呼ぶコマンド（`yarn --version`、下の表の後の `pnpm config get verifyDepsBeforeRun`、下の表のチェック、pnpm 11 での流し直しとその前の Node.js の版の確認）は `PATH="<dir>:$PATH" <pm> run build` のように `<dir>` を `PATH` の先頭に足して流す。nvm の行は指定に合う版を選ぶが、後ろの行（`PNPM_HOME` / `BUN_INSTALL`）で見つけたときは node の版を指定と照らさない。
 corepack が置く pnpm / yarn と npm は `#!/usr/bin/env node` で始まり、フルパスで呼んでも `node` が `PATH` に無いと `env: node: No such file or directory` で exit 127 になる。`<dir>/node <dir>/npm run build` と node をフルパスで呼んでも、scripts の中の `node` が `sh: node: command not found` で落ちる（どちらも npm 11.12.1 / pnpm 12.6.0 で実測）。nvm の `<dir>` にはその版の `node` がある。
 シンボリックリンクは辿らない。nvm の `bin/pnpm` などは `../lib/node_modules/` の下へのリンクで、辿った先のディレクトリに `node` は無い。
 `node` があるかは確かめない。`<dir>` にも `PATH` にも `node` が無ければ（スタンドアロンの pnpm など）、node を呼ぶチェックは失敗し、ほかの失敗と同じく push を止める。
@@ -353,11 +353,20 @@ semver 7.7.4 では `lts/*`・`node`・`24 # pinned` が `null` を出し、読�
 
 `scripts.typecheck` と `scripts.type-check` が両方定義されていれば両方流す。中身が違いうるので、片方だけでは取りこぼす。
 
+**PM が pnpm で、表の `pnpm run` のチェック（audit 以外）を 1 つでも流すなら、その前に `pnpm config get verifyDepsBeforeRun` を 1 回流す。出力が `undefined` なら、`pnpm run` のチェックに `PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false` を前置して流す**（package-manager skill のルール 1 の例外）。`<dir>` を足すときは `PATH="<dir>:$PATH" PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm run build` と並べる。
+pnpm 11 以降はこの設定の既定が `install` で、`pnpm run` が `node_modules` を確かめ、ずれていれば install を流す。依存もロックファイルも無ければ `pnpm-lock.yaml` と `node_modules` を作り、package.json がロックファイルより新しければ `pnpm-lock.yaml` を書き換え、store に無い依存は registry へ取りに行く（11.9.0 は store にあっても supply-chain の検証でメタデータを取りに行く）。registry に届かなければ、12.6.0 は 1 分以上、11.9.0 は約 3 分 30 秒再試行してから exit 1 で終わり、スクリプトは流れない（どれもプロジェクトルートの `pnpm run build` を 11.9.0 / 12.6.0 で実測。10.33.0 は既定が `false` で何もしない）。`pnpm audit` は install を流さない。
+切ると、package.json だけ変えてロックファイルを直し忘れたコミットも、手元のチェックは通りうる（既定の install ならロックファイルを書き換え、Step 3 で止まる）。この食い違いは npm と pnpm 10 でも同じで、CI の frozen install が見つける（pnpm は `ERR_PNPM_OUTDATED_LOCKFILE`。11.9.0 / 12.6.0 で `CI=true` の `pnpm run build` が同じエラーで exit 1）。
+Makefile / Taskfile のターゲットには前置しない。プロジェクトが定めた入口なので、中の `pnpm run` が作ったり書き換えたりしたファイルは、ほかのチェックが作ったファイルと同じく扱う。
+`config get` は、その版の `run` が従う指定の値を、設定ファイルと環境変数のどちらから来たものでも出し、どこにも無ければ `undefined` を出す（10.33.0 / 11.9.0 / 12.6.0 で実測。pnpm-workspace.yaml のキーは camelCase で書いたもの。10.33.0 は kebab-case のキーも出すが `run` は従わず、既定が `false` なので結果は同じ）。`undefined` 以外なら前置せずにその値に従い、環境変数は別に調べない。11.9.0 は環境変数の `error` / `warn` を読まずに install するが、`config get` もそれを出さないので前置され、install は止まる。`config get` が 0 以外で終わったら前置して流す。
+`error` と、11.9.0 / 12.6.0 で端末が無いときの `prompt` は、`node_modules` がずれていると `ERR_PNPM_VERIFY_DEPS_BEFORE_RUN` で exit 1 になる。これもほかの失敗と同じく失敗である。10.33.0 の `prompt` は答えを読めず、スクリプトを流さないまま exit 0 で終わる。出力に `Would you like to run "pnpm install"` が出たら、exit 0 でも `✗ Node.js build（失敗。verifyDepsBeforeRun の prompt に答えられず、スクリプトが流れなかった）` のように失敗とする。
+CLI の `--config.verify-deps-before-run=false` は使わない。`run build` の後ろに置くとスクリプトの引数になって効かず、ルール 1 が禁止する形そのものでもある。`npm_config_verify_deps_before_run` は 11.9.0 / 12.6.0 が読まない。
+前置して流したチェックが失敗し、依存を宣言していて（下の audit の段落に並べた package.json と pnpm-workspace.yaml の欄のどれかが空でない）、プロジェクトルートに `node_modules` が無ければ、失敗の行の括弧の `失敗。` の直後（ほかの注記より前）に `node_modules が無い。pnpm install を流してから push し直す` を続ける（`✗ Node.js build（失敗。node_modules が無い。pnpm install を流してから push し直す）`）。依存のコマンドは `sh: tsc: command not found`（exit 127）で落ち、12.6.0 は 10.33.0 と違って `node_modules` が無いことを知らせない。
+
 **`scripts.test` の値が `npm init` / `pnpm init` の既定の `echo "Error: no test specified" && exit 1` と完全に一致するときは、定義されていないものとして扱う。** package.json 上は `"test": "echo \"Error: no test specified\" && exit 1"` と書かれている。test 行の条件を満たさないので流さず、検出されなかったチェックと同じく push の可否の判定にも入れない。結果の出力には `— Node.js test（scripts.test が npm init の既定のままのためスキップ）` と書き、前段の失敗で打ち切ったときもこの書き方を変えない。
 空白やコマンドを足したもの（末尾に `&& jest` を足したもの等）は定義されているものとして流し、0 でない終了コードは失敗である。判定は PM によらない（`npm init` で作ってから別の PM に移したプロジェクトにも残る）。
 
 **ロックファイル（`bun.lock` / `bun.lockb` / `pnpm-lock.yaml` / `yarn.lock` / `package-lock.json` / `npm-shrinkwrap.json`）がどれも無く、`package.json` の `dependencies` / `devDependencies` / `optionalDependencies` / `peerDependencies` / `workspaces` と `pnpm-workspace.yaml` の `packages` もどれも無いか空のときは、audit を流さない。** ロックファイルが無いと、`npm audit` は `ENOLOCK`、`pnpm audit` は `ERR_PNPM_AUDIT_NO_LOCKFILE` で exit 1 になる。依存が無ければ、ロックファイルを作って流しても脆弱性 0 件（exit 0）で終わる。検出されなかったチェックと同じく push の可否の判定には入れず、結果の出力には `— Node.js audit（ロックファイルも依存も無いためスキップ）` と書く。前段の失敗で打ち切ったときもこの書き方を変えない。
-ロックファイルが無くても上のどれかが空でなければ流し、ロックファイルが無いことによる失敗も失敗である。ロックファイルを作るコマンド（`npm audit` のエラーが案内する `npm i --package-lock-only`、`pnpm install --lockfile-only` 等）はスキルから流さない（未コミットのファイルが増える）。
+ロックファイルが無くても上のどれかが空でなければ流し、ロックファイルが無いことによる失敗も失敗である。ロックファイルを作るコマンド（`npm audit` のエラーが案内する `npm i --package-lock-only`、`pnpm install --lockfile-only` 等）はスキルから流さない（未コミットのファイルが増える）。pnpm 11 以降の `pnpm run` が既定で流す install は、上の `verifyDepsBeforeRun` の段落のとおりに切る。
 
 **Python プロジェクト（`pyproject.toml` / `setup.py` / `setup.cfg` が存在）:**
 

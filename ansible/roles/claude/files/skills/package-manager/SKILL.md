@@ -74,6 +74,10 @@ uv sync --exclude-newer=9999-01-01
 一時的な CLI フラグでの無効化ではなく、プロジェクトの方針として変更する。
 変更の妥当性に疑問がある場合は `AskUserQuestion` でユーザーに確認する。
 
+git-push skill の push 前のチェックで `pnpm run` に `PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false` を前置することに限り、**ルール 1 の例外** とする。
+付ける条件は git-push の Step 2 にある。`pnpm config get verifyDepsBeforeRun` が指定の値を出せば付けないので、設定ファイルの指定は上書きしない。
+これで止めるのは、pnpm 11 以降の既定（`install`）のもとで push 前のチェックがロックファイルと `node_modules` を書き換え、registry から依存を取ってくることである。
+
 ---
 
 ## ルール 2: 正しいランタイムバージョンを使用する
@@ -246,6 +250,6 @@ pnpm dlx pnpm@11 --pm-on-fail=ignore audit --prod
 パッケージマネージャーを操作する前に、以下を自問する:
 
 - [ ] ランタイムバージョンはプロジェクトの要求と一致しているか？（git-push の push 前のチェックでは、ルール 2 の例外のとおり git-push の手順に従う）
-- [ ] CLI フラグでプロジェクト設定やグローバル設定をバイパスしていないか？
+- [ ] CLI フラグでプロジェクト設定やグローバル設定をバイパスしていないか？（git-push の push 前のチェックの `verifyDepsBeforeRun` は、ルール 1 の例外のとおり git-push の手順に従う）
 - [ ] lockfile の再生成が必要な変更をしていないか？
 - [ ] 使用しているパッケージマネージャーはプロジェクトのものと一致しているか？
