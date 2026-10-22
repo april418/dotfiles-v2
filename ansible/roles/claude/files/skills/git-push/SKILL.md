@@ -78,7 +78,7 @@ git remote
    で実測）。`git remote` が 2 行以上なら添えない。
    detached HEAD と統合ブランチで出す方針は、作業ブランチへ移す（下の「作業ブランチへ移す」）か中断で、
    統合ブランチへ push する選択肢は出さない。
-   止める前に、push していないコミットを数える。統合ブランチでは `git log --oneline @{upstream}..HEAD`
+   止める前に、push していないコミットを数える。統合ブランチでは `git log --oneline '@{upstream}..HEAD'`
    （upstream が無いか `[gone]` なら `git log --oneline HEAD --not --remotes`）、detached HEAD では
    `git log --oneline HEAD --not --remotes` で数える。統合ブランチで upstream と比べるのは、ほかの名前で
    push 済みのコミットも統合ブランチには残るからである。0 件で 1. の出力も空なら、移しても push する
@@ -172,9 +172,13 @@ git remote
    （push 済みのブランチから切ったブランチは、0 件でも base より先のコミットを持つ）。
 
    ```bash
-   git log --oneline @{upstream}..HEAD               # 表の 1 行目（upstream の remote へ push する）
+   git log --oneline '@{upstream}..HEAD'             # 表の 1 行目（upstream の remote へ push する）
    git log --oneline HEAD --not --remotes=<remote>   # ほかの行（初回 push、[gone]、upstream と違う remote）。<remote> は push 先
    ```
+
+   `@{upstream}..HEAD` を引用符で囲むのは、囲まないと `Bash(git log:*)` の allow があっても規則で通らず、auto mode では
+   classifier に回るためである。回ったのは `@{...}` と `..` が 1 つの語に並ぶ形（`HEAD..@{u}` も）で、`@{upstream}` や
+   `stash@{0}` だけなら囲まなくても通った（Claude Code 2.1.304 で実測）。
 
    初回 push で `git log -5` のように件数で区切ると、自分のコミットが 0 件でもベースの
    コミットが並び、0 件を判定できない。`--not --remotes=<remote>` はその remote のどのブランチにも
