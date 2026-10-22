@@ -22,7 +22,6 @@
       "Bash(docker:*)",
       "Bash(du:*)",
       "Bash(echo:*)",
-      "Bash(env:*)",
       "Bash(find:*)",
       "Bash(gcloud auth list:*)",
       "Bash(gcloud compute instances describe:*)",
