@@ -6,6 +6,19 @@
 #                        |_____|_|
 #
 
+# Accounts whose login shell chsh cannot change (e.g. GCE OS Login) still start bash,
+# so hand interactive logins over to zsh. login and sshd prefix argv0 with "-",
+# which an explicit `bash -l` does not; SHLVL cannot tell them apart on bash 5.
+_zsh="$(command -v zsh)"
+if [[ $- == *i* && $0 == -* && -x $_zsh ]]; then
+  # A failed exec in a startup file exits the login shell unless execfail is set.
+  shopt -s execfail
+  # screen spawns $SHELL, so zsh has to see itself there.
+  SHELL="$_zsh" exec "$_zsh" -l
+  shopt -u execfail
+fi
+unset _zsh
+
 # User specific environment and startup programs
 PATH="$PATH:$HOME/.local/bin"
 export PATH
