@@ -1,3 +1,7 @@
-# dotfiles-check は拡張子が無いので名指しする。既定の対象にある Markdown は prettier に任せる。
-include = ["*.py", "ansible/roles/dotfiles/files/dotfiles-check"]
+# dotfiles-check と evacuate は拡張子が無いので名指しする。既定の対象にある Markdown は prettier に任せる。
+include = [
+  "*.py",
+  "ansible/roles/dotfiles/files/dotfiles-check",
+  "ansible/roles/claude/files/bin/evacuate",
+]
 line-length = 120

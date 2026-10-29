@@ -1,0 +1,246 @@
+#!/usr/bin/env python3
+"""rm の代わりに、取り除くものを ~/.local/state/evacuated/ へ移す。戻すこともできる。
+
+  evacuate -n <作業名> <パス>...      退避する
+  evacuate --restore <退避先のパス>...  元の場所へ戻す
+
+退避先は、呼び出しごとに作る <YYYYMMDD>-<作業名>/（同じ日に 2 回目なら -2、-3 …）の下の、
+元の絶対パスを写した位置である。退避先のパスがそのまま戻し先を示す。保持期間を過ぎたものは
+hooks/prune-evacuated.py が消す。
+"""
+
+import argparse
+import datetime
+import errno
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+# hooks/prune-evacuated.py の ROOT と揃える。/tmp は再起動や日次の掃除で OS が消すので使わない。
+ROOT = os.path.join(os.path.expanduser("~"), ".local", "state", "evacuated")
+# hooks/prune-evacuated.py の RETENTION_DAYS と揃える。
+RETENTION_DAYS = 14
+# restore は ROOT の直下の 1 要素を作業ディレクトリとして読むので、作業名に / を許さない。
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+# hooks/prune-evacuated.py の NAME と同じく、日付で始まるものを作業ディレクトリとみなす。
+WORKDIR = re.compile(r"\d{8}-")
+
+
+class Refused(Exception):
+    pass
+
+
+def absolute(path):
+    """symlink を解決しない絶対パスを返す。末尾の / は外す。空、または .. を含むなら Refused。"""
+    # 空文字列は os.path.join で cwd そのものになり、cwd を丸ごと移してしまう。
+    if path == "":
+        raise Refused("空のパスは扱わない")
+    if not os.path.isabs(path):
+        # 表示と戻し先を、利用者が見ている symlink を含んだ形にするため $PWD を優先する。
+        cwd = os.environ.get("PWD", "")
+        try:
+            same = os.path.isabs(cwd) and os.path.samefile(cwd, ".")
+        except OSError:
+            same = False
+        path = os.path.join(cwd if same else os.getcwd(), path)
+    # realpath を使わないのは、symlink を渡したときにリンク先の実体を移してしまうため。末尾の / も
+    # リンク先を指すので外す。.. は symlink を挟むと字面と行き先が食い違うので受け付けない。
+    parts = [p for p in path.split("/") if p not in ("", ".")]
+    if ".." in parts:
+        raise Refused(f"{path}: .. を含むパスは扱わない。.. を含まない絶対パスで渡す")
+    return "/" + "/".join(parts)
+
+
+def inside(path, base):
+    return path == base or path.startswith(base.rstrip("/") + "/")
+
+
+def ancestors(path):
+    """path 自身と、その親を / まで返す。"""
+    out = [path]
+    while path != "/":
+        path = os.path.dirname(path)
+        out.append(path)
+    return out
+
+
+def is_same(path, target, follow=False):
+    """path（follow が偽なら symlink そのもの）が target の実体と同じか。どちらかが無ければ偽。"""
+    try:
+        return os.path.samestat(os.stat(path) if follow else os.lstat(path), os.stat(target))
+    except OSError:
+        return False
+
+
+def check_source(src):
+    # 字面で比べると、symlink を経由した綴りや、大文字小文字を区別しないファイルシステムでの
+    # 綴りの違いをすり抜けるので、inode で比べる。
+    if any(is_same(src, a) for a in ancestors(ROOT)):
+        raise Refused(f"{src}: 退避先そのものか、その親は退避しない")
+    if any(is_same(p, ROOT, follow=True) for p in ancestors(src)[1:]):
+        raise Refused(f"{src}: 退避先の中のものは退避しない。戻すなら --restore を使う")
+    if any(is_same(src, a) for a in ancestors(os.getcwd())):
+        raise Refused(f"{src}: 作業中のディレクトリか、その親は退避しない")
+    if not os.path.lexists(src):
+        raise Refused(f"{src}: 見つからない")
+
+
+def usable(workdir, dest):
+    """この呼び出しで作った workdir の下に dest を置けるか。
+
+    同じ呼び出しで先に移したものの写しの途中は、ディレクトリなら足場である。ファイルや
+    symlink があればその下には作れず、symlink を辿ると退避先の外へ移してしまう。
+    """
+    if os.path.lexists(dest):
+        return False
+    cur = os.path.dirname(dest)
+    while inside(cur, workdir):
+        if os.path.lexists(cur) and (os.path.islink(cur) or not os.path.isdir(cur)):
+            return False
+        cur = os.path.dirname(cur)
+    return True
+
+
+def new_workdir(base):
+    """まだ無い <base>、<base>-2 … を作って返す。
+
+    前の呼び出しの作業ディレクトリに足すと、前に退避したディレクトリの中へ後のものが混ざり、
+    戻すときに一緒に戻ってしまう。os.mkdir で作るので、同時に動いた呼び出しとも重ならない。
+    """
+    os.makedirs(ROOT, exist_ok=True)
+    n = 1
+    while True:
+        workdir = os.path.join(ROOT, base if n == 1 else f"{base}-{n}")
+        try:
+            os.mkdir(workdir)
+            return workdir
+        except FileExistsError:
+            n += 1
+
+
+def move(src, dest):
+    """mv -n で移し、移ったことを確かめる。
+
+    (失敗の説明, 権限が足りなかったか) を返す。成功なら説明は None。
+    """
+    proc = subprocess.run(["mv", "-n", "--", src, dest], capture_output=True, text=True, check=False)
+    # mv -n は移動先があると何もせずに exit 0 で終わり、移動先が既存のディレクトリだとその中へ
+    # 入れるので、終了コードではなく移動元と移動先の有無で確かめる。
+    if os.path.lexists(dest) and not os.path.lexists(src):
+        return None, False
+    detail = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else f"mv が exit {proc.returncode}"
+    check = f"ls -ld {shlex.quote(src)} {shlex.quote(dest)}"
+    if os.path.lexists(src) and os.path.lexists(dest):
+        # 別のファイルシステムへの mv は、写したあと移動元を消せずに止まることがある。
+        return f"移動先に写したが、移動元が残っている（{detail}）。両方を確かめる: {check}", False
+    if not os.path.lexists(src):
+        return f"移動元も移動先も見つからない（{detail}）", False
+    denied = not os.access(os.path.dirname(src), os.W_OK) or any(
+        os.strerror(e) in proc.stderr for e in (errno.EACCES, errno.EPERM)
+    )
+    if not denied:
+        return f"移せなかった（{detail}）", False
+    # sudo は権限設定で拒否されているので、ユーザーに mv の 1 行だけを打ってもらう。
+    return (
+        f"権限が足りず移せなかった（{detail}）。ユーザーに次の 1 行を実行してもらう: "
+        f"sudo mv -n -- {shlex.quote(src)} {shlex.quote(dest)}\n"
+        f"  実行したら、移動元が消えて移動先にあることを確かめる: {check}"
+    ), True
+
+
+def evacuate(name, paths):
+    base = f"{datetime.date.today().strftime('%Y%m%d')}-{name}"
+    workdirs = []
+    failed = False
+    moved, pending = [], []
+    for raw in paths:
+        try:
+            src = absolute(raw)
+            check_source(src)
+        except Refused as e:
+            print(f"退避しなかった: {e}", file=sys.stderr)
+            failed = True
+            continue
+        # 同じ呼び出しの中で写し先がぶつかったら、上書きも合流もせず、次の作業ディレクトリへ置く。
+        for workdir in workdirs:
+            if usable(workdir, workdir + src):
+                break
+        else:
+            workdir = new_workdir(base)
+            workdirs.append(workdir)
+        dest = workdir + src
+        # 退避先の親は利用者の権限で作る。sudo で作らせると root 所有になり、以後の退避が失敗する。
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        error, denied = move(src, dest)
+        if error:
+            print(f"退避しなかった: {src}: {error}", file=sys.stderr)
+            failed = True
+            if denied:
+                pending.append(dest)
+            continue
+        print(f"退避した: {src}\n  → {dest}")
+        moved.append(dest)
+    for label, dests in (("", moved), ("ユーザーが sudo mv で移したものを", pending)):
+        if dests:
+            print(f"\n{RETENTION_DAYS} 日を過ぎると SessionStart フックが消す。{label}戻すときは:")
+            print("  evacuate --restore " + " ".join(shlex.quote(d) for d in dests))
+    return not failed
+
+
+def restore(paths):
+    failed = False
+    for raw in paths:
+        try:
+            src = absolute(raw)
+            rel = os.path.relpath(src, ROOT).split("/") if inside(src, ROOT) else []
+            if len(rel) < 2 or not WORKDIR.match(rel[0]):
+                raise Refused(f"{src}: {ROOT}/<YYYYMMDD>-<作業名>/ の下の、退避したもののパスを渡す")
+            if not os.path.lexists(src):
+                raise Refused(f"{src}: 見つからない")
+            dest = "/" + "/".join(rel[1:])
+            if os.path.lexists(dest):
+                raise Refused(f"{dest}: 戻し先に既に何かある。上書きしない")
+            parent = os.path.dirname(dest)
+            if not os.path.isdir(parent):
+                raise Refused(f"{parent}: 戻し先の親ディレクトリが無い。先に作るか確かめる")
+        except Refused as e:
+            print(f"戻さなかった: {e}", file=sys.stderr)
+            failed = True
+            continue
+        error, _ = move(src, dest)
+        if error:
+            print(f"戻さなかった: {src}: {error}", file=sys.stderr)
+            failed = True
+            continue
+        print(f"戻した: {src}\n  → {dest}")
+    return not failed
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="evacuate",
+        description=f"取り除くものを {ROOT} へ移す。{RETENTION_DAYS} 日を過ぎたものは SessionStart フックが消す。",
+    )
+    parser.add_argument(
+        "-n", "--name", metavar="作業名", help="英数字と . _ - で書く。退避先の <YYYYMMDD>-<作業名> になる"
+    )
+    parser.add_argument("--restore", action="store_true", help="退避先のパスを受け取り、元の場所へ戻す")
+    parser.add_argument("paths", nargs="+", metavar="パス")
+    args = parser.parse_args()
+    if args.restore:
+        if args.name:
+            parser.error("--restore と -n は一緒に使わない")
+        ok = restore(args.paths)
+    else:
+        if not args.name:
+            parser.error("退避するときは -n <作業名> を付ける")
+        if not NAME.fullmatch(args.name):
+            parser.error(f"作業名は英数字で始め、英数字と . _ - だけで書く: {args.name!r}")
+        ok = evacuate(args.name, args.paths)
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

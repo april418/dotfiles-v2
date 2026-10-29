@@ -132,6 +132,19 @@
     # 0644 だと起動できず、しかもフックが動かないことに気づけない。
     mode: "0755"
 
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Copy evacuate
+  ansible.builtin.copy:
+    src: files/bin/evacuate
+    # 権限設定の Bash(evacuate:*) はコマンド名で当たるので、PATH にある ~/.local/bin に置く。
+    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/evacuate"
+    mode: "0755"
+
 - name: Copy skills
   ansible.builtin.copy:
     src: files/skills/
