@@ -118,7 +118,7 @@ mise use python@<version>
 
 バージョン不一致のまま `engine-strict=false` 等で回避するのは **ルール 1 違反** である。
 
-git-push skill の push 前のチェックで PM を流すときに限り、Node.js の版の確認と切り替えは、照らさずに流す場面も含めて git-push の「PATH 解決のフォールバック」（「nvm の版の選び方」を含む）と「PATH で見つけた PM の node の版」に従い、**ルール 2 の例外** とする。
+git-push skill の push 前のチェックで PM を流すときに限り、Node.js の版の確認と切り替えは、照らさずに流す場面も含めて git-push の node.md の「PATH 解決のフォールバック」（「nvm の版の選び方」を含む）と「PATH で見つけた PM の node の版」に従い、**ルール 2 の例外** とする。
 git-push は確認先を優先順で 1 つに絞らず、版を切り替えるときは `nvm use` の代わりにその版の `bin` を `PATH` の先頭に足す。合う版が無くても `nvm install` はしない。
 
 ---
