@@ -26,7 +26,7 @@ description: 作業ブランチを新しく切る・既存ブランチへ切り�
    - `develop` があっても hotfix では develop を使わない。ここで確定し、2 以降は見ない
    - 本番への緊急修正であるため、安定版からの派生が必要
 2. **`hotfix/*` 以外で**、`git show-ref --verify --quiet refs/heads/develop` が成功する、
-   または `git ls-remote --exit-code --heads origin develop` が成功する場合
+   または `git ls-remote --exit-code --heads origin refs/heads/develop` が成功する場合
    → **`develop` から切る**
 3. それ以外は `master` または `main` を使用する
    - `main` と `master` の両方が存在する場合は `main` を優先
@@ -42,8 +42,12 @@ hotfix の判定を先頭に置いてあるのは、develop の存在確認を�
 
 ```bash
 git show-ref --verify --quiet refs/heads/<候補>
-git ls-remote --exit-code --heads origin <候補>
+git ls-remote --exit-code --heads origin refs/heads/<候補>
 ```
+
+**`ls-remote` のパターンには `refs/heads/` を付ける。** 名前だけを渡すと末尾一致になり、
+リモートに `develop` が無くても `feature/develop` があれば exit 0 になる（Git 2.54.0 で実測）。
+存在しないブランチをベースに選ぶことになる。
 
 ### (b) ベースの取得・更新（派生直前に実施）
 
