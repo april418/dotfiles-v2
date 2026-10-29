@@ -1,0 +1,62 @@
+---
+# claude_character_selected を決める。
+- name: Read the deployed character
+  ansible.builtin.slurp:
+    src: "{{ ansible_facts['env'].HOME }}/.claude/rules/character.md"
+  register: claude_character_deployed
+  # 初回はまだ無い。
+  failed_when: false
+
+- name: List the characters
+  ansible.builtin.set_fact:
+    # 印を読む正規表現と同じ文字種に限る。外れた名前は印に残しても次に読めない。
+    claude_character_names: >-
+      {{ query('ansible.builtin.fileglob', 'characters/*.md')
+         | map('basename') | map('regex_replace', '\.md$', '')
+         | select('match', '^[a-z0-9-]+$') | sort }}
+    # regex_search は一致しないと None を返し、続く first が落ちる（ファイルが無い初回）。
+    # 一致の有無によらずリストを返す regex_findall を使う。
+    claude_character_marked: >-
+      {{ (claude_character_deployed.content | default('') | b64decode
+          | regex_findall('^<!-- character: ([a-z0-9-]+) -->')
+          or ['']) | first }}
+
+- name: Ask for the character
+  ansible.builtin.pause:
+    prompt: >-
+      {{ claude_character_marked ~ ' is no longer available. ' if claude_character_marked else '' }}Claude Code
+      character ({{ claude_character_names | join(', ') }}; Enter: {{ claude_character_default }})
+  register: claude_character_input
+  # 打ち間違いで止めると、先に答えた git の名前なども入れ直しになる。
+  until: (claude_character_input.user_input | default('') | trim or claude_character_default) in claude_character_names
+  retries: 3
+  delay: 0
+  # 印が有効なら聞かない。流すたびに止めないため、選び直しは -e に任せる。
+  when:
+    - claude_character is not defined
+    - claude_character_marked not in claude_character_names
+
+- name: Decide the character
+  ansible.builtin.set_fact:
+    # 端末が無いと pause は待たずに空の入力を返すので、既定になる。
+    claude_character_selected: >-
+      {{ claude_character
+         | default(claude_character_marked
+                   if claude_character_marked in claude_character_names
+                   else (claude_character_input.user_input | default('') | trim
+                         or claude_character_default)) }}
+
+- name: Check the character
+  ansible.builtin.assert:
+    that: claude_character_selected in claude_character_names
+    fail_msg: "claude_character は {{ claude_character_names | join(', ') }} のどれかにする（{{ claude_character_selected }}）"
+    quiet: true
+
+- name: Report the replaced character
+  ansible.builtin.debug:
+    msg: "{{ claude_character_marked }}.md が無いため {{ claude_character_selected }} にした"
+  # 端末が無いと pause は警告だけ出して既定に倒れ、選んでいたキャラクターが黙って置き換わる。
+  when:
+    - claude_character is not defined
+    - claude_character_marked | length > 0
+    - claude_character_marked not in claude_character_names
