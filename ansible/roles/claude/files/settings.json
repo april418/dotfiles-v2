@@ -216,6 +216,11 @@
           {
             "type": "command",
             "command": "$HOME/.local/bin/dotfiles-check notify --format claude"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/prune-evacuated.py",
+            "statusMessage": "古い退避物を消しています"
           }
         ]
       }
