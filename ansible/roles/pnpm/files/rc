@@ -8,3 +8,5 @@ ignore-scripts=true
 # npm の min-release-age=7（日）に相当。pnpm は分単位のみ（v10.16+）。
 minimum-release-age=10080
 save-exact=true
+# pnpm 10 以下は既定が false。理由は config.yaml の同じ項目にある
+verify-deps-before-run=error

@@ -96,7 +96,7 @@ untracked ファイルに `.env`、credentials、`node_modules`、一時ファ�
 
 ```bash
 # 下の表の 1・2 で決まる例。プロジェクトに合わせる
-pnpm run fix        # prettier / eslint --fix。前置するかは下の pnpm の段落で決める
+pnpm run fix        # prettier / eslint --fix
 cargo fmt
 ruff format .
 ```
@@ -154,26 +154,16 @@ Step 2 でコミット計画を確認するなら、同じ質問にまとめて�
 push 前のチェックとも食い違う。
 
 **整形と型チェックを pnpm で流すとき（1 の `pnpm run <script>`、2・3 の `pnpm exec <tool>`、
-型チェックの `pnpm run typecheck` / `pnpm run type-check`）は、
-その前に `pnpm config get verifyDepsBeforeRun` を 1 回流す。出力が `undefined` なら、それらに
-`PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false` を前置する**
-（`PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm run fix`。package-manager skill の
-ルール 1 の例外）。`config get` が 0 以外で終わったときも前置し、`undefined` 以外なら
-前置せずにその値に従う。判定は git-push skill の Step 2 の `verifyDepsBeforeRun` の段落と
-同じで、値の読み方と版ごとの違いもそこにある。
-
-- `config get` は整形や型チェックと同じディレクトリで流す（`-C <dir>` を付けるなら同じ指定で）。
-  流すディレクトリが複数あれば、ディレクトリごとに 1 回流す。値は流したディレクトリから
-  見える pnpm-workspace.yaml で変わる
-- 前置するときは `pnpm run <script>` か `pnpm exec <tool>` の形で流し、`pnpm fix` のように省略しない
-- Makefile / Taskfile のターゲット、pre-commit、`git commit` のフック（husky の中の
-  `pnpm exec lint-staged` など）には前置しない。プロジェクトが定めた入口である。フックが
-  書き換えたものは、Step 3 の冒頭のとおりコミットの後に確かめる
-
+型チェックの `pnpm run typecheck` / `pnpm run type-check`）は、`verifyDepsBeforeRun` の
+指定のまま流す。環境変数の前置（`PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false`）や CLI フラグで
+切らない**（package-manager skill のルール 1）。
 pnpm 11 以降はこの設定の既定が `install` で、`pnpm run` と `pnpm exec` は `node_modules` が
 ずれていれば install を流す。コミットの直前に `pnpm-lock.yaml` と `node_modules` を作ったり
-書き換えたりする（`pnpm run fix`・`pnpm fix`・`pnpm exec` のどれも 11.9.0 / 12.6.0 で実測）。
-store に無い依存は registry に取りに行く。
+書き換えたりし、store に無い依存は registry に取りに行く（`pnpm run fix`・`pnpm fix`・
+`pnpm exec` のどれも 11.9.0 / 12.6.0 で実測）。dotfiles の pnpm ロールがグローバル設定で
+`error` にしているので、ずれていれば `ERR_PNPM_VERIFY_DEPS_BEFORE_RUN` で止まり、何も
+書き換えない。プロジェクトが pnpm-workspace.yaml で指定していればそれに従う。フックが
+書き換えたものは、Step 3 の冒頭のとおりコミットの後に確かめる。
 
 整形や型チェックが 0 以外で終わり、package.json の依存に宣言されたもの（ツール本体・
 プラグイン・設定パッケージ）が見つからないと出力にあれば、`node_modules` が無いか
@@ -199,7 +189,7 @@ store に無い依存は registry に取りに行く。
 該当行を添えて「依存を入れて（pnpm なら `pnpm install` を流して）から流し直す」か「流さずに
 コミットする」かを聞く。
 非対話時は流さずにコミットし、最終応答に流していないコマンドと出力の該当行を 1 行書く。
-前置を外して流し直さない。
+`verifyDepsBeforeRun` を切って流し直さない。
 0 以外で終わったことだけでは、流れていないとみなさない。`eslint --fix` は、直せない指摘が
 残ると書き換えたうえで 0 以外を返す。
 
@@ -272,7 +262,7 @@ install を流す。install はロックファイルをステージしないの�
 フックが registry に届かないなど、手元で直せない理由で落ちたら（コミットは作られない）、
 直そうとせずに止め、フックの出力の該当行を伝える。ファイル単位の分割で退避していれば、
 `git stash pop` で戻してから止める。hunk 単位の分割なら手順 1 の stash を残し、巻き戻した hunk が
-あることと stash の場所を伝える。前置や `--no-verify` で通さない。
+あることと stash の場所を伝える。環境変数の前置や `--no-verify` で通さない。
 
 #### 基本: すべての変更を1コミット、またはファイル単位で1コミット
 
@@ -440,7 +430,7 @@ git stash drop
 
 ## 品質チェック
 
-- **最後の編集の後に整形コマンドと型チェックを流したか**（Step 2.5。整形コマンドが無ければ、ユーザーに確認したか。非対話なら、流していないことを最終応答に書いたか。型チェックは表の行に当たらなければ流さない。整形や型チェックを pnpm で流したなら、`pnpm config get verifyDepsBeforeRun` を見て前置を決めたか。型エラーが出たら、対話時は聞いたか。非対話時は、計画のどれかのコミットに入れるファイルを指す診断があればコミットしていないか）
+- **最後の編集の後に整形コマンドと型チェックを流したか**（Step 2.5。整形コマンドが無ければ、ユーザーに確認したか。非対話なら、流していないことを最終応答に書いたか。型チェックは表の行に当たらなければ流さない。型エラーが出たら、対話時は聞いたか。非対話時は、計画のどれかのコミットに入れるファイルを指す診断があればコミットしていないか）
 - **`git commit` の直前と直後の `git status` で、フックが書き換えたロックファイルを確かめたか**（Step 3）
 - このコミットは単独で revert 可能か
 - 最小の論理単位になっているか

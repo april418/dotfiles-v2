@@ -7,3 +7,6 @@ ignoreScripts: true
 # npm の min-release-age=7（日）に相当。pnpm は分単位のみ。
 minimumReleaseAge: 10080
 saveExact: true
+# pnpm 11 以降の既定は install で、run / exec が node_modules のずれを見つけると install を流し、ロックファイルと node_modules を書き換える
+# node_modules が無いと依存の無いプロジェクトでも止まるので、pnpm install を 1 回流す
+verifyDepsBeforeRun: error
