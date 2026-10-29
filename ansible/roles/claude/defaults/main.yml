@@ -1,0 +1,4 @@
+---
+# 応答のキャラクター。files/characters/<名前>.md の <名前> を書く（英小文字・数字・-）。
+# -e claude_character=<名前> で選ぶと、次からはその選択が既定より優先される。
+claude_character_default: zundamon

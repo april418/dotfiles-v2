@@ -37,6 +37,49 @@
     dest: "{{ ansible_facts['env'].HOME }}/.claude/CLAUDE.md"
     mode: "0644"
 
+- name: Ensure rules directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.claude/rules"
+    state: directory
+    mode: "0755"
+
+- name: Read the deployed character
+  ansible.builtin.slurp:
+    src: "{{ ansible_facts['env'].HOME }}/.claude/rules/character.md"
+  register: claude_character_deployed
+  # 初回はまだ無い。
+  failed_when: false
+
+- name: Decide the character
+  ansible.builtin.set_fact:
+    # regex_search は一致しないと None を返し、続く first が落ちる（ファイルが無い初回）。
+    # 一致の有無によらずリストを返す regex_findall を使う。
+    claude_character_selected: >-
+      {{ claude_character
+         | default((claude_character_deployed.content | default('') | b64decode
+                    | regex_findall('^<!-- character: ([a-z0-9-]+) -->')
+                    or [claude_character_default]) | first) }}
+
+- name: Check the character name
+  ansible.builtin.assert:
+    # 印を読む正規表現と同じ文字種に限る。外れた名前は -e で一度は効いても、
+    # 次の install では印を読めずに黙って既定へ戻る。
+    that: claude_character_selected is match('^[a-z0-9-]+$')
+    fail_msg: "claude_character は英小文字・数字・- で書く（{{ claude_character_selected }}）"
+    quiet: true
+
+- name: Copy character
+  ansible.builtin.copy:
+    # 1 行目の印が、次に -e なしで流したときの選択になる。install は -e を渡さないので、
+    # 印が無いと流すたびに既定へ戻る。
+    content: |
+      <!-- character: {{ claude_character_selected }} -->
+      {{ lookup('ansible.builtin.file', 'characters/' ~ claude_character_selected ~ '.md') }}
+    # Claude Code は ~/.claude/rules/ の .md をすべてのセッションで読み込む。
+    # 置き場所を変えると、エラーも出ずにキャラクターが読まれなくなる。
+    dest: "{{ ansible_facts['env'].HOME }}/.claude/rules/character.md"
+    mode: "0644"
+
 - name: Check if settings.json exists
   ansible.builtin.stat:
     path: "{{ ansible_facts['env'].HOME }}/.claude/settings.json"
