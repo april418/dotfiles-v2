@@ -97,14 +97,17 @@ collect() {
 
 AUTO="$(collect)"
 
-# 既存ファイルからモデルが書いた節（自動収集の節より前）を保ち、
-# 自動収集の節だけを差し替える。
+# 既存ファイルからモデルが書いた行をすべて保ち、自動収集の節だけを差し替える。
 AUTO="$AUTO" STATE="$STATE" python3 <<'PY'
 import os, pathlib
 
 state = pathlib.Path(os.environ["STATE"])
 auto = os.environ["AUTO"]
 marker = "## 作業ツリーの状態（自動収集"
+# モデルは自動収集の節の後ろに箇条書きや見出しを足し、その形は決まっていない。
+# 見出しで節の終わりを探すと取りこぼすので、終わりを印で示す。印の中の文は、
+# ファイルを読んだモデルが印より前に書き足さないためにある。
+end_marker = "<!-- 作業ツリーの状態はここまで。PreCompact フックが毎回書き換えるので、追記はこの行より後ろへ -->"
 
 header = (
     "# セッション状態\n\n"
@@ -122,14 +125,79 @@ if state.is_file():
     except Exception:
         existing = ""
 
-if marker in existing:
-    kept = existing.split(marker)[0].rstrip()
-elif existing.strip():
-    kept = existing.rstrip()
-else:
-    kept = header
 
-state.write_text(f"{kept}\n\n{auto}", encoding="utf-8")
+# collect() が節の最後に出しうる行。
+legacy_last_lines = ("（作業中のリポジトリを特定できなかった）", "- 未コミットの変更: なし")
+
+
+def skip_legacy_auto(lines, i):
+    """終わりの印が無い自動収集の節を、collect() が出す行の形だけ読み飛ばす。
+
+    返すのは、節の後ろにあるモデルの行の位置。lines を書き換えることがある。
+    """
+    in_fence = False
+    while i < len(lines):
+        s = lines[i].rstrip("\r\n")
+        # 印の無いファイルは末尾に改行が無く、追記が節の最後の行にくっついていることがある。
+        # くっついた機械の部分だけを外して残す。
+        if in_fence:
+            if s == "```":
+                in_fence = False
+            elif s.startswith("```"):
+                lines[i] = lines[i][3:]
+                return i
+        elif s == "```":
+            in_fence = True
+        elif s.startswith("### "):
+            following = [l.strip() for l in lines[i + 1 : i + 3] if l.strip()]
+            if not (following and following[0].startswith("- ブランチ: `")):
+                return i
+        elif s in ("", "- 未コミットの変更:", "- 直近のコミット:", *legacy_last_lines) or s.startswith(
+            ("cwd: `", "- ブランチ: `")
+        ):
+            pass
+        else:
+            for p in legacy_last_lines:
+                if s.startswith(p):
+                    lines[i] = lines[i][len(p) :]
+            return i
+        i += 1
+    return i
+
+
+def is_auto_start(lines, i):
+    """collect() の出力の始まりか。
+
+    コードブロックの中で引用された見出しを節と取り違えないよう、次の行まで見る。
+    フェンスを追って判定すると、閉じ忘れのフェンスがあるたびに節が増えていく。
+    """
+    if not lines[i].startswith(marker):
+        return False
+    following = [l.strip() for l in lines[i + 1 : i + 3] if l.strip()]
+    return bool(following) and following[0].startswith("cwd: `")
+
+
+lines = existing.splitlines(keepends=True)
+kept_lines = []
+i = 0
+while i < len(lines):
+    if not is_auto_start(lines, i):
+        kept_lines.append(lines[i])
+        i += 1
+        continue
+    j = i + 1
+    while j < len(lines) and not is_auto_start(lines, j):
+        if lines[j].rstrip("\r\n") == end_marker:
+            break
+        j += 1
+    if j < len(lines) and lines[j].rstrip("\r\n") == end_marker:
+        i = j + 1
+    else:
+        i = skip_legacy_auto(lines, i + 1)
+kept = "".join(kept_lines).rstrip() or header
+
+# 末尾に改行を付ける。無いと、シェルの >> で足した最初の行が終わりの印にくっつく。
+state.write_text(f"{kept}\n\n{auto}\n\n{end_marker}\n", encoding="utf-8")
 PY
 
 # 保存したことをユーザーに見せる。黙って動くと、動いていないのか
