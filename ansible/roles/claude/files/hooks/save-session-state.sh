@@ -98,8 +98,9 @@ collect() {
 AUTO="$(collect)"
 
 # 既存ファイルからモデルが書いた行をすべて保ち、自動収集の節だけを差し替える。
-AUTO="$AUTO" STATE="$STATE" python3 <<'PY'
-import os, pathlib
+# 失敗したら書かずに抜け、保存できなかったことを表示する。
+AUTO="$AUTO" STATE="$STATE" python3 <<'PY' || {
+import os, pathlib, sys
 
 state = pathlib.Path(os.environ["STATE"])
 auto = os.environ["AUTO"]
@@ -120,10 +121,12 @@ header = (
 
 existing = ""
 if state.is_file():
+    # UTF-8 として読めないバイトも書き戻せるようにする。読めないからと空扱いすると、
+    # ファイル全体を header で上書きしてしまう。
     try:
-        existing = state.read_text(encoding="utf-8")
-    except Exception:
-        existing = ""
+        existing = state.read_text(encoding="utf-8", errors="surrogateescape")
+    except OSError:
+        sys.exit(1)
 
 
 # collect() が節の最後に出しうる行。
@@ -197,8 +200,11 @@ while i < len(lines):
 kept = "".join(kept_lines).rstrip() or header
 
 # 末尾に改行を付ける。無いと、シェルの >> で足した最初の行が終わりの印にくっつく。
-state.write_text(f"{kept}\n\n{auto}\n\n{end_marker}\n", encoding="utf-8")
+state.write_text(f"{kept}\n\n{auto}\n\n{end_marker}\n", encoding="utf-8", errors="surrogateescape")
 PY
+  printf '{"systemMessage":"セッション状態を保存できなかった: %s"}\n' "$STATE"
+  exit 0
+}
 
 # 保存したことをユーザーに見せる。黙って動くと、動いていないのか
 # 保存するものが無かったのか区別できない。
