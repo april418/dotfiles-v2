@@ -21,6 +21,7 @@
       "Bash(df:*)",
       "Bash(du:*)",
       "Bash(echo:*)",
+      "Bash(evacuate:*)",
       "Bash(find:*)",
       "Bash(gcloud auth list:*)",
       "Bash(gcloud compute instances describe:*)",
