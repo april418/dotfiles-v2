@@ -139,7 +139,7 @@ Step 2 でコミット計画を確認するなら、同じ質問にまとめて�
 非対話のときは流さずにコミットし、最終応答に整形していないことと理由（手がかりが
 無い / ツールが入っていない）を 1 行書く。
 
-**型チェックは整形の後に、git-push skill の Step 2 の表の型チェックと同じものを流す。**
+**型チェックは整形の後に、git-push skill の Step 2 の型チェック（node.md と toolchains.md の表）と同じものを流す。**
 条件はプロジェクトルートのファイルで見る。
 
 | 種別                                                         | 条件                                                                             | 流すもの                                                     |
@@ -147,7 +147,7 @@ Step 2 でコミット計画を確認するなら、同じ質問にまとめて�
 | Node.js（`package.json` がある）                             | `scripts.typecheck` / `scripts.type-check` が定義されている                      | `<pm> run typecheck` / `<pm> run type-check`。両方あれば両方 |
 | Python（`pyproject.toml` / `setup.py` / `setup.cfg` がある） | `mypy` が入っている（`.venv/bin/mypy` が実行可能か。無ければ `command -v mypy`） | `mypy .`。`.venv/bin` で見つけたら `.venv/bin/mypy .`        |
 
-`<pm>` は git-push の Step 2 の Node.js の PM の決め方（`packageManager` →
+`<pm>` は git-push の node.md の「PM の決め方」（`packageManager` →
 `devEngines.packageManager` → ロックファイル → `npm`）で決める。どの行にも当たらなければ
 型チェックは流さず、聞かない。`tsconfig.json` などの設定ファイルから `tsc --noEmit` を
 推測して流さない。プロジェクトが流していないコマンドの結果でコミットを止めることになり、
