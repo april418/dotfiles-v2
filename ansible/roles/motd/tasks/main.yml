@@ -19,12 +19,37 @@
   become: true
   when: ansible_facts['os_family'] == 'RedHat'
 
-- name: Copy motd file
+# /etc/motd is printed verbatim. pam_motd runs the scripts in /etc/update-motd.d at login.
+# RedHat's pam_motd only prints static files, so the script is not deployed there.
+- name: Install motd script
   ansible.builtin.copy:
     src: motd.sh
+    dest: /etc/update-motd.d/99-dotfiles
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Check whether /etc/motd holds the motd script source
+  ansible.builtin.command: grep -qsF "text_center 'Wellcome to development server!!'" /etc/motd
+  register: motd_static_script
+  changed_when: false
+  # rc 2 (no /etc/motd) only means there is nothing to clear.
+  failed_when: false
+  # In check mode command skips with rc 0, which would report /etc/motd as cleared.
+  check_mode: false
+  when: ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat'
+
+# Emptied rather than removed: the setup package owns /etc/motd on RedHat.
+- name: Clear the motd script source from /etc/motd
+  ansible.builtin.copy:
+    content: ""
     dest: /etc/motd
     owner: root
     group: root
     mode: "0644"
   become: true
-  when: ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat'
+  when:
+    - ansible_facts['os_family'] == 'Debian' or ansible_facts['os_family'] == 'RedHat'
+    - motd_static_script.rc == 0
