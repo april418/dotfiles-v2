@@ -8,8 +8,13 @@
 #
 #
 
+terminal_columns() {
+  # pam_motd runs this with an empty environment (no TERM), where tput fails.
+  tput cols 2>/dev/null || echo 80
+}
+
 br() {
-  local columns=$(tput cols)
+  local columns=$(terminal_columns)
   local i=0
   for ((i = 0; i < columns; i++)); do
     printf "-"
@@ -18,7 +23,7 @@ br() {
 }
 
 text_center() {
-  local columns=$(tput cols)
+  local columns=$(terminal_columns)
   local line=
   if [ -p /dev/stdin ]; then
     while IFS= read -r line || [ -n "$line" ]; do
@@ -68,7 +73,7 @@ with_indent() {
 }
 
 display_center() {
-  local columns=$(tput cols)
+  local columns=$(terminal_columns)
   local length=$(echo "$@" | max_length)
   echo "$@" | with_indent "$(((columns - length) / 2))"
 }
@@ -76,7 +81,9 @@ display_center() {
 get_ipaddress() {
   #ifconfig eth0 | sed -n -e 's/^ *inet addr:\([0-9.]\+\).*$/\1/p'
   #hostname -I | cut -f1 -d' '
-  ip -f inet -o addr show eth0 | sed -n -e 's/^.\+eth0 \+inet \([0-9.]\+\).*$/\1/p'
+  # The interface name varies by host (eth0, ens4),
+  # so take the source address of the route to an external host.
+  ip -4 -o route get 1.1.1.1 2>/dev/null | sed -n -e 's/^.* src \([0-9.]*\).*$/\1/p'
 }
 
 blue="[034m"
