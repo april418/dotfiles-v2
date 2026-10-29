@@ -1,6 +1,6 @@
 ---
 name: git-pr
-description: PR の作成とマージに関するルール。gh pr create の前に含まれるコミットを説明文と突き合わせる手順、マージしてよいかの承認規律、merge commit 形式でのマージ、gh pr merge --delete-branch が worktree ごとにローカルで行うことと打つ前の確認（積んだ PR の base の付け替えを含む）、マージ直後のベース追従（linked worktree を含む）とマージ済みブランチの掃除。gh pr create / gh pr merge を実行する前と、PR がマージされた直後に参照する。共通ルールは git-workflow skill にある。
+description: PR の作成とマージに関するルール。gh pr create の前にベースとの差を両方向に見る手順（含まれるコミットを説明文と突き合わせる、ベースからの遅れと衝突を先に見る）、マージしてよいかの承認規律、merge commit 形式でのマージ、gh pr merge --delete-branch が worktree ごとにローカルで行うことと打つ前の確認（積んだ PR の base の付け替えを含む）、マージ直後のベース追従（linked worktree を含む）とマージ済みブランチの掃除。gh pr create / gh pr merge を実行する前と、PR がマージされた直後に参照する。共通ルールは git-workflow skill にある。
 ---
 
 # 概要
@@ -15,15 +15,30 @@ PR の作成とマージは、ユーザーが明示的に要求した場合の�
 
 ### PR 作成前の内容確認（省略不可）
 
-**`gh pr create` の前に、PR に含まれるコミットを列挙して説明文と突き合わせる。**
+**`gh pr create` の前に、ベースとの差を両方向に見る。** 向きが違えば分かることも違う。
 
 ```bash
-git log --oneline <base-ref>..HEAD
+git fetch origin
+git log --oneline <base-ref>..HEAD      # PR に含まれるコミット
+git log --oneline HEAD..origin/<base>   # ベースがどれだけ先に進んだか
 ```
+
+| 向き                  | 分かること                       | 合格条件                       |
+| --------------------- | -------------------------------- | ------------------------------ |
+| `<base-ref>..HEAD`    | PR に含まれるコミット            | 説明文と一致                   |
+| `HEAD..origin/<base>` | 自分のブランチがベースに遅れた分 | 空、または空でなければ衝突なし |
 
 `<base-ref>` は git-workflow の `<base-ref>` 定義表で決めた参照。PR の base に指定する予定の
 ブランチと同じものを使う（別のブランチと比べると検証の意味がなくなる）。
 PR の base は、ブランチを切るときと同じ git-branch のルール 3 (a) の手順で選ぶ。
+
+**`git fetch origin` を飛ばさない。** 飛ばすと `origin/<base>` 自体が古いので、
+向きを変えても遅れは出ない。この節の確認は fetch が前提である。
+
+**遅れを見る相手と、遅れていたときの rebase 先だけは `<base-ref>` ではなく `origin/<base>` を使う。**
+GitHub が突き合わせるのはリモートの base である。
+
+#### 含まれるコミットの確認
 
 確認すること。
 
@@ -44,6 +59,63 @@ PR 本文には **含まれるコミットを列挙する欄を必ず設ける**
 書かなかったため、**別の変更がレビューされないままマージされた**（2026-08-07）。
 そのマージによって元の PR も自動的に「マージ済み」となり、
 レビューの機会が完全に失われた。
+
+#### 遅れの確認
+
+**`<base>..origin/<base>` を見てはいけない。** それはローカルの `<base>` 参照が遅れているかしか
+分からず、**自分のブランチが遅れているかは見ていない**。自分が遅れていても空が出る。
+
+`origin/<base>` が無いベース（ローカルにしか無い `develop` など）では、この確認はできない。
+`git log --oneline HEAD..origin/<base>` は exit 128 で落ちるが **stdout は空**なので、
+「空なら合格」と読むと静かに通る（Git 2.54.0 で実測）。確認できないことを最終応答に書く。
+
+遅れは**作業中に増える**。最新のベースからブランチを切っていても、PR を出すまでの間に別の PR が
+ベースへマージされれば遅れる。切ったときに確かめたことは、出すときの根拠にならない。
+
+遅れていた場合、衝突するかどうかは PR を出す前に分かる。
+
+```bash
+git merge-tree --write-tree origin/<base> HEAD > /tmp/merge-tree.log 2>&1; echo "exit=$?"
+head -1 /tmp/merge-tree.log
+```
+
+**exit 1 は衝突だけではない。** 1 行目まで見ないと区別できない（Git 2.54.0 で実測）。
+
+| exit   | 1 行目                    | 意味           | すること                                         |
+| ------ | ------------------------- | -------------- | ------------------------------------------------ |
+| 0      | tree の OID               | 衝突なし       | 遅れたまま PR を出してよい。遅れを最終応答に書く |
+| 1      | tree の OID               | 衝突あり       | 下の rebase の判断へ                             |
+| 1      | `merge-tree:` か `error:` | ref の指定ミス | 衝突ではない。ref を直して打ち直す               |
+| その他 | `fatal:` / `usage:`       | 別のエラー     | 出力を読む（128 は無関係な履歴、129 は引数不足） |
+
+作業ツリーと ref には触れないので、作業を中断せずに打てる。
+
+**rebase は git-workflow のルール 6 の要承認操作である。**
+対話なら `AskUserQuestion` で承認を取ってから `git rebase origin/<base>` を打ち、
+非対話なら**打たずに**ルール 0 の終端表に従って終える（遅れたコミット、衝突したファイル、
+選択肢を提示する）。衝突したファイルは `/tmp/merge-tree.log` の stage 行
+（`100644 <oid> 1 <path>` の 1 / 2 / 3）から名前が取れる。
+コンフリクトの扱いは git-recovery のルール 10 に従う。
+
+**rebase した後は、含まれるコミットの確認を `origin/<base>` に対してやり直す**
+（`git log --oneline origin/<base>..HEAD`）。`<base-ref>` が古いローカルの `<base>` のままだと、
+ベースに取り込まれた他の PR のコミットが混入として出て、正しく rebase できたブランチを
+復旧ルートへ送ってしまう（git-branch の (d) は HEAD が動いた後の検証を要求している）。
+
+**すでに push 済みのブランチなら、rebase の後の push は force push になる。**
+対話では承認を別に取り、非対話では要求されていても行わない
+（git-push の「force push について」）。force push を勧めるのではなく、
+遅れと衝突の事実を伝えて判断を仰ぐ。
+
+**実際の失敗**: 作業中にベースへ別の PR がマージされたが、`main..origin/main` が空だったので
+「`main` は動いていない」と報告した。実際は 4 コミット遅れており、`gh pr create` の後に
+GitHub が返した `mergeable: CONFLICTING` で初めて気づいた。4 ファイルが衝突し、rebase で
+解消することになった。`git fetch origin` の後に `HEAD..origin/main` を見ていれば、PR を出す前に
+分かった（2026-10-18）。
+
+※マージした**後**に手元が遅れる話は後述の「マージした直後にベースを最新へ戻す」にある。
+あちらの `git status -sb` は upstream（`origin/<branch>`）と比べるので、作業ブランチからは
+ベースとの遅れを出せない。この節の確認の代わりにはならない。
 
 ### PR マージの承認規律（戦略よりも先に必ず確認）
 
@@ -328,6 +400,13 @@ git status -sb | head -1        # ## main...origin/main [behind N] が出てい�
       （※こちらの合格条件は「空」ではなく「説明文と一致」。同じコマンドだが
       タイミングも期待値も違う）
       （書いていないコミットが混ざったまま出すと、レビューされずにマージされる）
+- [ ] **PR を作る前に** `git fetch origin` してから `git log --oneline HEAD..origin/<base>` を見て、
+      **遅れが空か、空でなければ衝突が無い**と確かめたか？
+      （`<base>..origin/<base>` では分からない。あれはローカルの `<base>` 参照の遅れしか
+      見ておらず、自分のブランチが遅れていても空が出る。fetch を飛ばすとこの向きでも空が出る）
+      （衝突の有無は `git merge-tree --write-tree origin/<base> HEAD`。**exit 1 は衝突だけではない**ので
+      1 行目まで見る。衝突ありなら rebase だが、rebase はルール 6 の要承認操作で、
+      push 済みなら force push も要る）
 - [ ] PR をマージする場合、**その PR を名指しした明示要求**があるか？
       （曖昧な回答・URL 提示だけでは承認ではない。他人 author の PR は特に）
 - [ ] PR マージ時は `--merge --delete-branch` を使っているか？

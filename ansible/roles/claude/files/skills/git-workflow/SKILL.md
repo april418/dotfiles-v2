@@ -141,7 +141,8 @@ detach した HEAD（git-pr のルール 11 のマージ直後の追従で `orig
 ## 【重要】ベース参照 `<base-ref>` の定義
 
 **git-branch のルール 3 (b) (c) (d)、git-pr のルール 11、git-recovery のルール 10 は、
-すべて同じ参照を使う**。この参照を `<base-ref>` と呼び、git-branch のルール 3 (a) で
+すべて同じ参照を使う**（例外は git-pr のルール 11 の遅れの確認と、その rebase 先だけで、
+そこは `origin/<base>` を使う。理由はその節にある）。この参照を `<base-ref>` と呼び、git-branch のルール 3 (a) で
 選んだベースの所在で決まる。
 
 | (a) で選んだベースの所在                                                                   | `<base-ref>`    |
