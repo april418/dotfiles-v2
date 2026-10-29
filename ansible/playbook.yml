@@ -90,6 +90,13 @@
              if _flatt_guard_token_input is not skipped
              else _flatt_guard_token }}
 
+    # ── claude_character ──
+    # 入力を pre_tasks にまとめ、ロールの途中で待たないようにする。
+    - name: Select Claude Code character
+      ansible.builtin.include_role:
+        name: claude
+        tasks_from: select
+
   roles:
     - bash
     - claude
