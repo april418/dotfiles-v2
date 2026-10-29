@@ -8,11 +8,12 @@
 このディレクトリの中身は `~/.claude/` へコピーされ、すべてのプロジェクトで
 効く。このリポジトリ向けの指示ではない。
 
-| リポジトリ                                     | 配置先                                      |
-| ---------------------------------------------- | ------------------------------------------- |
-| `files/AGENTS.md`                              | `~/.claude/CLAUDE.md`（ユーザー全体の指示） |
-| `files/hooks/` `files/skills/` `files/agents/` | `~/.claude/` の同名ディレクトリ             |
-| `files/settings.json`                          | `~/.claude/settings.json`                   |
+| リポジトリ                                                       | 配置先                                      |
+| ---------------------------------------------------------------- | ------------------------------------------- |
+| `files/AGENTS.md`                                                | `~/.claude/CLAUDE.md`（ユーザー全体の指示） |
+| `files/hooks/` `files/skills/` `files/agents/`                   | `~/.claude/` の同名ディレクトリ             |
+| `files/characters/<名前>.md`（`claude_character` で選んだ 1 つ） | `~/.claude/rules/character.md`              |
+| `files/settings.json`                                            | `~/.claude/settings.json`                   |
 
 - 編集はプレイブックを流すまで `~/.claude/` に反映されない。動作確認は
   `HOME` を一時ディレクトリに向けて claude ロールだけを流すと、実環境を
