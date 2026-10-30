@@ -1,0 +1,86 @@
+#compdef dotfiles
+# files/dotfiles の main() の argparse と同じサブコマンドとオプションを並べる。
+
+_dotfiles_characters() {
+  setopt localoptions extendedglob
+  local applied=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/applied.json repo top expl
+  local -a candidates names
+  # dotfiles コマンドの locate() と同じ checkout を選ぶ。
+  # record.yml の to_nice_json は ASCII 以外を \uXXXX で書くので、(g:e:) で戻す。
+  [[ -r $applied && $(<$applied) =~ '"repo": *"([^"]*)"' ]] && candidates+=("${(g:e:)match[1]}")
+  [[ -n $DOTPATH ]] && candidates+=("$DOTPATH")
+  candidates+=("$HOME/.dotfiles")
+  for repo in $candidates; do
+    [[ -d $repo ]] && top=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || continue
+    names=($top/ansible/roles/claude/files/characters/*.md(N:t:r))
+    # dotfiles コマンドの CHARACTER_NAME と同じく、記録から読める文字種の名前に限る。
+    names=(${(M)names:#[a-z0-9-]##})
+    break
+  done
+  _wanted characters expl character compadd -a names
+}
+
+_dotfiles() {
+  local curcontext=$curcontext state state_descr line ret=1
+  typeset -A opt_args
+  local -a help=('(- : *)'{-h,--help}'[ヘルプを表示する]')
+
+  _arguments -C $help \
+    '1: :->command' \
+    '*:: :->argument' && ret=0
+
+  case $state in
+    command)
+      local -a commands=(
+        'check:更新の有無と更新手順を表示する'
+        'notify:前回取得した状態から通知を出す'
+        'update:更新できるものを表示し、選んだものを更新する'
+        'refresh:リモートを取得する'
+        'pins:キャッシュを使わずに固定バージョンだけを確かめる'
+        'character:Claude Code のキャラクターを表示する。set で切り替える'
+      )
+      _describe -t commands 'dotfiles command' commands && ret=0
+      ;;
+    argument)
+      curcontext=${curcontext%:*:*}:dotfiles-$line[1]:
+      case $line[1] in
+        check | refresh)
+          _arguments $help && ret=0
+          ;;
+        notify)
+          _arguments $help \
+            '--format=[出力の形式]:format:(text claude)' \
+            '--style=[見た目]:style:(plain powerline)' && ret=0
+          ;;
+        update)
+          _arguments $help \
+            '--only=[聞かずに更新する対象]:target:_sequence compadd - dotfiles tools brew all' \
+            '--startup[シェルの起動時に呼ぶ]' \
+            '--style=[見た目]:style:(plain powerline)' && ret=0
+          ;;
+        pins)
+          _arguments $help \
+            '--repo=[走査するリポジトリ]:repository:_directories' \
+            '--format=[出力の形式]:format:(text markdown)' && ret=0
+          ;;
+        character)
+          _arguments -C $help \
+            '1: :->character_command' \
+            '*:: :->character_argument' && ret=0
+          case $state in
+            character_command)
+              local -a character_commands=('set:キャラクターを切り替える。名前を省くと聞く')
+              _describe -t commands 'dotfiles character command' character_commands && ret=0
+              ;;
+            character_argument)
+              [[ $line[1] == set ]] && _arguments $help '1:character:_dotfiles_characters' && ret=0
+              ;;
+          esac
+          ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+_dotfiles "$@"
