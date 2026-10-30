@@ -68,6 +68,8 @@ autoload -Uz is-at-least
 autoload -Uz terminfo
 # 色を詳細に設定できるようにする
 autoload -Uz colors; colors
+# dotfiles ロールが dotfiles コマンドの補完をここに置く。compinit より後に足すと読まれない。
+fpath=("${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions" $fpath)
 # 補完機能を使用できるようにする
 autoload -Uz compinit; compinit -u
 # cdr を有効にする

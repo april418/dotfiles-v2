@@ -32,6 +32,7 @@ UPDATE_LOCK_FILE = os.path.join(CACHE_DIR, "update.lock")
 CHARACTER_FILE = os.path.join(STATE_DIR, "claude-character.json")
 # claude ロールの select.yml と同じ読み方にする。表示とプレイブックで、選んだものの判定が食い違わないように。
 CHARACTER_RECORD = re.compile(r'"character"\s*:\s*"([a-z0-9-]+)"')
+# 変えたら zsh の補完（files/_dotfiles）が名前を絞る文字種も合わせる。
 CHARACTER_NAME = re.compile(r"[a-z0-9-]+")
 DEFAULT_REPO = os.path.join(HOME, ".dotfiles")
 # .zshrc の ZINIT_HOME と同じ規則。
@@ -254,6 +255,7 @@ def label(repo):
     return "dotfiles"
 
 
+# 探し方を変えたら zsh の補完（files/_dotfiles）がキャラクター名を探す checkout も合わせる。
 def locate():
     """(checkout のルート, 適用記録) を返す。
 
@@ -2304,6 +2306,7 @@ def parse_only(value):
 
 
 def main():
+    # サブコマンドやオプションを変えたら、zsh の補完（files/_dotfiles）も合わせる。
     parser = argparse.ArgumentParser(
         prog="dotfiles",
         description="dotfiles と、それが入れたツール・固定している版の更新を確かめて上げる。Claude Code のキャラクターも切り替える。",

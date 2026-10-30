@@ -10,3 +10,15 @@
     src: files/dotfiles
     dest: "{{ ansible_facts['env'].HOME }}/.local/bin/dotfiles"
     mode: "0755"
+
+- name: Ensure zsh functions directory exists
+  ansible.builtin.file:
+    path: "{{ dotfiles_zsh_functions_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy the zsh completion of the dotfiles command
+  ansible.builtin.copy:
+    src: files/_dotfiles
+    dest: "{{ dotfiles_zsh_functions_dir }}/_dotfiles"
+    mode: "0644"

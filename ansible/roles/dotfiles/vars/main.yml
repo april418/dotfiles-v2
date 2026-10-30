@@ -1,3 +1,5 @@
 ---
 # files/dotfiles と同じ規則で決める。XDG_STATE_HOME が空文字のときも既定値に倒す。
 dotfiles_state_dir: "{{ ansible_facts['env'].XDG_STATE_HOME | default(ansible_facts['env'].HOME + '/.local/state', true) }}/dotfiles"
+# .zshrc が compinit の前に fpath へ足すディレクトリと同じ規則で決める。
+dotfiles_zsh_functions_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/zsh/site-functions"
