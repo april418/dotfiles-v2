@@ -1,0 +1,33 @@
+---
+# ansible/character.yml（dotfiles character set）はこのファイルだけを流す。
+- name: Ensure rules directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.claude/rules"
+    state: directory
+    mode: "0755"
+
+- name: Select the character
+  ansible.builtin.include_tasks: select.yml
+  # プレイブックは pre_tasks で決め済み。ロールだけを流したときはここで決める。
+  when: claude_character_selected is not defined
+
+- name: Copy character
+  ansible.builtin.copy:
+    src: characters/{{ claude_character_selected }}.md
+    # Claude Code は ~/.claude/rules/ の .md をすべてのセッションで読み込む。
+    # 置き場所を変えると、エラーも出ずにキャラクターが読まれなくなる。
+    dest: "{{ ansible_facts['env'].HOME }}/.claude/rules/character.md"
+    mode: "0644"
+
+- name: Ensure the state directory exists
+  ansible.builtin.file:
+    path: "{{ claude_character_state_file | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Record the character
+  ansible.builtin.copy:
+    # 次に流したときは、この記録があれば聞かない。
+    content: "{{ {'character': claude_character_selected} | to_nice_json }}\n"
+    dest: "{{ claude_character_state_file }}"
+    mode: "0644"

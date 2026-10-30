@@ -37,27 +37,8 @@
     dest: "{{ ansible_facts['env'].HOME }}/.claude/CLAUDE.md"
     mode: "0644"
 
-- name: Ensure rules directory exists
-  ansible.builtin.file:
-    path: "{{ ansible_facts['env'].HOME }}/.claude/rules"
-    state: directory
-    mode: "0755"
-
-- name: Select the character
-  ansible.builtin.include_tasks: select.yml
-  # プレイブックは pre_tasks で決め済み。ロールだけを流したときはここで決める。
-  when: claude_character_selected is not defined
-
-- name: Copy character
-  ansible.builtin.copy:
-    # 1 行目の印が、次に -e なしで流したときの選択になる。印が無いと、流すたびに聞き直す。
-    content: |
-      <!-- character: {{ claude_character_selected }} -->
-      {{ lookup('ansible.builtin.file', 'characters/' ~ claude_character_selected ~ '.md') }}
-    # Claude Code は ~/.claude/rules/ の .md をすべてのセッションで読み込む。
-    # 置き場所を変えると、エラーも出ずにキャラクターが読まれなくなる。
-    dest: "{{ ansible_facts['env'].HOME }}/.claude/rules/character.md"
-    mode: "0644"
+- name: Set up the character
+  ansible.builtin.include_tasks: character.yml
 
 - name: Check if settings.json exists
   ansible.builtin.stat:

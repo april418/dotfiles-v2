@@ -28,6 +28,11 @@ LOCK_FILE = os.path.join(CACHE_DIR, "refresh.lock")
 UPDATE_PENDING_FILE = os.path.join(CACHE_DIR, "update-pending")
 UPDATE_DECLINED_FILE = os.path.join(STATE_DIR, "update-declined.json")
 UPDATE_LOCK_FILE = os.path.join(CACHE_DIR, "update.lock")
+# ansible/roles/claude/tasks/character.yml が書く。
+CHARACTER_FILE = os.path.join(STATE_DIR, "claude-character.json")
+# claude ロールの select.yml と同じ読み方にする。表示とプレイブックで、選んだものの判定が食い違わないように。
+CHARACTER_RECORD = re.compile(r'"character"\s*:\s*"([a-z0-9-]+)"')
+CHARACTER_NAME = re.compile(r"[a-z0-9-]+")
 DEFAULT_REPO = os.path.join(HOME, ".dotfiles")
 # .zshrc の ZINIT_HOME と同じ規則。
 ZINIT_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "zinit")
@@ -2220,6 +2225,76 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
     return 0 if startup else 1 if failed else 0
 
 
+def character_names(repo):
+    """選べるキャラクター。select.yml と同じく、記録から読める文字種の名前に限る。"""
+    try:
+        files = os.listdir(os.path.join(repo, "ansible", "roles", "claude", "files", "characters"))
+    except OSError:
+        return []
+    return sorted(f[:-3] for f in files if f.endswith(".md") and CHARACTER_NAME.fullmatch(f[:-3]))
+
+
+def chosen_character():
+    try:
+        with open(CHARACTER_FILE, encoding="utf-8") as f:
+            m = CHARACTER_RECORD.search(f.read())
+    except (OSError, ValueError):
+        return None
+    return m.group(1) if m else None
+
+
+def run_character_show():
+    repo, _ = locate()
+    names = character_names(repo) if repo else []
+    chosen = chosen_character()
+    if chosen is None:
+        current = "まだ選んでいない（次にプレイブックを流すと聞く）"
+    elif repo and chosen not in names:
+        current = f"{chosen}（ファイルが無いので、次にプレイブックを流すと聞き直す）"
+    else:
+        current = chosen
+    print(f"今のキャラクター: {current}")
+    if repo is None:
+        print("選べるもの: checkout が見つからないので分からない（DOTPATH か ~/.dotfiles に置く）")
+        return 2
+    print(f"選べるもの: {', '.join(names)}")
+    print("切り替えは dotfiles character set <名前>。新しいセッションから効く")
+    return 0
+
+
+def run_character_set(name):
+    repo, _ = locate()
+    if repo is None:
+        print("checkout が見つからない（DOTPATH か ~/.dotfiles に置く）", file=sys.stderr)
+        return 2
+    if not name and not sys.stdin.isatty():
+        # 端末が無いと ansible の pause は聞かずに今のものを選び、まだ選んでいなければ既定を選んだことになる。
+        print(f"端末から実行するか、名前を渡す（{', '.join(character_names(repo))}）", file=sys.stderr)
+        return 2
+    playbook_bin = ansible_playbook()
+    problem = "見つからない" if playbook_bin is None else interpreter_problem(playbook_bin)
+    if problem:
+        print(
+            f"ansible-playbook が起動しない（{problem}）。{shown(os.path.join(repo, 'install'))} を流し直す",
+            file=sys.stderr,
+        )
+        return 2
+    # key=value で渡すと、空白や = を含む名前が別の変数になる。JSON なら 1 つの値のまま届く。
+    extra = {"claude_character": name} if name else {"claude_character_prompt": True}
+    argv = [playbook_bin, os.path.join(repo, "ansible", "character.yml"), "--connection=local", "-e", json.dumps(extra)]
+    before = chosen_character()
+    # Ctrl-C は ansible-playbook に任せる（pause の中断の確認など）。既定のままだと親が先に落ちる。
+    previous = signal.signal(signal.SIGINT, lambda *_: None)
+    try:
+        code = subprocess.Popen(argv).wait()
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    after = chosen_character()
+    if code == 0:
+        print("新しいセッションから効く" if after != before else f"{after} のまま変えていない")
+    return code
+
+
 def parse_only(value):
     targets = {t.strip() for t in value.split(",") if t.strip()}
     unknown = targets - {"dotfiles", "tools", "brew", "all"}
@@ -2231,7 +2306,7 @@ def parse_only(value):
 def main():
     parser = argparse.ArgumentParser(
         prog="dotfiles",
-        description="dotfiles と、それが入れたツール・固定している版の更新を確かめて上げる。",
+        description="dotfiles と、それが入れたツール・固定している版の更新を確かめて上げる。Claude Code のキャラクターも切り替える。",
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     check_help = (
@@ -2281,11 +2356,19 @@ def main():
     pins = sub.add_parser("pins", help="キャッシュを使わずに固定バージョンだけを確かめる。GitHub Actions から呼ぶ")
     pins.add_argument("--repo", default=".", help="走査するリポジトリ")
     pins.add_argument("--format", choices=["text", "markdown"], default="text")
+    character = sub.add_parser("character", help="Claude Code のキャラクターと選べるものを表示する。set で切り替える")
+    character_sub = character.add_subparsers(dest="character_command", metavar="<command>")
+    character_set = character_sub.add_parser(
+        "set", help="キャラクターを切り替える。名前を省くと聞く（Enter で今のまま）。新しいセッションから効く"
+    )
+    character_set.add_argument("name", nargs="?", help="ansible/roles/claude/files/characters/<名前>.md の <名前>")
     args = parser.parse_args()
 
     if args.command is None:
         parser.print_help(sys.stderr)
         return 2
+    if args.command == "character":
+        return run_character_set(args.name) if args.character_command == "set" else run_character_show()
     if args.command == "notify":
         return run_notify(args.format, args.style)
     if args.command == "refresh":
