@@ -11,7 +11,7 @@
 | リポジトリ                                                       | 配置先                                      |
 | ---------------------------------------------------------------- | ------------------------------------------- |
 | `files/AGENTS.md`                                                | `~/.claude/CLAUDE.md`（ユーザー全体の指示） |
-| `files/hooks/` `files/skills/` `files/agents/`                   | `~/.claude/` の同名ディレクトリ             |
+| `files/hooks/` `files/skills/` `files/agents/` `files/rules/`    | `~/.claude/` の同名ディレクトリ             |
 | `files/characters/<名前>.md`（`claude_character` で選んだ 1 つ） | `~/.claude/rules/character.md`              |
 | `files/settings.json`                                            | `~/.claude/settings.json`                   |
 | `files/bin/evacuate`                                             | `~/.local/bin/evacuate`                     |
@@ -23,5 +23,8 @@
   ここにあるキーは配列も含めてリポジトリ側の値になるため、`/model` や
   `/permissions` で配置先を変えても、そのキーなら流すたびに戻る。キーを
   消しても配置先には残るので、`~/.claude/settings.json` からも手で消す
+- `files/rules/` の .md は配置先で毎セッション読まれる。リポジトリで消したり改名したり
+  しても配置先には残って効き続けるので、`~/.claude/rules/` からも `evacuate` で取り除く。
+  `character.md` はキャラクターのタスクが書くので、`files/rules/` に同じ名前を置かない
 - **このファイルを消さない。** リポジトリに CLAUDE.md が 1 つも無いと、
   Claude Code は `files/AGENTS.md` をこのリポジトリの指示として読み込む
