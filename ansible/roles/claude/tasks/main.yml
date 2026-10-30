@@ -40,6 +40,13 @@
 - name: Set up the character
   ansible.builtin.include_tasks: character.yml
 
+- name: Copy rules
+  ansible.builtin.copy:
+    # character.md は上のタスクが書くので、files/rules/ には同じ名前を置かない。
+    src: files/rules/
+    dest: "{{ ansible_facts['env'].HOME }}/.claude/rules/"
+    mode: "0644"
+
 - name: Check if settings.json exists
   ansible.builtin.stat:
     path: "{{ ansible_facts['env'].HOME }}/.claude/settings.json"

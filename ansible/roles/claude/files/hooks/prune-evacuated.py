@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """~/.local/state/evacuated/ から、退避して 14 日を過ぎたものを消す（SessionStart の startup で動かす）。
 
-グローバル指示（files/AGENTS.md の「シェルコマンド」）は rm を禁じ、取り除くものを evacuate（files/bin/evacuate）でここへ移させる。
+グローバル指示（files/AGENTS.md の「ファイルを取り除くとき」）は rm を禁じ、取り除くものを evacuate（files/bin/evacuate）でここへ移させる。
 ここは OS が掃除しないので、消す仕組みが無いと溜まり続ける。
 """
 
@@ -14,7 +14,7 @@ import shlex
 import shutil
 import time
 
-# files/AGENTS.md の「退避物の掃除」に書いた日数と、files/bin/evacuate の RETENTION_DAYS に揃える。
+# files/AGENTS.md の「ファイルを取り除くとき」に書いた日数と、files/bin/evacuate の RETENTION_DAYS に揃える。
 RETENTION_DAYS = 14
 # files/bin/evacuate の ROOT と揃える。
 ROOT = pathlib.Path.home() / ".local" / "state" / "evacuated"
