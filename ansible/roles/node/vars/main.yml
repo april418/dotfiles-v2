@@ -1,5 +1,5 @@
 ---
-# dotfiles-check: tags https://github.com/nvm-sh/nvm.git
+# dotfiles: tags https://github.com/nvm-sh/nvm.git
 node_nvm_version: "v0.40.8"
 # install.sh の nvm_default_install_dir と nvm_install_dir に合わせる。ずれると nvm.sh の stat が外れ、
 # 適用のたびに install.sh が既存の clone を node_nvm_version へ戻す。

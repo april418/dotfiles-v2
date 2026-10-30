@@ -1,4 +1,6 @@
 ---
 # まだ選んでいないときの Enter と、端末が無いときに使うキャラクター。files/characters/<名前>.md の
-# <名前> を書く（英小文字・数字・-）。選び直すときは -e claude_character=<名前> を渡す。
+# <名前> を書く（英小文字・数字・-）。選び直すときは dotfiles character set <名前> を使う。
 claude_character_default: zundamon
+# true なら、選んだものが残っていても聞く（Enter で今のまま）。dotfiles character set が名前を省いたときに渡す。
+claude_character_prompt: false

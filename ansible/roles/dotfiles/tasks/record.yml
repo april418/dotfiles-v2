@@ -1,12 +1,12 @@
 ---
-# dotfiles-check は、ここで記録したコミットと checkout の HEAD を比べて未適用を判定する。
+# dotfiles check は、ここで記録したコミットと checkout の HEAD を比べて未適用を判定する。
 - name: Read applied dotfiles commit
   ansible.builtin.command:
     cmd: git rev-parse --show-toplevel HEAD
     chdir: "{{ playbook_dir }}"
   register: dotfiles_applied_rev
   changed_when: false
-  # git の checkout 以外から流したときは記録しない。dotfiles-check は記録が無い旨を出す。
+  # git の checkout 以外から流したときは記録しない。dotfiles check は記録が無い旨を出す。
   failed_when: false
   # check mode では command が実行されず、空の stdout が rc=0 で返って次のタスクが落ちる。
   check_mode: false

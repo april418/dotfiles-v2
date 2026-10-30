@@ -37,27 +37,8 @@
     dest: "{{ ansible_facts['env'].HOME }}/.claude/CLAUDE.md"
     mode: "0644"
 
-- name: Ensure rules directory exists
-  ansible.builtin.file:
-    path: "{{ ansible_facts['env'].HOME }}/.claude/rules"
-    state: directory
-    mode: "0755"
-
-- name: Select the character
-  ansible.builtin.include_tasks: select.yml
-  # プレイブックは pre_tasks で決め済み。ロールだけを流したときはここで決める。
-  when: claude_character_selected is not defined
-
-- name: Copy character
-  ansible.builtin.copy:
-    # 1 行目の印が、次に -e なしで流したときの選択になる。印が無いと、流すたびに聞き直す。
-    content: |
-      <!-- character: {{ claude_character_selected }} -->
-      {{ lookup('ansible.builtin.file', 'characters/' ~ claude_character_selected ~ '.md') }}
-    # Claude Code は ~/.claude/rules/ の .md をすべてのセッションで読み込む。
-    # 置き場所を変えると、エラーも出ずにキャラクターが読まれなくなる。
-    dest: "{{ ansible_facts['env'].HOME }}/.claude/rules/character.md"
-    mode: "0644"
+- name: Set up the character
+  ansible.builtin.include_tasks: character.yml
 
 - name: Check if settings.json exists
   ansible.builtin.stat:
@@ -152,7 +133,7 @@
     mode: "0644"
   loop:
     # どちらも main の追従ではなくコミット SHA で固定する。上流はリポジトリの構成変更や
-    # ファイルの再配置が多く、追従するとビルドが壊れる。更新と移動は dotfiles-check が知らせる。
+    # ファイルの再配置が多く、追従するとビルドが壊れる。更新と移動は dotfiles check が知らせる。
     - url: https://raw.githubusercontent.com/anthropics/claude-code/dbdd79cebfae5891f5b0fab6f7773ea520d289a7/plugins/frontend-design/skills/frontend-design/SKILL.md
       dest: frontend-design/SKILL.md
     - url: https://raw.githubusercontent.com/mizchi/skills/a41865b34b78f2675a6c73178377a5bcc1b492c6/empirical-prompt-tuning/SKILL.md

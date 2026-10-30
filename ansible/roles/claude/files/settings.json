@@ -216,7 +216,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.local/bin/dotfiles-check notify --format claude"
+            "command": "$HOME/.local/bin/dotfiles notify --format claude"
           },
           {
             "type": "command",

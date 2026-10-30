@@ -1,0 +1,9 @@
+---
+# dotfiles character set が流す。
+- name: Set Claude Code character
+  hosts: localhost
+  tasks:
+    - name: Select and copy the character
+      ansible.builtin.include_role:
+        name: claude
+        tasks_from: character

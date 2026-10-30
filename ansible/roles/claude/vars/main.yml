@@ -1,0 +1,4 @@
+---
+# files/dotfiles も読むので、同じ規則で決める（dotfiles ロールの dotfiles_state_dir）。
+# XDG_STATE_HOME が空文字のときも既定値に倒す。
+claude_character_state_file: "{{ ansible_facts['env'].XDG_STATE_HOME | default(ansible_facts['env'].HOME + '/.local/state', true) }}/dotfiles/claude-character.json"
