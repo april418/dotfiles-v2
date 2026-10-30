@@ -1780,30 +1780,25 @@ def ask(groups, style, startup):
     else:
         prompt = "? 更新する？ " + "、".join(f"{letter} = {title}" for letter, title in choices) + ": "
     letters = "".join(g["letter"] for g in groups)
-    # 止めたまま放置されると update.lock を握り続け、ほかのシェルが黙って聞かなくなる。
-    previous = signal.signal(signal.SIGTSTP, signal.SIG_IGN)
-    try:
-        for _ in range(3):
-            # 質問が出る前に打たれたキー（開いてすぐの Enter や、端末が起動時に送るコマンド）を答えにしない。
-            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
-            try:
-                answer = re.sub(r"[\s,]", "", input(prompt).lower())
-            except (EOFError, KeyboardInterrupt):
-                print()
-                return None
-            if answer == "":
-                return None
-            if answer == "n":
-                return []
-            if answer == "a":
-                return groups
-            if set(answer) <= set(letters):
-                return [g for g in groups if g["letter"] in answer]
-            decline = "内容が変わるまで聞かない" if startup else "更新しない"
-            print(f"{'・'.join(letters)} を並べて選ぶ（例: {letters}）。a はすべて、n は{decline}、Enter はあとで")
-        return None
-    finally:
-        signal.signal(signal.SIGTSTP, previous)
+    for _ in range(3):
+        # 質問が出る前に打たれたキー（開いてすぐの Enter や、端末が起動時に送るコマンド）を答えにしない。
+        termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+        try:
+            answer = re.sub(r"[\s,]", "", input(prompt).lower())
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+        if answer == "":
+            return None
+        if answer == "n":
+            return []
+        if answer == "a":
+            return groups
+        if set(answer) <= set(letters):
+            return [g for g in groups if g["letter"] in answer]
+        decline = "内容が変わるまで聞かない" if startup else "更新しない"
+        print(f"{'・'.join(letters)} を並べて選ぶ（例: {letters}）。a はすべて、n は{decline}、Enter はあとで")
+    return None
 
 
 # 更新中は子の出力の末尾をこの行数だけ見せる。失敗したら、原因を追えるよう長めに残す。
@@ -2083,31 +2078,28 @@ def run_update(startup, only, style):
     os.makedirs(CACHE_DIR, exist_ok=True)
     repo, asked = None, False
     try:
-        with open(UPDATE_LOCK_FILE, "w") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                # 同時に開いたシェルでそれぞれ聞くと、同じ更新が並んで走る。
-                if startup:
-                    return 1
-                print("別のシェルで更新を確認しているか、更新している", file=sys.stderr)
-                return 2
-            repo, _ = locate()
-            fetch_error = None
-            if not startup:
-                if sys.stderr.isatty():
-                    print("リモートと各ツールの最新版を取得している…", file=sys.stderr)
-                fetch_error = refresh(wait=True)
-            dotfiles, tools = check_dotfiles(), check_tools()
-            groups = update_groups(dotfiles, tools)
-            if startup and not askable(groups, read_declined()):
-                sync_pending(groups)
+        if updating():
+            # 更新の途中で判定すると、上げかけの状態を見て聞くことになる。
+            if startup:
                 return 1
-            if startup and typed_ahead():
-                # 開いてすぐ打ったコマンドは、捨てずにシェルに渡す。次のシェルでまた聞く。
-                return 1
-            asked = True
-            return update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_error)
+            print("別のシェルで更新している", file=sys.stderr)
+            return 2
+        repo, _ = locate()
+        fetch_error = None
+        if not startup:
+            if sys.stderr.isatty():
+                print("リモートと各ツールの最新版を取得している…", file=sys.stderr)
+            fetch_error = refresh(wait=True)
+        dotfiles, tools = check_dotfiles(), check_tools()
+        groups = update_groups(dotfiles, tools)
+        if startup and not askable(groups, read_declined()):
+            sync_pending(groups)
+            return 1
+        if startup and typed_ahead():
+            # 開いてすぐ打ったコマンドは、捨てずにシェルに渡す。次のシェルでまた聞く。
+            return 1
+        asked = True
+        return update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_error)
     finally:
         # 聞いたシェルでは notify を出さないので、取得の起動もここで行う。更新と lock の後に回すのは、
         # 取得の git fetch や brew outdated を、選んだ pull や brew upgrade と同時に走らせないため。
@@ -2156,6 +2148,47 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
             print(render([("info", "info", f"{message}。dotfiles update でいつでも更新できる", [])], style))
         return 0
 
+    # 答えを待つ間は握らない。握ると、答えずに置かれたシェルがある限り、ほかのシェルで更新できない。
+    # そのため同時に開いたシェルはそれぞれ聞き、同じ更新を選びうる。
+    with open(UPDATE_LOCK_FILE, "w") as lock:
+        # updating() は一瞬だけ取って離す。それと重なっただけで更新中と取り違えないよう、少し待って試し直す。
+        for _ in range(10):
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                time.sleep(0.05)
+        else:
+            if startup:
+                print(render([("warn", "warn", "別のシェルで更新しているので、更新しなかった", [])], style))
+                return 0
+            print("別のシェルで更新している", file=sys.stderr)
+            return 2
+        ids, asked_keys = {g["id"] for g in chosen}, {k for g in chosen for k in g["keys"]}
+        current = update_groups(check_dotfiles(), check_tools())
+        # 答えを待つ間に別のシェルが上げたものは飛ばす。取得で版が進んだものは、見せていない版へ上げないよう飛ばす。
+        remaining, changed = [], []
+        for g in current:
+            if g["id"] in ids:
+                (remaining if set(g["keys"]) <= asked_keys else changed).append(g)
+        rows = [("warn", "warn", g["title"], ["答えを待つ間に内容が変わったので更新しなかった"]) for g in changed]
+        if changed:
+            rows.append(("info", "info", "dotfiles update で聞き直せる", []))
+        if not remaining and not changed:
+            rows.append(("info", "info", "選んだものは更新が済んでいた", []))
+        if rows:
+            print(render(rows, style))
+        if not remaining:
+            sync_pending(current)
+            return 2 if changed and not startup else 0
+        return run_chosen(remaining, len(chosen) < len(groups), startup, style)
+
+
+def run_chosen(chosen, partial, startup, style):
+    """選ばれたグループの手順を順に実行する。update.lock は呼ぶ側が握っておく。
+
+    partial は、聞いたグループのうち選ばれなかったものがあるか。
+    """
     results, updated, started, done = [], set(), 0, 0
     # 端末でなければ（ログに落とすときなど）、出力を消さずにそのまま流す。カーソルを動かせない端末も同じ。
     live_output, live = sys.stdout.isatty() and os.environ.get("TERM", "dumb") != "dumb", None
@@ -2214,7 +2247,7 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
     hints = []
     if "dotfiles" in updated:
         hints.append(("info", "info", "このシェルは更新前の設定のまま。exec zsh で読み込み直す", []))
-    if startup and len(chosen) < len(groups) and ask_policy() == "changed":
+    if startup and partial and ask_policy() == "changed":
         hints.append(("info", "info", "選ばなかったものは内容が変わるまで聞かない", []))
     failed = any(color not in ("ok", "progress") for _, color, _, _ in results)
     if live_output and failed:
