@@ -35,7 +35,7 @@ jobs:
         run: |
           # 終了コードで issue の扱いを分けるので、失敗してもここでは止めない。
           set +e
-          python3 ansible/roles/dotfiles/files/dotfiles-check pins --repo . --format markdown > report.md
+          python3 ansible/roles/dotfiles/files/dotfiles pins --repo . --format markdown > report.md
           status=$?
           set -e
           # 本文には上流のファイルの差分が入る。行頭の ::error:: などをワークフローのコマンドとして読ませない。

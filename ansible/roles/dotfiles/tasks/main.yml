@@ -5,8 +5,8 @@
     state: directory
     mode: "0755"
 
-- name: Copy dotfiles-check
+- name: Copy the dotfiles command
   ansible.builtin.copy:
-    src: files/dotfiles-check
-    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/dotfiles-check"
+    src: files/dotfiles
+    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/dotfiles"
     mode: "0755"

@@ -153,7 +153,7 @@ def http_get(url, token=None):
     import urllib.error
     import urllib.request
 
-    request = urllib.request.Request(url, headers={"User-Agent": "dotfiles-check"})
+    request = urllib.request.Request(url, headers={"User-Agent": "dotfiles"})
     if token:
         # 通常のヘッダーはリダイレクト先が別のホストでも引き継がれる。トークンは最初の宛先にだけ送る。
         request.add_unredirected_header("Authorization", f"Bearer {token}")
@@ -406,7 +406,7 @@ class Tool:
         return None
 
     def remark(self, data):
-        """手動の dotfiles-check にだけ添える補足（待ち期間で見送っている版など）。無ければ None。"""
+        """dotfiles check にだけ添える補足（待ち期間で見送っている版など）。無ければ None。"""
         return None
 
 
@@ -891,7 +891,7 @@ PIN_COOLDOWN = 7 * 24 * 60 * 60
 DIFF_MAX_LINES = 200
 
 RAW_PIN = re.compile(r"https://raw\.githubusercontent\.com/([\w.-]+)/([\w.-]+)/([0-9a-f]{40})/([^\s\"'#,\]}]+)")
-TAG_MARKER = re.compile(r"#\s*dotfiles-check:\s*tags\s+(\S+)")
+TAG_MARKER = re.compile(r"#\s*dotfiles:\s*tags\s+(\S+)")
 KEY_VALUE = re.compile(r"\s*([\w-]+):\s*[\"']?(v?\d+(?:\.\d+)+)[\"']?\s*(?:#.*)?$")
 USES_SHA = re.compile(r"uses:\s*[\"']?([\w.-]+)/([\w.-]+)((?:/[\w./-]+)?)@([0-9a-f]{40})[\"']?(.*)$")
 # Renovate の `# tag=vX.Y.Z` も読む。
@@ -1096,7 +1096,7 @@ class RawPin(Pin):
 
 
 class TagPin(Pin):
-    """`# dotfiles-check: tags <URL>` の次の行で固定した版。"""
+    """`# dotfiles: tags <URL>` の次の行で固定した版。"""
 
     def __init__(self, rel, line, url, m):
         self.url = url
@@ -1251,7 +1251,7 @@ def long_failure(state):
 
 
 def brief(error):
-    """シェルを開くたびに出す通知に向けて、取得の失敗の理由を短くする。全文は dotfiles-check で見られる。"""
+    """シェルを開くたびに出す通知に向けて、取得の失敗の理由を短くする。全文は dotfiles check で見られる。"""
     if "CERTIFICATE_VERIFY_FAILED" in error:
         return "TLS の証明書を検証できない"
     if "timed out" in error or "タイムアウト" in error:
@@ -1268,7 +1268,7 @@ def summarize_failures(failures):
         f = failures[0]
         return f"{f['label']} の最新版を {f['days']} 日確かめられていない（{brief(f['error'])}）"
     reasons = {brief(f["error"]) for f in failures}
-    reason = reasons.pop() if len(reasons) == 1 else "理由は dotfiles-check で見る"
+    reason = reasons.pop() if len(reasons) == 1 else "理由は dotfiles check で見る"
     return (
         f"{failures[0]['label']} ほか {len(failures) - 1} 件の最新版を "
         f"{min(f['days'] for f in failures)} 日以上確かめられていない（{reason}）"
@@ -1465,7 +1465,7 @@ def run_check():
         updates |= found_updates
         unknown |= found_unknown
     if update_groups(dotfiles, tools):
-        print("\ndotfiles 本体とツールは dotfiles-check update でまとめて更新できる")
+        print("\ndotfiles 本体とツールは dotfiles update でまとめて更新できる")
     return updates, unknown
 
 
@@ -1519,8 +1519,8 @@ PL_ICONS = {
     "ok": "\uf00c",
     "question": "\uf059",
 }
-NOTIFY_FOOTER = "詳細と更新手順は dotfiles-check で表示する"
-UPDATE_FOOTER = "詳細は dotfiles-check、更新は dotfiles-check update で行う"
+NOTIFY_FOOTER = "詳細と更新手順は dotfiles check で表示する"
+UPDATE_FOOTER = "詳細は dotfiles check、更新は dotfiles update で行う"
 
 
 def notify_rows(repo, dotfiles, tools):
@@ -1579,8 +1579,8 @@ def run_notify(fmt, style="plain"):
         groups = update_groups(dotfiles, tools)
         sync_pending(groups)
     except Exception as e:
-        # 黙ると利用者は dotfiles-check を実行する理由が無く、壊れたまま気づけない。
-        rows, groups = [("warn", "error", "dotfiles-check", [f"notify が失敗した（{type(e).__name__}）"])], []
+        # 黙ると利用者は dotfiles check を実行する理由が無く、壊れたまま気づけない。
+        rows, groups = [("warn", "error", "dotfiles notify", [f"失敗した（{type(e).__name__}）"])], []
     if not rows:
         return 0
     footer = UPDATE_FOOTER if groups else NOTIFY_FOOTER
@@ -1636,7 +1636,7 @@ MARKDOWN_MAX_BYTES = 120_000
 
 
 def print_pins_markdown(items):
-    parts = ["dotfiles-check が固定している版を確かめた結果。直したら、次の定期実行でこの issue は閉じる。\n"]
+    parts = ["dotfiles pins が、固定している版を確かめた結果。直したら、次の定期実行でこの issue は閉じる。\n"]
     found = [item for item in items if item["notice"]]
     if found:
         rows = ["| 対象 | 状態 | 直し方 |", "| --- | --- | --- |"]
@@ -2125,7 +2125,7 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
     if rows:
         print(render(rows, style))
     if not groups:
-        print("dotfiles-check update で更新できるものは無い")
+        print("dotfiles update で更新できるものは無い")
         return 0
     if only is not None:
         chosen = [g for g in groups if "all" in only or g["id"] in only]
@@ -2148,7 +2148,7 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
         sync_pending(groups)
         if startup:
             message = "次のシェルでまた聞く" if ask_policy() == "always" else "内容が変わるまで聞かない"
-            print(render([("info", "info", f"{message}。dotfiles-check update でいつでも更新できる", [])], style))
+            print(render([("info", "info", f"{message}。dotfiles update でいつでも更新できる", [])], style))
         return 0
 
     results, updated, started, done = [], set(), 0, 0
@@ -2160,7 +2160,7 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
         print(render([row], style), flush=True)
 
     # 取得と同時に走らせない。取得の git fetch が ref を握っていると、pull は "cannot lock ref" で失敗する。
-    # 質問の間は握らない。握ると、答えを待つシェルがある限り手動の dotfiles-check が待ち続ける。
+    # 質問の間は握らない。握ると、答えを待つシェルがある限り dotfiles check が待ち続ける。
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(LOCK_FILE, "w") as fetching, open(UPDATE_LOG_FILE, "wb") as log:
         try:
@@ -2230,14 +2230,16 @@ def parse_only(value):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="dotfiles-check",
-        description=(
-            "dotfiles と、それが入れたツール・固定している版の更新を確かめる。引数なしで実行すると、リモートを取得して"
-            "結果と更新手順を表示する。終了コードは 0 = 更新なし、1 = 更新あり、2 = 判定できないものがあった。"
-            "更新ありと判定できないものが両方あれば 1 を返す。standalone 以外の uv など、確かめなかったものは数えない。"
-        ),
+        prog="dotfiles",
+        description="dotfiles と、それが入れたツール・固定している版の更新を確かめて上げる。",
     )
-    sub = parser.add_subparsers(dest="command")
+    sub = parser.add_subparsers(dest="command", metavar="<command>")
+    check_help = (
+        "リモートを取得して、更新の有無と更新手順を表示する。終了コードは 0 = 更新なし、1 = 更新あり、"
+        "2 = 判定できないものがあった。更新ありと判定できないものが両方あれば 1 を返す。"
+        "standalone 以外の uv など、確かめなかったものは数えない"
+    )
+    sub.add_parser("check", help=check_help, description=check_help)
     notify = sub.add_parser(
         "notify",
         help="前回取得した状態から通知を出す。取得から時間が経っていればバックグラウンドで取得し直す",
@@ -2281,6 +2283,9 @@ def main():
     pins.add_argument("--format", choices=["text", "markdown"], default="text")
     args = parser.parse_args()
 
+    if args.command is None:
+        parser.print_help(sys.stderr)
+        return 2
     if args.command == "notify":
         return run_notify(args.format, args.style)
     if args.command == "refresh":
@@ -2296,7 +2301,7 @@ def main():
         except Exception as e:
             if args.startup:
                 # シェルを開くたびにトレースバックを出さない。1 を返して、続く notify にいつもの通知を出させる。
-                print(f"dotfiles-check update が失敗した（{type(e).__name__}: {e}）")
+                print(f"dotfiles update が失敗した（{type(e).__name__}: {e}）")
                 return 1
             traceback.print_exc()
             return 2

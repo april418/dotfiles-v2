@@ -121,3 +121,10 @@
       ansible.builtin.include_role:
         name: dotfiles
         tasks_from: record
+
+    - name: Remove dotfiles-check
+      ansible.builtin.file:
+        # dotfiles コマンドの古い名前。古い .zshrc は zsh ロールまでこれを呼ぶので、全ロールが通ってから消す。
+        # 残すと、更新されないまま PATH にあり続ける。
+        path: "{{ ansible_facts['env'].HOME }}/.local/bin/dotfiles-check"
+        state: absent

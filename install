@@ -70,7 +70,7 @@ DOTFILES_GIT="https://github.com/april418/dotfiles-v2.git"
 ANSIBLE_PYTHON="3.14"
 UV="$HOME/.local/bin/uv"
 # uv ロールが置く uv.toml の exclude-newer = "1 week" を読めるのは 0.9.17 から。
-# 最新へ上げないのは、公開直後の版を入れない方針（dotfiles-check の 1 週間ルール）に合わせるため。
+# 最新へ上げないのは、公開直後の版を入れない方針（dotfiles check の 1 週間ルール）に合わせるため。
 UV_MIN_VERSION="0.9.17"
 # PATH の先にほかの ansible（Homebrew の formula など）があっても、uv で入れたものを使う。
 ANSIBLE_PLAYBOOK="$HOME/.local/bin/ansible-playbook"

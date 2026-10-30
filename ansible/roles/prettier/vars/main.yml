@@ -1,5 +1,5 @@
 ---
-# dotfiles-check: tags https://github.com/prettier/prettier
+# dotfiles: tags https://github.com/prettier/prettier
 prettier_version: "3.9.9"
 # XDG_DATA_HOME が空文字のときも既定値に倒す。
 prettier_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/prettier"
