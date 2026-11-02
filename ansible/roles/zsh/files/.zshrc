@@ -72,6 +72,10 @@ autoload -Uz colors; colors
 fpath=("${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions" $fpath)
 # 補完機能を使用できるようにする
 autoload -Uz compinit; compinit -u
+# nvm の補完。compinit より前に読むと nvm が自分でも compinit を流し、fpath の違う 2 回で dump を毎回作り直す。
+if [ -s "$NVM_DIR/bash_completion" ]; then
+  source "$NVM_DIR/bash_completion"
+fi
 # cdr を有効にする
 autoload -Uz chpwd_recent_dirs cdr
 # 履歴検索
