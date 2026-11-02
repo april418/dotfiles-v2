@@ -1,0 +1,4 @@
+# Claude Code が subagent の worktree を作る場所。.git/info/exclude に足されていないリポジトリでも出さない。
+.claude/worktrees/
+# orchestrate skill が、判断ログに書けないときに作業ツリーの直下へ置く台帳とパッチ。
+/.orchestrate-*

@@ -1,0 +1,6 @@
+---
+# git がグローバルな ignore を探すのと同じ規則で決める。XDG_CONFIG_HOME が空文字なら ~/.config に倒す。
+git_config_dir: >-
+  {{ ansible_facts['env'].XDG_CONFIG_HOME
+     if ansible_facts['env'].XDG_CONFIG_HOME | default('') | length > 0
+     else ansible_facts['env'].HOME ~ '/.config' }}

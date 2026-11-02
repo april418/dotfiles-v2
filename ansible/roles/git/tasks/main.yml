@@ -76,3 +76,19 @@
     dest: "{{ ansible_facts['env'].HOME }}/.gitconfig.local"
     mode: "0644"
     force: false
+
+- name: Ensure git config directory exists
+  ansible.builtin.file:
+    path: "{{ git_config_dir }}/git"
+    state: directory
+    mode: "0755"
+
+- name: Add entries to global gitignore
+  ansible.builtin.blockinfile:
+    # core.excludesFile を設定していなければ、git はこの場所を既定として読む。
+    path: "{{ git_config_dir }}/git/ignore"
+    # Claude Code も同じファイルに行を足すので、上書きせず印の間だけを持つ。
+    block: "{{ lookup('ansible.builtin.file', 'ignore') }}"
+    marker: "# {mark} dotfiles git role"
+    create: true
+    mode: "0644"
