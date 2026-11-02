@@ -1,6 +1,9 @@
 {
   "effortLevel": "xhigh",
   "model": "opus",
+  "env": {
+    "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "10"
+  },
   "permissions": {
     "allow": [
       "Glob",
