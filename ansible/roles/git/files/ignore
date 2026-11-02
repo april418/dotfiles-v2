@@ -1,0 +1,9 @@
+# dotfiles の git ロールが配置する。手で足した行は、次にプレイブックを流すと消える。
+
+**/.claude/settings.local.json
+
+# Claude Code が subagent の worktree を作る場所。.git/info/exclude に足されていないリポジトリでも出さない。
+.claude/worktrees/
+
+# orchestrate skill が、判断ログに書けないときに作業ツリーへ置く台帳とパッチ。
+.orchestrate-*

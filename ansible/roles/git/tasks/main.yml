@@ -76,3 +76,16 @@
     dest: "{{ ansible_facts['env'].HOME }}/.gitconfig.local"
     mode: "0644"
     force: false
+
+- name: Ensure git config directory exists
+  ansible.builtin.file:
+    path: "{{ git_config_dir }}/git"
+    state: directory
+    mode: "0755"
+
+- name: Copy global gitignore
+  ansible.builtin.copy:
+    src: ignore
+    # .gitconfig は core.excludesFile を設定しないので、git はこの場所を既定として読む。
+    dest: "{{ git_config_dir }}/git/ignore"
+    mode: "0644"
