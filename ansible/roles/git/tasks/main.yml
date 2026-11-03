@@ -11,7 +11,11 @@
     url: https://cli.github.com/packages/githubcli-archive-keyring.gpg
     dest: /etc/apt/keyrings/githubcli-archive-keyring.gpg
     mode: "0644"
+    # 既定の get_url は If-Modified-Since で済ませ、手元の mtime が新しいと中身を比べない。
+    # GitHub CLI は署名鍵を差し替えるので、毎回中身を比べる。同じなら書き換えない。
+    force: true
   become: true
+  register: git_gh_key
   when: ansible_facts['os_family'] == 'Debian'
 
 - name: Add GitHub CLI apt repository on Debian-based systems
@@ -26,18 +30,19 @@
   register: git_gh_repo
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Update apt cache after GitHub CLI repository change
+- name: Update apt cache after GitHub CLI key or repository change
   ansible.builtin.apt:
     update_cache: true
   become: true
-  when: git_gh_repo is changed # noqa: no-handler
+  when: git_gh_key is changed or git_gh_repo is changed # noqa: no-handler
 
 - name: Add GitHub CLI dnf repository on RedHat-based systems
   ansible.builtin.yum_repository:
     name: gh-cli
     description: packages for the GitHub CLI
     baseurl: https://cli.github.com/packages/rpm
-    gpgkey: https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x23F3D4EA75716059
+    # 公式の gh-cli.repo と同じ鍵束を使う。鍵 ID で名指しすると、鍵の差し替えに追従しない。
+    gpgkey: https://cli.github.com/packages/githubcli-archive-keyring.asc
     gpgcheck: true
     repo_gpgcheck: true
   become: true
