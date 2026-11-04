@@ -898,7 +898,7 @@ PIN_COOLDOWN = 7 * 24 * 60 * 60
 DIFF_MAX_LINES = 200
 
 RAW_PIN = re.compile(r"https://raw\.githubusercontent\.com/([\w.-]+)/([\w.-]+)/([0-9a-f]{40})/([^\s\"'#,\]}]+)")
-TAG_MARKER = re.compile(r"#\s*dotfiles:\s*tags\s+(\S+)")
+TAG_MARKER = re.compile(r"#\s*dotfiles:\s*tags\s+(\S+)(?:\s+(\S+))?")
 KEY_VALUE = re.compile(r"\s*([\w-]+):\s*[\"']?(v?\d+(?:\.\d+)+)[\"']?\s*(?:#.*)?$")
 USES_SHA = re.compile(r"uses:\s*[\"']?([\w.-]+)/([\w.-]+)((?:/[\w./-]+)?)@([0-9a-f]{40})[\"']?(.*)$")
 # Renovate の `# tag=vX.Y.Z` も読む。
@@ -1103,23 +1103,28 @@ class RawPin(Pin):
 
 
 class TagPin(Pin):
-    """`# dotfiles: tags <URL>` の次の行で固定した版。"""
+    """`# dotfiles: tags <URL> [接頭辞]` の次の行で固定した版。
 
-    def __init__(self, rel, line, url, m):
+    接頭辞は、`wrangler@4.1.0` のようにパッケージごとにタグを打つモノレポで、版より前の部分を書く。
+    """
+
+    def __init__(self, rel, line, url, prefix, m):
         self.url = url
+        self.prefix = prefix or ""
         self.name, self.current = m.groups()
         super().__init__(f"tag:{rel}:{self.name}:{url}", self.name, rel, line)
 
     def fetch(self):
         out = run(["git", "ls-remote", "--tags", "--refs", self.url], FETCH_TIMEOUT)[0]
-        tags = set(re.findall(r"refs/tags/(v?\d+(?:\.\d+)+)$", out, re.MULTILINE))
+        tags = set(re.findall(rf"refs/tags/({re.escape(self.prefix)}v?\d+(?:\.\d+)+)$", out, re.MULTILINE))
         if not tags:
             raise FetchError("版のタグが見つからない")
         github = GITHUB_URL.match(self.url)
         if not github:
-            return {"latest": max(tags, key=version_key), "published": None}
-        latest, published = settled_tag(*github.groups(), tags)
-        return {"latest": latest, "published": published}
+            latest, published = max(tags, key=version_key), None
+        else:
+            latest, published = settled_tag(*github.groups(), tags)
+        return {"latest": latest and latest.removeprefix(self.prefix), "published": published}
 
     def evaluate(self, data):
         latest = data.get("latest")
@@ -1218,7 +1223,7 @@ def find_pins(repo):
             if marker:
                 target = KEY_VALUE.match(lines[i + 1]) if i + 1 < len(lines) else None
                 found.append(
-                    TagPin(rel, i + 2, marker.group(1), target)
+                    TagPin(rel, i + 2, *marker.groups(), target)
                     if target
                     else BrokenPin(rel, i + 1, '目印の次の行から版を読めない（key: "vX.Y.Z" の形で書く）')
                 )
