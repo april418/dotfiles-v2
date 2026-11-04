@@ -30,11 +30,21 @@
   register: git_gh_repo
   when: ansible_facts['os_family'] == 'Debian'
 
-- name: Update apt cache after GitHub CLI key or repository change
+- name: Check whether apt has the GitHub CLI index
+  ansible.builtin.stat:
+    path: /var/lib/apt/lists/cli.github.com_packages_dists_stable_InRelease
+  register: git_gh_index
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Update apt cache for GitHub CLI
   ansible.builtin.apt:
     update_cache: true
   become: true
-  when: git_gh_key is changed or git_gh_repo is changed # noqa: no-handler
+  # update が失敗した次の実行は鍵も list も changed にならないので、索引の有無も見る。
+  # 索引が無いまま進むと、配布元の古い gh が入る。
+  when: >-
+    ansible_facts['os_family'] == 'Debian'
+    and (git_gh_key is changed or git_gh_repo is changed or not git_gh_index.stat.exists)
 
 - name: Add GitHub CLI dnf repository on RedHat-based systems
   ansible.builtin.yum_repository:
