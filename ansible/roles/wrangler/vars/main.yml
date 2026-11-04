@@ -1,0 +1,5 @@
+---
+# dotfiles: tags https://github.com/cloudflare/workers-sdk wrangler@
+wrangler_version: "4.154.0"
+# XDG_DATA_HOME が空文字のときも既定値に倒す。
+wrangler_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/wrangler"
