@@ -116,6 +116,7 @@
     - shfmt
     - uv
     - vim
+    - wrangler
     - zsh
 
   post_tasks:

@@ -1,0 +1,62 @@
+---
+- name: Read installed wrangler package
+  ansible.builtin.slurp:
+    src: "{{ wrangler_dir }}/node_modules/wrangler/package.json"
+  register: wrangler_package
+  failed_when: false
+
+- name: Set installed wrangler version
+  ansible.builtin.set_fact:
+    wrangler_installed: "{{ (wrangler_package.content | b64decode | from_json).version if wrangler_package.content is defined else '' }}"
+
+# node ロールは nvm だけを入れ、node は入れない。node が無ければ wrangler は動かないので、入れずに知らせる。
+- name: Check node is available
+  ansible.builtin.shell:
+    cmd: . "$NVM_DIR/nvm.sh" && command -v npm
+    executable: /bin/bash
+  environment:
+    NVM_DIR: "{{ node_nvm_dir }}"
+  register: wrangler_npm
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: wrangler_installed != wrangler_version and ansible_facts['os_family'] != 'Windows'
+
+- name: Debug node is not available
+  ansible.builtin.debug:
+    msg: "npm が見つからないため wrangler {{ wrangler_version }} を入れていない。nvm で node を入れてから流し直す。"
+  when: wrangler_npm.rc is defined and wrangler_npm.rc != 0
+
+# npm の bin は #!/usr/bin/env node で動くので、nvm.sh で node を PATH に載せたシェルから呼ぶ。
+- name: Install wrangler
+  ansible.builtin.shell:
+    cmd: . "$NVM_DIR/nvm.sh" && npm install --prefix "$WRANGLER_DIR" "wrangler@$WRANGLER_VERSION"
+    executable: /bin/bash
+  environment:
+    NVM_DIR: "{{ node_nvm_dir }}"
+    WRANGLER_DIR: "{{ wrangler_dir }}"
+    WRANGLER_VERSION: "{{ wrangler_version }}"
+  register: wrangler_install
+  when: wrangler_npm.rc is defined and wrangler_npm.rc == 0
+  changed_when: wrangler_install.rc == 0
+  # engine-strict=true の下で node が古いと EBADENGINE になる。要求する版は wrangler が上げていくので、数字を持たずに
+  # npm の判定を使う。止めると後のロールと適用の記録まで飛ぶので、入れずに知らせる。
+  failed_when: wrangler_install.rc != 0 and 'EBADENGINE' not in wrangler_install.stderr
+
+- name: Debug node is too old
+  ansible.builtin.debug:
+    msg: "node が古いため wrangler {{ wrangler_version }} を入れていない。nvm で新しい node を使ってから流し直す。"
+  when: wrangler_install.rc is defined and wrangler_install.rc != 0
+
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Link wrangler into local bin
+  ansible.builtin.file:
+    src: "{{ wrangler_dir }}/node_modules/.bin/wrangler"
+    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/wrangler"
+    state: link
+  when: wrangler_installed == wrangler_version or wrangler_install is changed
