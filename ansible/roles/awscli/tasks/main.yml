@@ -1,0 +1,43 @@
+---
+- name: Read installed AWS CLI version
+  ansible.builtin.command:
+    cmd: "{{ ansible_facts['env'].HOME }}/.local/bin/aws --version"
+  register: awscli_version_output
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Set installed AWS CLI version
+  ansible.builtin.set_fact:
+    awscli_installed: "{{ awscli_version_output.stdout | regex_replace('^aws-cli/(\\S+).*$', '\\1') }}"
+
+- name: Install AWS CLI
+  # install.sh は今の版より古い版を渡すと失敗する。aws update で固定より新しくなった版は、そのまま使う。
+  when:
+    - ansible_facts['os_family'] != 'Windows'
+    - awscli_installed == '' or awscli_installed is version(awscli_version, '<')
+  block:
+    # install.sh は Linux で unzip と gpg が無いと止まる。
+    - name: Install AWS CLI installer dependencies
+      ansible.builtin.package:
+        name:
+          - unzip
+          - "{{ awscli_gpg_package }}"
+        state: present
+      become: true
+      when: ansible_facts['system'] == 'Linux'
+
+    - name: Download AWS CLI install script
+      ansible.builtin.get_url:
+        url: https://awscli.amazonaws.com/v2/install.sh
+        dest: /tmp/awscli_install.sh
+        mode: "0755"
+        force: true
+
+    - name: Run AWS CLI install script
+      ansible.builtin.command:
+        cmd: "bash /tmp/awscli_install.sh --quiet --version {{ awscli_version }}"
+      environment:
+        # install.sh は XDG_BIN_HOME からリンクの置き場所を決めるので、上で読む ~/.local/bin に固定する。
+        XDG_BIN_HOME: "{{ ansible_facts['env'].HOME }}/.local/bin"
+      changed_when: true

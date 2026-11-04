@@ -1,0 +1,5 @@
+---
+# dotfiles: tags https://github.com/aws/aws-cli
+awscli_version: "2.39.3"
+# gpg コマンドが入るパッケージの名前は、Debian 系が gnupg、RedHat 系が gnupg2 である。
+awscli_gpg_package: "{{ 'gnupg2' if ansible_facts['os_family'] == 'RedHat' else 'gnupg' }}"
