@@ -895,6 +895,9 @@ def check_tools(remarks=False):
 # 公開から日が浅い版は勧めない。pnpm の minimum-release-age と uv の exclude-newer（どちらも 1 週間）に
 # 揃える。raw とリリースの無いタグはコミットの日時で測るので、日時を偽った上流の乗っ取りまでは防げない。
 PIN_COOLDOWN = 7 * 24 * 60 * 60
+# リリースの無いタグのコミットの日時を引く回数の上限。aws-cli は平日に毎日版を出すので、
+# PIN_COOLDOWN の中に 8 件並ぶことがある。足りないと最新版を確かめられず、取得の失敗になる。
+TAG_LOOKUP_LIMIT = 15
 DIFF_MAX_LINES = 200
 
 RAW_PIN = re.compile(r"https://raw\.githubusercontent\.com/([\w.-]+)/([\w.-]+)/([0-9a-f]{40})/([^\s\"'#,\]}]+)")
@@ -940,8 +943,10 @@ def settled_tag(owner, name, tags, releases=None):
             published = release.get("published_at")
         else:
             # リリースを作らないリポジトリもある。その版のコミットの日時で代えるが、呼ぶ回数に上限を置く。
-            if lookups >= 5:
-                raise FetchError("公開から日が経った版を見つけられない（リリースの無い版を 5 件まで調べた）")
+            if lookups >= TAG_LOOKUP_LIMIT:
+                raise FetchError(
+                    f"公開から日が経った版を見つけられない（リリースの無い版を {TAG_LOOKUP_LIMIT} 件まで調べた）"
+                )
             lookups += 1
             published = github_api(f"/repos/{owner}/{name}/commits/{tag}")["commit"]["committer"]["date"]
         if published and time.time() - parse_time(published) >= PIN_COOLDOWN:
