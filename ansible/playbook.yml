@@ -103,6 +103,7 @@
   roles:
     - bash
     - claude
+    - codex
     - dotfiles
     - fonts
     - git

@@ -1,0 +1,15 @@
+# Codex / ChatGPT デスクトップでの適用
+
+以下は Claude Code と共有するグローバル指示である。この節は実行環境の違いを補う。
+
+- `AskUserQuestion`・`WebSearch`・`Read`・`Skill` などの名前は、現在利用できる同等の機能に
+  読み替える。質問専用ツールが使えないときは本文で質問する。
+- skill は現在の環境で利用可能なものを使う。Claude 専用の skill や agent が
+  インストールされているとは仮定しない。
+- `~/.claude/` のファイルは存在し、読み取り可能な場合だけ参照する。キャラクターの
+  ファイルが無ければ、キャラクターを付けず日本語で応答する。
+- Claude の権限設定・フック・SessionStart による復元は Codex では動かない。
+  現在の環境の権限と承認機能に従い、判断ログの自動復元を仮定しない。
+- `evacuate` が無い環境では削除を別コマンドで代行せず、復元可能な退避方法を先に決める。
+
+{{ lookup('ansible.builtin.file', role_path + '/../claude/files/AGENTS.md') }}

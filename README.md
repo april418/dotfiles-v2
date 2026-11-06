@@ -6,6 +6,26 @@
 bash -c "$(curl -L g.oftn.lv/dtfls)"
 ```
 
+## Codex / ChatGPT のグローバル指示
+
+`codex` ロールは `~/.codex/AGENTS.md` にグローバル指示を配置する。
+`CODEX_HOME` が設定されていれば、そのディレクトリに配置する。
+原本は `ansible/roles/claude/files/AGENTS.md` で、Codex 向けの環境差の説明を添えて生成する。
+既存の配置先を更新するときは Ansible がバックアップを残す。
+
+Codex CLI と Codex / ChatGPT デスクトップの、新しいチャットから適用される。
+この機能のためのプラグインや CLI の追加インストールは不要。
+Claude 専用のフックや権限設定は Codex には適用されない。
+キャラクターや skill などの Claude 側のファイルは、存在して利用できる場合だけ参照する。
+
+ブラウザ版 ChatGPT はローカルファイルを自動では読み込まない。
+全チャットに適用する指示は Settings → Personalization の Custom instructions に設定する。
+ローカルの `AGENTS.md` とは自動同期されない。
+
+仕様: [AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md)、
+[デスクトップの Personalization](https://learn.chatgpt.com/docs/app/settings)、
+[ChatGPT のカスタム指示](https://learn.chatgpt.com/docs/personalize)。
+
 ## Claude Code のキャラクター
 
 応答のキャラクターは `ansible/roles/claude/files/characters/` から 1 つ選び、
