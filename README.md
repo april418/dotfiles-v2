@@ -14,9 +14,15 @@ bash -c "$(curl -L g.oftn.lv/dtfls)"
 既存の配置先を更新するときは Ansible がバックアップを残す。
 
 Codex CLI と Codex / ChatGPT デスクトップの、新しいチャットから適用される。
-この機能のためのプラグインや CLI の追加インストールは不要。
+グローバル指示を読むための追加プラグインは不要。
 Claude 専用のフックや権限設定は Codex には適用されない。
 キャラクターや skill などの Claude 側のファイルは、存在して利用できる場合だけ参照する。
+
+同じロールで Codex CLI（`@openai/codex`）も固定バージョンでインストールする。
+配置先は `~/.local/share/codex`（`XDG_DATA_HOME` があればその下）で、
+`~/.local/bin/codex` から起動する。ChatGPT アプリ同梱版とは別に管理する。
+Node.js が無い、または古い場合はインストールをスキップして知らせるので、
+nvm で対応する Node.js を入れてから流し直す。
 
 ブラウザ版 ChatGPT はローカルファイルを自動では読み込まない。
 全チャットに適用する指示は Settings → Personalization の Custom instructions に設定する。

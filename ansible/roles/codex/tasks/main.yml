@@ -1,4 +1,66 @@
 ---
+- name: Read installed codex package
+  ansible.builtin.slurp:
+    src: "{{ codex_dir }}/node_modules/@openai/codex/package.json"
+  register: codex_package
+  failed_when: false
+
+- name: Set installed codex version
+  ansible.builtin.set_fact:
+    codex_installed: "{{ (codex_package.content | b64decode | from_json).version if codex_package.content is defined else '' }}"
+
+# node ロールは nvm だけを入れ、node は入れない。node が無ければ codex は動かないので、入れずに知らせる。
+- name: Check node is available
+  ansible.builtin.shell:
+    cmd: . "$NVM_DIR/nvm.sh" && command -v npm
+    executable: /bin/bash
+  environment:
+    NVM_DIR: "{{ node_nvm_dir }}"
+  register: codex_npm
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: codex_installed != codex_version and ansible_facts['os_family'] != 'Windows'
+
+- name: Debug node is not available
+  ansible.builtin.debug:
+    msg: "npm が見つからないため codex {{ codex_version }} を入れていない。nvm で node を入れてから流し直す。"
+  when: codex_npm.rc is defined and codex_npm.rc != 0
+
+# npm の bin は #!/usr/bin/env node で動くので、nvm.sh で node を PATH に載せたシェルから呼ぶ。
+- name: Install codex
+  ansible.builtin.shell:
+    cmd: . "$NVM_DIR/nvm.sh" && npm install --prefix "$CODEX_DIR" "@openai/codex@$CODEX_VERSION"
+    executable: /bin/bash
+  environment:
+    NVM_DIR: "{{ node_nvm_dir }}"
+    CODEX_DIR: "{{ codex_dir }}"
+    CODEX_VERSION: "{{ codex_version }}"
+  register: codex_install
+  when: codex_npm.rc is defined and codex_npm.rc == 0
+  changed_when: codex_install.rc == 0
+  # engine-strict=true の下で node が古いと EBADENGINE になる。要求する版は codex が上げていくので、数字を持たずに
+  # npm の判定を使う。止めると後のロールと適用の記録まで飛ぶので、入れずに知らせる。
+  failed_when: codex_install.rc != 0 and 'EBADENGINE' not in codex_install.stderr
+
+- name: Debug node is too old
+  ansible.builtin.debug:
+    msg: "node が古いため codex {{ codex_version }} を入れていない。nvm で新しい node を使ってから流し直す。"
+  when: codex_install.rc is defined and codex_install.rc != 0
+
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Link codex into local bin
+  ansible.builtin.file:
+    src: "{{ codex_dir }}/node_modules/.bin/codex"
+    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/codex"
+    state: link
+  when: codex_installed == codex_version or codex_install is changed
+
 - name: Ensure Codex home exists
   ansible.builtin.file:
     path: "{{ codex_home }}"

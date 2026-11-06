@@ -1,0 +1,4 @@
+---
+# dotfiles: tags https://github.com/openai/codex rust-v
+codex_version: "0.166.0"
+codex_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/codex"
