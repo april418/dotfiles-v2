@@ -1,0 +1,4 @@
+---
+# npm を探すのに node ロールの node_nvm_dir を使う。
+dependencies:
+  - role: node
