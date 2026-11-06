@@ -1,0 +1,2 @@
+---
+codex_home: "{{ ansible_facts['env'].CODEX_HOME | default(ansible_facts['env'].HOME + '/.codex', true) }}"
