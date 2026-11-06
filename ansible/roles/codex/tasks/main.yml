@@ -30,7 +30,8 @@
 # npm の bin は #!/usr/bin/env node で動くので、nvm.sh で node を PATH に載せたシェルから呼ぶ。
 - name: Install codex
   ansible.builtin.shell:
-    cmd: . "$NVM_DIR/nvm.sh" && npm install --prefix "$CODEX_DIR" "@openai/codex@$CODEX_VERSION"
+    # codex は npm ロールより先に動くため、初回で .npmrc が無くても engine を検査する。
+    cmd: . "$NVM_DIR/nvm.sh" && npm install --engine-strict --prefix "$CODEX_DIR" "@openai/codex@$CODEX_VERSION"
     executable: /bin/bash
   environment:
     NVM_DIR: "{{ node_nvm_dir }}"
