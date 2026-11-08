@@ -1,4 +1,9 @@
 ---
+- name: Set up node runtime manager
+  ansible.builtin.include_role:
+    name: node
+    public: true
+
 - name: Read installed codex package
   ansible.builtin.slurp:
     src: "{{ codex_dir }}/node_modules/@openai/codex/package.json"
@@ -62,15 +67,5 @@
     state: link
   when: codex_installed == codex_version or codex_install is changed
 
-- name: Ensure Codex home exists
-  ansible.builtin.file:
-    path: "{{ codex_home }}"
-    state: directory
-    mode: "0700"
-
-- name: Install global instructions for Codex and ChatGPT desktop
-  ansible.builtin.template:
-    src: AGENTS.md.j2
-    dest: "{{ codex_home }}/AGENTS.md"
-    mode: "0644"
-    backup: true
+- name: Set up global instructions
+  ansible.builtin.import_tasks: instructions.yml

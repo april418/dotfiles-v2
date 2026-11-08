@@ -1,4 +1,3 @@
 ---
-# npm を探すのに node ロールの node_nvm_dir を使う。
-dependencies:
-  - role: node
+# 指示だけの再生成では Node.js のセットアップを行わない。通常の導入は tasks/main.yml が行う。
+dependencies: []
