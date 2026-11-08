@@ -10,13 +10,24 @@ bash -c "$(curl -L g.oftn.lv/dtfls)"
 
 `codex` ロールは `~/.codex/AGENTS.md` にグローバル指示を配置する。
 `CODEX_HOME` が設定されていれば、そのディレクトリに配置する。
-原本は `ansible/roles/claude/files/AGENTS.md` で、Codex 向けの環境差の説明を添えて生成する。
+次の原本を連結し、Codex 向けの環境差の説明を添えて生成する。
+
+- `ansible/roles/claude/files/AGENTS.md`
+- `ansible/roles/claude/files/rules/*.md`（ファイル名順）
+- `ansible/roles/claude/files/characters/<選択した名前>.md`
+
+原本は分割したまま管理できる。生成したファイルには規則の本文が入るため、
+Codex が参照先を開くかどうかに依存しない。rules の削除やキャラクターの変更も再生成時に反映する。
 既存の配置先を更新するときは Ansible がバックアップを残す。
 
 Codex CLI と Codex / ChatGPT デスクトップの、新しいチャットから適用される。
 グローバル指示を読むための追加プラグインは不要。
 Claude 専用のフックや権限設定は Codex には適用されない。
-キャラクターや skill などの Claude 側のファイルは、存在して利用できる場合だけ参照する。
+skill など、収録していない Claude 側のファイルは、存在して利用できる場合だけ参照する。
+
+`dotfiles character set <名前>` は Claude Code のキャラクターを配置した後、
+Codex のグローバル指示も再生成する。`none` を選ぶと両方でキャラクターを使わない。
+この処理では Codex CLI や Node.js をインストールしない。
 
 同じロールで Codex CLI（`@openai/codex`）も固定バージョンでインストールする。
 配置先は `~/.local/share/codex`（`XDG_DATA_HOME` があればその下）で、

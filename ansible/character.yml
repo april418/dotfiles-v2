@@ -7,3 +7,8 @@
       ansible.builtin.include_role:
         name: claude
         tasks_from: character
+
+    - name: Regenerate Codex global instructions
+      ansible.builtin.include_role:
+        name: codex
+        tasks_from: instructions

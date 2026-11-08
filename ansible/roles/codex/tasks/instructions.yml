@@ -1,0 +1,19 @@
+---
+- name: Select the shared character for Codex
+  ansible.builtin.include_role:
+    name: claude
+    tasks_from: select
+  when: claude_character_selected is not defined
+
+- name: Ensure Codex home exists
+  ansible.builtin.file:
+    path: "{{ codex_home }}"
+    state: directory
+    mode: "0700"
+
+- name: Install global instructions for Codex and ChatGPT desktop
+  ansible.builtin.template:
+    src: AGENTS.md.j2
+    dest: "{{ codex_home }}/AGENTS.md"
+    mode: "0644"
+    backup: true
