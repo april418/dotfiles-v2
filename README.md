@@ -35,3 +35,16 @@ dotfiles character set pico
 - `characters/zundamon.md` と同じく「プロフィール」「文末と言い回し」「場面ごとの反応」の節を書く。
   振る舞いの規則は `files/AGENTS.md` の「場面ごとの振る舞い」にあり、キャラクターのファイルは声だけを持つ
 - 「場面ごとの反応」の場面の名前は `AGENTS.md` の表と揃える。反応の言葉が要らない場面は「入れない」と書く
+
+## AWS CLI
+
+`awscli` ロールは AWS CLI v2 を固定バージョンでインストールする。公式の `install.sh` に版を渡し、
+`~/.local/share/aws-cli`（`XDG_DATA_HOME` があればその下）へ入れて、`~/.local/bin/aws` から起動する。
+Linux では、`install.sh` が使う `unzip` と `gpg` を先に sudo でパッケージから入れる。
+
+`~/.local/bin` は PATH の末尾にあるので、Homebrew や OS のパッケージで入れた別の `aws`
+（`/opt/homebrew/bin`、`/usr/local/bin`、`/usr/bin`、`/snap/bin` など）があると、そちらが使われる。
+固定した版を使うときは、別の `aws` を取り除く。
+
+`aws update` などで固定より新しい版が入っていれば、そのまま使う。固定より古い版へ戻すときは、
+`~/.local/share/aws-cli` と `~/.local/bin/aws`、`~/.local/bin/aws_completer` を取り除いてからプレイブックを流す。
