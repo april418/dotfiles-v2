@@ -1,5 +1,9 @@
 ---
 # dotfiles: tags https://github.com/aws/aws-cli
 awscli_version: "2.39.3"
+# XDG_DATA_HOME が空文字のときも既定値に倒す。install.sh にも同じ親を渡し、読む場所と入れる場所を揃える。
+awscli_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/aws-cli"
+# install.sh が版を比べる導入先の aws の置き場所。macOS の pkg は導入先の直下に、Linux の zip は版ごとのディレクトリに置く。
+awscli_bin_dir: "{{ awscli_dir }}{{ '' if ansible_facts['system'] == 'Darwin' else '/v2/current/bin' }}"
 # gpg コマンドが入るパッケージの名前は、Debian 系が gnupg、RedHat 系が gnupg2 である。
 awscli_gpg_package: "{{ 'gnupg2' if ansible_facts['os_family'] == 'RedHat' else 'gnupg' }}"
