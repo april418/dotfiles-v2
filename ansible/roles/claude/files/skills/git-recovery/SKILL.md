@@ -102,8 +102,9 @@ git status --porcelain --untracked-files=normal    # 空であること
 git-branch のルール 3 (d) の直後は対象ブランチを**チェックアウト中**なので、そこへ `-C` を打つと
 作業ツリーがベースの内容へ書き換わり、**未コミット変更が失われる**
 （`git reset --hard` と同じ結果になる）。
-未コミット変更がある場合は先に `git stash push -u` で退避し、
-切り直した後に `git stash pop` で戻す。
+未コミット変更がある場合は先に `git stash push -u -m "<ブランチ>: <退避した変更の内容>"` で退避し、
+切り直した後に `git stash list` でそのメッセージの行の番号を探して `git stash pop stash@{N}` で戻す。
+stash は worktree と別のセッションで共有されるので、番号を省いた pop は他人の entry を戻しうる。
 
 ```bash
 git switch -C <new-branch> <base-ref> --no-track   # 同名ブランチが既にあるので -c ではなく -C
