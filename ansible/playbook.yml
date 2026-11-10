@@ -101,6 +101,7 @@
         tasks_from: select
 
   roles:
+    - awscli
     - bash
     - claude
     - codex

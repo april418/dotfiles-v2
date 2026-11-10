@@ -1,0 +1,63 @@
+---
+# install.sh は ~/.local/bin のリンクではなく導入先の aws と版を比べるので、ロールも導入先を読む。
+- name: Read installed AWS CLI version
+  ansible.builtin.command:
+    cmd: "{{ awscli_bin_dir }}/aws --version"
+  register: awscli_version_output
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Set installed AWS CLI version
+  ansible.builtin.set_fact:
+    awscli_installed: "{{ awscli_version_output.stdout | regex_findall('aws-cli/(\\d+(?:\\.\\d+)+)') | first | default('') }}"
+
+- name: Install AWS CLI
+  # install.sh は導入先の版より古い版を渡すと失敗する。aws update で固定より新しくなった版は、そのまま使う。
+  when:
+    - ansible_facts['os_family'] != 'Windows'
+    - awscli_installed == '' or awscli_installed is version(awscli_version, '<')
+  block:
+    # install.sh は Linux で unzip と gpg が無いと止まる。
+    - name: Install AWS CLI installer dependencies
+      ansible.builtin.package:
+        name:
+          - unzip
+          - "{{ awscli_gpg_package }}"
+        state: present
+      become: true
+      when: ansible_facts['system'] == 'Linux'
+
+    - name: Download AWS CLI install script
+      ansible.builtin.get_url:
+        url: https://awscli.amazonaws.com/v2/install.sh
+        dest: /tmp/awscli_install.sh
+        mode: "0755"
+        force: true
+
+    - name: Run AWS CLI install script
+      ansible.builtin.command:
+        cmd: "bash /tmp/awscli_install.sh --quiet --version {{ awscli_version }}"
+      environment:
+        # install.sh は XDG_DATA_HOME から導入先を、XDG_BIN_HOME からリンクの置き場所を決める。
+        XDG_DATA_HOME: "{{ awscli_dir | dirname }}"
+        XDG_BIN_HOME: "{{ ansible_facts['env'].HOME }}/.local/bin"
+      register: awscli_install
+      changed_when: true
+
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+# install.sh は入れたときにしかリンクを張らないので、リンクだけが消えたときのためにロールでも張る。
+- name: Link AWS CLI into local bin
+  ansible.builtin.file:
+    src: "{{ awscli_bin_dir }}/{{ item }}"
+    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/{{ item }}"
+    state: link
+  loop:
+    - aws
+    - aws_completer
+  when: awscli_installed != '' or awscli_install is changed
