@@ -36,12 +36,20 @@
 
 ファビコンは、雛形のファイルと配信中のファイルの SHA-256 を比べる。`page.favicons` が空なら `/favicon.ico` を見る。`data:` の URL は中身を取り出して比べる。`create-vite` の雛形は `packages/create-vite/template-*/public/favicon.svg` にある。古い版の `vite.svg` は `main` に無いので、タグを指定して取る。ほかの雛形も、リポジトリの雛形ディレクトリから同じファイルを取って比べる。
 
+取得とハッシュは別の呼び出しにする。パイプの左に `curl` を置くと、取得に失敗しても終了コードが 0 になり、空の入力のハッシュが出る。保存先はスクラッチパッド（無ければ `mktemp -d` が出したディレクトリ）にし、取得ごとに番号を変える。同じ名前へ取り直すと、失敗したときに前のファイルが残る。
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vitejs/vite/main/packages/create-vite/template-react-ts/public/favicon.svg | shasum -a 256
+curl -fsSL -o <保存先>/template-1.svg https://raw.githubusercontent.com/vitejs/vite/main/packages/create-vite/template-react-ts/public/favicon.svg
 ```
 
 ```bash
-curl -fsSL <配信中のファビコンの URL> | shasum -a 256
+curl -fsSL -o <保存先>/served-1 <配信中のファビコンの URL>
 ```
 
-雛形は版で変わるので、一致しなくても雛形でないとは言い切れない。一致すれば雛形のままである。
+```bash
+shasum -a 256 <保存先>/template-1.svg <保存先>/served-1
+```
+
+`data:` の URL は curl が扱えない。`,` より後ろを、`;base64` があれば base64、無ければパーセントエンコードとして戻して `<保存先>/served-<番号>` に書き、`shasum` に渡す。
+
+取得のどちらかが 0 以外で終わったら比べず、未確認に書く。雛形は版で変わるので、一致しなくても雛形でないとは言い切れない。一致すれば雛形のままである。

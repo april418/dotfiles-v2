@@ -63,7 +63,7 @@ git fetch origin <base>:<base>   # <base-ref> が <base>（ローカル）のと
 **2. ベースが手元にあることを確かめる。**
 
 ```bash
-git rev-parse --verify --quiet <base-ref> > /dev/null; echo "exit=$?"
+git rev-parse --verify --quiet <base-ref> > /dev/null
 ```
 
 これが効くのは `<base-ref>` が `origin/<base>` のときである（ローカルの `<base>` は定義表の
@@ -71,7 +71,7 @@ git rev-parse --verify --quiet <base-ref> > /dev/null; echo "exit=$?"
 **stdout は空なので「空なら合格」と読むと静かに通る**。リモートにあるかで分ける。
 
 ```bash
-git ls-remote --exit-code --heads origin refs/heads/<base> > /dev/null 2>&1; echo "exit=$?"
+git ls-remote --exit-code --heads origin refs/heads/<base> > /dev/null 2>&1
 ```
 
 `<base>` だけを渡すと末尾一致で、`main` が無くても `feature/main` があれば exit 0 になる。
@@ -112,7 +112,12 @@ PR 本文には **含まれるコミットを列挙する欄を必ず設ける**
 **4. 衝突を先読みする（遅れているときだけ）。**
 
 ```bash
-git merge-tree --write-tree --name-only <base-ref> HEAD > <ログ> 2>&1; echo "exit=$?"
+git merge-tree --write-tree --name-only <base-ref> HEAD > <ログ> 2>&1
+```
+
+下の表の exit はこの呼び出しの結果で読む。`cat` と同じ呼び出しで流すと、結果に出るのは `cat` の終了コードになる。
+
+```bash
 cat <ログ>
 ```
 

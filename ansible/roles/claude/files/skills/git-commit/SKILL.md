@@ -240,10 +240,23 @@ prettier で落ちた。同じ見落としを同一セッション中に 2 回�
 
 ### Step 3: コミットの実行
 
+stash は worktree と別のセッションで共有され、番号は後から積まれた stash でずれる。この Step で
+stash を使うときは、番号ではなく自分の entry を指す。
+
+- 退避は `git stash push -m "git-commit <ブランチ> <時刻>"` でタグを付ける。`<時刻>` は
+  `date +%Y%m%dT%H%M%S` の出力にする。直後に `git stash list --format='%gd %H %gs'` を流し、
+  タグの行の OID を控える。タグの行が無ければ退避は作られていない（`No local changes to save`）ので、
+  この後の stash の操作をしない
+- 戻すときは `git stash apply <控えた OID>` を使う。pop と drop は番号しか受け付けない
+- 消すときは、直前に list を流して、控えた OID の行の `stash@{N}` を drop する。出力の
+  `Dropped stash@{N} (<OID>)` が控えた OID でなければ、別の stash を消している。
+  `git stash store -m "$(git log -1 --format=%s <出た OID>)" <出た OID>` で戻し、list を流し直して
+  自分の行を drop し直す
+
 どの手順でも、`git commit` のたびに、その直前と直後に `git status --porcelain --untracked-files=normal`
 を流す。直後の出力に、直前に無かったロックファイル（`pnpm-lock.yaml` など）の行か、そのコミットに
 入れたロックファイルの行があれば、フックが書き換えたものとして伝える。ファイル単位の分割では、
-直後の確認を `git stash pop` の前に済ませる。
+直後の確認を `git stash apply` の前に済ませる。
 pnpm 11 以降は、フックの中の `pnpm run` / `pnpm exec`（husky の `pnpm exec lint-staged` など）も
 install を流す。install はロックファイルをステージしないので、書き換えはコミットに入らず
 作業ツリーに残る（package.json をロックファイルより後に書き換えてコミットすると書き換わる。
@@ -253,14 +266,14 @@ install を流す。install はロックファイルをステージしないの�
 違って amend してよい）か「残す」かを聞く。非対話時は残して最終応答に書く。残すときは、
 次の git-push が Step 1 で止まることも添える。足したロックファイルを計画の後のコミットに
 入れる予定だったら、そのコミットから外す（ほかに入れるものが無ければ、そのコミットは作らない）。
-ファイル単位の分割で、フックが書き換えたロックファイルのせいで `git stash pop` が `would be overwritten` で
-止まったら、stash を残したまま止める。stash の場所と、作業ツリーのロックファイルはフックが
-書き換えたものであることを伝える。ロックファイルを捨てて pop し直すかはユーザーが決める
+ファイル単位の分割で、フックが書き換えたロックファイルのせいで `git stash apply` が `would be overwritten` で
+止まったら、stash を残したまま止める。stash のタグと OID、作業ツリーのロックファイルはフックが
+書き換えたものであることを伝える。ロックファイルを捨てて apply し直すかはユーザーが決める
 （git-workflow のルール 6）。
 フックが registry に届かないなど、手元で直せない理由で落ちたら（コミットは作られない）、
 直そうとせずに止め、フックの出力の該当行を伝える。ファイル単位の分割で退避していれば、
-`git stash pop` で戻してから止める。hunk 単位の分割なら手順 1 の stash を残し、巻き戻した hunk が
-あることと stash の場所を伝える。環境変数の前置や `--no-verify` で通さない。
+`git stash apply <控えた OID>` で戻し、自分の stash を消してから止める。hunk 単位の分割なら手順 1 の
+stash を残し、巻き戻した hunk があることと stash のタグと OID を伝える。環境変数の前置や `--no-verify` で通さない。
 
 #### 基本: すべての変更を1コミット、またはファイル単位で1コミット
 
@@ -277,20 +290,23 @@ EOF
 #### 複数コミットに分割する場合（ファイル単位）
 
 変更を複数コミットに分けたいが、各コミットはファイル単位で分割できる場合。
-`git stash --keep-index` で、まだコミットしない変更を退避する。
+`git stash push --keep-index` で、まだコミットしない変更を退避する。stash は Step 3 の冒頭の形で扱う。
 
 ```bash
 # 1つ目のコミット
 git add <file1>
-git stash --keep-index
+git stash push --keep-index -m "git-commit <ブランチ> <時刻>"
+git stash list --format='%gd %H %gs'   # タグの行の OID を控える
 git commit -m "$(cat <<'EOF'
 <type>(<scope>): <要約>
 
 <詳細>
 EOF
 )"
-# pop の前に、Step 3 の冒頭のロックファイルの確認を済ませる
-git stash pop
+# 戻す前に、Step 3 の冒頭のロックファイルの確認を済ませる
+git stash apply <控えた OID>
+git stash list --format='%gd %H %gs'   # 控えた OID の行の stash@{N} を読み、Step 3 の冒頭の消し方で消す
+git stash drop stash@{N}
 
 # 2つ目のコミット
 git add <file2>
@@ -316,10 +332,10 @@ EOF
 **手順:**
 
 ```bash
-# 1. 検証用スナップショットを保存（pop しない）
-git stash
-STASH_OID=$(git rev-parse stash@{0})
-git stash apply
+# 1. 検証用スナップショットを保存する（Step 3 の冒頭の形。pop しない）
+git stash push -m "git-commit <ブランチ> <時刻>"
+git stash list --format='%gd %H %gs'   # タグの行の OID を控え、以降にそのまま書く。シェル変数は次の Bash の呼び出しに残らない
+git stash apply <控えた OID>
 ```
 
 ```bash
@@ -351,18 +367,19 @@ EOF
 
 ```bash
 # 4. 全コミット完了後、検証
-git diff $STASH_OID HEAD
+git diff <1. で控えた OID> HEAD
 # → 空なら変更漏れなし。差分が出たら漏れまたは余計な変更がある。
 # 計画に入れずに残したファイル（Step 2.5 のロックファイルなど）や、フックが書き換えて
 # amend で足したファイル（Step 3 の冒頭）があれば、それを除いて見る。
 # パスごとに ':(top,exclude)<パス>' を並べる。<パス> は git status --porcelain が出した
 # リポジトリルートからのパス:
-# git diff $STASH_OID HEAD -- ':(top,exclude)<パス 1>' ':(top,exclude)<パス 2>'
+# git diff <1. で控えた OID> HEAD -- ':(top,exclude)<パス 1>' ':(top,exclude)<パス 2>'
 ```
 
 ```bash
-# 5. 検証 OK なら stash を破棄
-git stash drop
+# 5. 検証 OK なら、Step 3 の冒頭の消し方で自分の stash を消す
+git stash list --format='%gd %H %gs'   # 控えた OID の行の stash@{N} を読む
+git stash drop stash@{N}
 ```
 
 **検証が失敗した場合（diff が空でない場合）:**
