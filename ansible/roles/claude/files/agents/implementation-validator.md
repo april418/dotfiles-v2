@@ -1,6 +1,6 @@
 ---
 name: "implementation-validator"
-description: "Independent reviewer for work the main session cannot fully check by running it. Use before opening a PR whose changes include design decisions spanning multiple files, or edits to instruction files (CLAUDE.md, AGENTS.md, skills, rules, agent definitions), and whenever the user asks for a review. It reads the request and the changed files afresh, without the main session's reasoning, and reports problems ranked by severity. Not needed for changes that tests, CI or linters already verify. <example>\\nContext: The main session has rewritten a skill's procedure across several files and is about to open a PR.\\nuser: \"この skill の手順を書き直して PR にして\"\\nassistant: \"PR を出す前に、書き直した手順を implementation-validator で確認します\"\\n<commentary>\\nInstruction files changed across several files. A fresh read catches rules that were dropped or changed meaning, which no test would show.\\n</commentary>\\n</example>"
+description: "Independent reviewer for work the main session cannot fully check by running it. Use before opening a PR whose changes include design decisions spanning multiple files, or edits to instruction files (CLAUDE.md, AGENTS.md, skills, rules, agent definitions), and whenever the user asks for a review. It reads the request and the changed files afresh, without the main session's reasoning, and reports problems ranked by severity. Not needed for changes that tests, CI or linters already verify."
 model: opus
 color: blue
 memory: user

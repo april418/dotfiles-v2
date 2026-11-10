@@ -1,6 +1,6 @@
 ---
 name: "researcher"
-description: "Read-only web researcher for questions that need many searches and fetches but only a conclusion back: official docs, papers, vendor articles. Returns findings per source with URLs, marks which facts it read in the original versus recalled or saw only in search snippets, and lists what it could not confirm. It cannot edit files or run commands. Not for questions a few searches answer, and not for searching this codebase (use Explore). <example>\\nContext: The user asks which settings and papers should inform a change to the agent configuration.\\nuser: \"公式記事と論文を調べて、どう設定すべきか検討して\"\\nassistant: \"公式記事と論文を researcher に分けて調べさせます\"\\n<commentary>\\nMany searches across independent sources, and only the findings matter to the main session.\\n</commentary>\\n</example>"
+description: "Read-only web researcher for questions that need many searches and fetches but only a conclusion back: official docs, papers, vendor articles. Returns findings per source with URLs, marks which facts it read in the original versus recalled or saw only in search snippets, and lists what it could not confirm. It cannot edit files or run commands. Not for questions a few searches answer, and not for searching this codebase (use Explore)."
 tools: Read, Grep, Glob, WebSearch, WebFetch
 model: inherit
 color: green
