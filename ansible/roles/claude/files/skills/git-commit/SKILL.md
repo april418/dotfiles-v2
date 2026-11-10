@@ -318,7 +318,7 @@ EOF
 ```bash
 # 1. 検証用スナップショットを保存（pop しない）
 git stash
-STASH_OID=$(git rev-parse stash@{0})
+git rev-parse stash@{0}   # 出た OID を控え、4. にそのまま書く。シェル変数は次の Bash の呼び出しに残らない
 git stash apply
 ```
 
@@ -351,13 +351,13 @@ EOF
 
 ```bash
 # 4. 全コミット完了後、検証
-git diff $STASH_OID HEAD
+git diff <1. で控えた OID> HEAD
 # → 空なら変更漏れなし。差分が出たら漏れまたは余計な変更がある。
 # 計画に入れずに残したファイル（Step 2.5 のロックファイルなど）や、フックが書き換えて
 # amend で足したファイル（Step 3 の冒頭）があれば、それを除いて見る。
 # パスごとに ':(top,exclude)<パス>' を並べる。<パス> は git status --porcelain が出した
 # リポジトリルートからのパス:
-# git diff $STASH_OID HEAD -- ':(top,exclude)<パス 1>' ':(top,exclude)<パス 2>'
+# git diff <1. で控えた OID> HEAD -- ':(top,exclude)<パス 1>' ':(top,exclude)<パス 2>'
 ```
 
 ```bash
