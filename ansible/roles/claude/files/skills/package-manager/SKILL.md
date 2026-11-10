@@ -1,6 +1,6 @@
 ---
 name: package-manager
-description: パッケージマネージャー（pnpm, npm, yarn, uv 等）やランタイムバージョンマネージャー（nvm, mise 等）を操作する際に常に遵守すべきルール。依存関係のインストール・更新・lockfile 再生成・audit 等を行う前に参照する。プロジェクト設定の尊重、正しいランタイムバージョンの使用、lockfile の整合性維持を徹底する。
+description: パッケージマネージャー（pnpm, npm, yarn, uv 等）やランタイムバージョンマネージャー（nvm, mise 等）を操作するときのルール。依存関係のインストール・更新・lockfile 再生成・audit 等を行う前に参照する。プロジェクト設定の尊重、正しいランタイムバージョンの使用、lockfile の整合性維持を扱う。
 ---
 
 # 概要
