@@ -5,8 +5,7 @@ description: Conventional Commits 仕様に従い、詳細で構造化された�
 
 # 概要
 
-- このスキルはコミットの作成のみを行う。push は一切行わない。
-- リモートブランチへの反映はユーザーが別途実施する。
+- このスキルはコミットの作成だけを行う。push は git-push skill が行う（git-workflow のルール 5）。
 
 **現在の状態:**
 
