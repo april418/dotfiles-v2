@@ -5,8 +5,8 @@ description: パッケージマネージャー（pnpm, npm, yarn, uv 等）や�
 
 # 概要
 
-このスキルはパッケージマネージャー・ランタイムバージョンマネージャー操作時に
-**常に意識すべき原則** をまとめたものである。
+依存関係に関するコマンド（install, update, add, remove, audit 等）と、ランタイムの版の
+切り替えに当てる規則である。
 
 対象ツール:
 
@@ -14,16 +14,13 @@ description: パッケージマネージャー（pnpm, npm, yarn, uv 等）や�
 - **Python**: uv, pip
 - **ランタイム管理**: nvm, mise
 
-依存関係に関するコマンド（install, update, add, remove, audit 等）を
-実行するあらゆる場面で以下のルールを遵守すること。
-
 ---
 
-## ルール 1: プロジェクト設定・グローバル設定を絶対にバイパスしない
+## ルール 1: プロジェクト設定・グローバル設定を、設定ファイルを編集せずにバイパスしない
 
 ### 原則
 
-設定ファイルに定義された制約を CLI フラグで上書き・無効化してはならない。
+設定ファイルに定義された制約を、CLI フラグや環境変数（`pnpm_config_*`、`UV_EXCLUDE_NEWER` など）で上書き・無効化してはならない。
 これらの設定はセキュリティポリシーとして意図的に配置されている。
 
 ### 設定ファイルの階層
@@ -57,14 +54,14 @@ Linux は `~/.config/pnpm`。pnpm 11 以降は `rc` を読まず、`.npmrc` か�
 ### 禁止される操作
 
 ```bash
-# Node.js — 絶対にやってはいけない
+# Node.js
 pnpm install --config.engine-strict=false
 pnpm install --config.minimumReleaseAge=0
 pnpm install --config.package-manager-strict=false
 pnpm install --pm-on-fail=ignore
 npm install --engine-strict=false
 
-# Python — 絶対にやってはいけない
+# Python
 uv pip install --exclude-newer=9999-01-01
 uv sync --exclude-newer=9999-01-01
 ```
@@ -131,7 +128,7 @@ git-push は確認先を優先順で 1 つに絞らず、版を切り替える�
 - `pnpm-workspace.yaml` の `overrides` を変更した場合
 - `pyproject.toml` の依存関係を変更した場合
 
-変更後は必ず lockfile を再生成する:
+変更後は lockfile を再生成する:
 
 ```bash
 # pnpm
@@ -213,8 +210,7 @@ lockfile を再生成して整合性を取る。
 
 3. **バージョンを下げる**: 制約を満たす古いバージョンを使用する
 
-**絶対にやってはいけないこと:**
-`--config.minimumReleaseAge=0` や `--exclude-newer=9999-01-01` で制約を無効化すること。
+`--config.minimumReleaseAge=0` や `--exclude-newer=9999-01-01` のような CLI フラグや環境変数で制約を無効化しない（ルール 1）。
 
 ---
 

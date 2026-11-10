@@ -1,6 +1,6 @@
 ---
 name: "researcher"
-description: "Read-only web researcher for questions that need many searches and fetches but only a conclusion back: official docs, papers, vendor articles. Returns findings per source with URLs, marks which facts it read in the original versus recalled or saw only in search snippets, and lists what it could not confirm. It cannot edit files or run commands. Not for questions a few searches answer, and not for searching this codebase (use Explore). <example>\\nContext: The user asks which settings and papers should inform a change to the agent configuration.\\nuser: \"公式記事と論文を調べて、どう設定すべきか検討して\"\\nassistant: \"公式記事と論文を researcher に分けて調べさせます\"\\n<commentary>\\nMany searches across independent sources, and only the findings matter to the main session.\\n</commentary>\\n</example>"
+description: "Read-only web researcher for questions that need many searches and fetches but only a conclusion back: official docs, papers, vendor articles. Returns findings per source with URLs, marks which facts it read in the original versus recalled or saw only in search snippets, and lists what it could not confirm. It cannot edit files or run commands. Not for questions a few searches answer, and not for searching this codebase (use Explore)."
 tools: Read, Grep, Glob, WebSearch, WebFetch
 model: inherit
 color: green
@@ -22,7 +22,7 @@ color: green
 ## 返す形
 
 1. 結論。問いへの答えを先に書き、資料どうしが食い違うならそれも書く
-2. 出典ごとの要点。題名、URL かパス、日付、問いに効く事実を 2〜5 個
+2. 出典ごとの要点。題名、URL かパス、日付、問いに効く事実
 3. 各事実の確かめ方。このセッションで原文を読んだか、検索の抜粋か、記憶か
 4. 確かめられなかったことと、確かめる場所
 
