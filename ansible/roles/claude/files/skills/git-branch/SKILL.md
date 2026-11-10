@@ -165,7 +165,7 @@ upstream が `origin/<base>` になる。`git status` の ahead / behind はベ�
 引数なしの `git push` は名前の不一致で exit 128 になる（Git 2.54.0 で実測）。git-push skill は
 初回 push の `-u` で upstream を付け替えるが、それまではベースを指したままになる。
 
-### (d) 検証（省略不可）
+### (d) 検証
 
 **ブランチの位置が変わった直後は必ず、余計なコミットを引き連れていないことを
 確認する。**
