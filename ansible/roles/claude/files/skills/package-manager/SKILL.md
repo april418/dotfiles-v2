@@ -20,7 +20,7 @@ description: パッケージマネージャー（pnpm, npm, yarn, uv 等）や�
 
 ### 原則
 
-設定ファイルに定義された制約を、CLI フラグや環境変数（`pnpm_config_*`、`UV_EXCLUDE_NEWER` など）で上書き・無効化してはならない。
+設定ファイルに定義された制約を、CLI フラグや環境変数（`pnpm_config_*`、npm と pnpm 10 が読む `npm_config_*`、`UV_EXCLUDE_NEWER` など）で上書き・無効化してはならない。
 これらの設定はセキュリティポリシーとして意図的に配置されている。
 
 ### 設定ファイルの階層
@@ -56,14 +56,16 @@ Linux は `~/.config/pnpm`。pnpm 11 以降は `rc` を読まず、`.npmrc` か�
 ```bash
 # Node.js
 pnpm install --config.engine-strict=false
-pnpm install --config.minimumReleaseAge=0
+pnpm install --config.minimum-release-age=0
 pnpm install --config.package-manager-strict=false
 pnpm install --pm-on-fail=ignore
+pnpm_config_minimum_release_age=0 pnpm install
 npm install --engine-strict=false
 
 # Python
 uv pip install --exclude-newer=9999-01-01
 uv sync --exclude-newer=9999-01-01
+UV_EXCLUDE_NEWER=9999-01-01 uv sync
 ```
 
 ### 設定変更が本当に必要な場合
@@ -210,7 +212,7 @@ lockfile を再生成して整合性を取る。
 
 3. **バージョンを下げる**: 制約を満たす古いバージョンを使用する
 
-`--config.minimumReleaseAge=0` や `--exclude-newer=9999-01-01` のような CLI フラグや環境変数で制約を無効化しない（ルール 1）。
+`--config.minimum-release-age=0` や `--exclude-newer=9999-01-01` のような CLI フラグや環境変数で制約を無効化しない（ルール 1）。
 
 ---
 
