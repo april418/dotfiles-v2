@@ -97,10 +97,10 @@ cat >&2 <<EOS
 コミットを新しいブランチが引き連れることになり、PR に無関係な変更が混ざります。
 ブランチ名も差分も正しく見えるため、マージするまで気づけません。
 ${WORKTREE_NOTE}
-対処 (<base-ref> は、ベースがローカルにあり、ほかの worktree でチェックアウトされて
-いなければ <base>、それ以外は origin/<base> です。ローカルにあるかは
-git show-ref --verify --quiet refs/heads/<base> の成否で、ほかの worktree にあるかは
-git for-each-ref --format='%(worktreepath)' refs/heads/<base> の出力が空でないかで分かります):
+対処 (<base-ref> は git-workflow skill の「ベース参照 <base-ref> の定義」の表で決めます。
+ローカルにあるかは git show-ref --verify --quiet refs/heads/<base> の成否で、ほかの worktree に
+あるかは git for-each-ref --format='%(worktreepath)' refs/heads/<base> の出力が、空でも今の
+worktree のパスでもないかで分かります):
 
   1. git-branch skill のルール 3 の (a) でベースを選び、(b) に従って最新化する
        <base-ref> が <base>:        git switch <base> && git pull --rebase origin <base>
