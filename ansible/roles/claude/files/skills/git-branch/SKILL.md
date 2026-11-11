@@ -14,7 +14,7 @@ description: 作業ブランチを新しく切る・既存ブランチへ切り�
 ## ルール 3: ベースブランチの判定ロジック
 
 新しい作業ブランチを切る手順は (a) 選定 → (b) 取得・更新 → (c) 派生 → (d) 検証 の 4 つで、
-この順に踏む。省いてよいのは、(b) の例外 1・2 が省くと定めたものと、ほかの skill が
+この順に踏む。省いてよいのは、(b) の例外 2 が省くと定めたものと、ほかの skill が
 名指しで省かせるものだけである。
 
 ### (a) ベース選定
@@ -54,24 +54,27 @@ git ls-remote --exit-code --heads origin refs/heads/<候補>
 
 選定したベースは **派生直前にリモート最新へ追従させる**。古い HEAD から切ると競合・rebase 苦労の原因になる。
 
-#### 通常ケース（作業ツリーが clean）
+#### 通常ケース
 
 ```bash
-# `<base-ref>` が `<base>` の場合: 一旦 checkout してから rebase pull
-git switch <base>
-git pull --rebase origin <base>
-
-# `<base-ref>` が `origin/<base>` の場合: fetch して直接派生に使う
 git fetch origin
+git fetch origin <base>:<base>   # <base-ref> が <base> のときだけ
 ```
 
-後者は `refs/remotes/origin/<base>` を用意するための手順である。
-(c)(d) がこの ref を参照するので、ここを飛ばすと `unknown revision` になる。
-`git fetch origin <base>` のようにブランチを指定すると remote-tracking ref が
-更新されるかが refspec 設定に依存するため、**引数なしの `git fetch origin` を使う**。
+1 本目は `refs/remotes/origin/<base>` を用意する。(c)(d) がこの ref を参照するので、
+飛ばすと `unknown revision` になる。`git fetch origin <base>` のようにブランチを指定すると
+remote-tracking ref が更新されるかが refspec 設定に依存するため、引数なしで打つ。
 
-なお `git pull --rebase` はこの手順が明示的に指示する呼び出しであり、
-git-workflow のルール 6 の要承認操作には**当たらない**（本文が規定する手順として実行してよい）。
+2 本目はローカルの `<base>` を早送りし、その結果で `<base-ref>` を決め直す。結果の読み方と、
+ローカルの `<base>` にしか無いコミットの扱いは、git-workflow の「ローカルの `<base>` を
+早送りする」にある。決め直したら (c) へ進む。1 本目が失敗したら例外 2 へ。
+2 本目が `couldn't find remote ref` で終わったら、ベースがリモートに無い。`<base>` のまま (c) へ
+進み、PR を出す前にベースを push するか別のベースを選ぶ必要があることを最終応答に書く。
+
+`git switch <base>` と `git pull --rebase origin <base>` で追従させない。ローカルの `<base>` に
+push していないコミットがあると、pull はそのコミットをリモートの上に付け直して exit 0 で終わり、
+派生した新ブランチに混ざる。(d) の `git log <base>..HEAD` も空になるので気づけない
+（Git 2.54.0 で実測）。
 
 #### 例外 1: 作業ツリーに未コミット変更がある場合
 
@@ -126,19 +129,15 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
 - **「そのまま持ち込む」を選んだ場合**:
 
   ```bash
-  git fetch origin                                   # <base-ref> が origin/<base> の場合のみ
+  # ここで通常ケースの (b) を実施する（作業ツリーに触れないので、未コミット変更があっても流せる）
   git switch -c <new-branch> <base-ref> --no-track   # (c) 派生。この経路でもベースを明示する
   ```
 
   git が派生を受け付ければ、未コミット変更（ステージ済み・未追跡を含む）は新ブランチへ
   そのまま移る。現在のブランチのコミットは引き連れない。この後 **(d) の検証を必ず実施する**。
 
-  (b) のうち `git switch <base>` と `git pull --rebase` は **意図的にスキップ** する。
-  `git pull --rebase` は既定の設定だと、未コミット変更があると実行を拒否するためである。
-  `git fetch origin` は作業ツリーに触れないのでスキップしない。
-  `<base-ref>` が `<base>` なら、更新しないまま派生元になる。追従させるなら、新ブランチで
-  コミットした後に通常ケースの (b) で `<base>` を更新してから `git rebase <base-ref>` する
-  （git-workflow のルール 8。rebase はルール 6 の要承認操作）。
+  今の worktree でチェックアウトしているベース（統合ブランチの上で切るとき）は、(b) で
+  `origin/<base>` に決め直すので、ローカルの `<base>` が古いと次の拒否に当たりやすい。
 
   **変更のあるファイルの中身が現在の HEAD と `<base-ref>` で違うと、git は派生を拒否する**
   （`Your local changes to the following files would be overwritten by checkout` か
@@ -152,7 +151,7 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
   切り替わり、衝突マーカー入りの作業ツリーが残る。元の変更の控えが stash に残るかも
   git のバージョンで変わる（2.54 では残らず、2.56 では残った）。ルール 7 に戻って選び直す。
 
-#### 例外 2: オフライン等で fetch / pull が失敗する場合
+#### 例外 2: オフライン等で fetch が失敗する場合
 
 `AskUserQuestion` で「ローカル HEAD のまま切るか中断するか」を確認する。
 「ローカル HEAD のまま切る」を選んだ場合は (b) をスキップして (c) へ。
@@ -274,7 +273,7 @@ git status --porcelain --untracked-files=normal
 git-pr のルール 11 のマージ直後の追従では「そのまま持ち込む」を提示しない。`<base-ref>` が
 `<base>` なら、追従は `git pull --rebase` そのものが目的である。既定の設定の
 `git pull --rebase` は、ステージ済みか未ステージの変更があると exit 128 で拒否する
-（ルール 3 (b) 例外 1 は pull を飛ばして派生するので持ち込める）。`<base-ref>` が
+（ルール 3 の (b) は pull を使わないので持ち込める）。`<base-ref>` が
 `origin/<base>` なら追従は `git switch --detach` で、git は変更を持ち込める。ただ、マージ済みの
 作業ブランチにある変更は、持ち込むと次に切るブランチへそのまま移る。この場面では、
 作業ブランチならコミットと stash の 2 択で、推奨は stash である（マージ済みのブランチに

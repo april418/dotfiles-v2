@@ -150,7 +150,7 @@ detach した HEAD（git-pr のルール 11 のマージ直後の追従で `orig
 | ------------------------------------------------------------------------------------------ | --------------- |
 | ローカルにあり（`refs/heads/<base>` がある）、ほかの worktree でチェックアウトされていない | `<base>`        |
 | リモートにしか無い、またはほかの worktree でチェックアウトされている                       | `origin/<base>` |
-| ローカルにあるが、リモートへ早送りできない（`(non-fast-forward)` / `refusing to fetch`）   | `origin/<base>` |
+| ローカルにあるが、下の「ローカルの `<base>` を早送りする」で `origin/<base>` に決め直した  | `origin/<base>` |
 
 **この表は手順に入るたびに引き直す。** ベースがほかの worktree に出たり引っ込んだりするのは
 セッションをまたいで起きるので、前に決めた値をそのまま使うと、更新できない参照を黙って使う。
@@ -166,7 +166,8 @@ git for-each-ref --format='%(worktreepath)' refs/heads/<base>
 `git switch <base>` も `git fetch origin <base>:<base>` も exit 128 で拒否される
 （`'<base>' is already used by worktree at '<path>'` / `refusing to fetch into branch`）。
 
-**一度決めたら最後まで同じものを使う。** 途中で `<base>` と `origin/<base>` を
+**一度決めたら最後まで同じものを使う。**（1 行目と 3 行目は、下の「ローカルの `<base>` を
+早送りする」の結果で決まる。）途中で `<base>` と `origin/<base>` を
 混ぜると、リモートのみのケースで `unknown revision` になって落ちる。ほかの worktree に
 あるケースでは落ちずに、更新できない古い `<base>` を黙って使う。
 以降のコマンド例に出てくる `<base-ref>` はすべてこの値に置き換えて読むこと。
@@ -177,6 +178,42 @@ git for-each-ref --format='%(worktreepath)' refs/heads/<base>
 ほかの worktree にあるベースも `git switch --ignore-other-worktrees <base>` で切り替えない。
 同じブランチを 2 つの worktree でチェックアウトすると、片方でコミットしたとき、もう片方の
 index が新しい HEAD とずれ、そのコミットを打ち消す変更がステージされた状態になる。
+
+### ローカルの `<base>` を早送りする
+
+表の 1 行目と 3 行目は、ローカルの `<base>` を早送りしてみるまで見分けられない。
+git-branch のルール 3 (b) と git-pr のルール 11 の手順 1 は、1 行目に当たるとき次の 2 本を流す。
+
+```bash
+git fetch origin
+git fetch origin <base>:<base>
+```
+
+1 本目は remote-tracking ref だけを動かす。2 本目はローカルの `<base>` を早送りする。
+作業ツリーに触れないので、今のブランチにいたまま、未コミット変更があっても打てる。
+2 本目の結果で `<base-ref>` を決め直し、その手順の最後までその値を使う。1 本目が失敗した
+ときの扱いは、流した手順が決める。
+
+| 2 本目の結果                                                | 意味                                                  | `<base-ref>`                   |
+| ----------------------------------------------------------- | ----------------------------------------------------- | ------------------------------ |
+| exit 0                                                      | 早送りしたか、もう最新だった                          | `<base>`                       |
+| exit 1 `! [rejected] ... (non-fast-forward)`                | ローカルの `<base>` にリモートに無いコミットがある    | `origin/<base>`                |
+| exit 128 `refusing to fetch into branch ... checked out at` | `<base>` がこの worktree かほかの worktree に出ている | `origin/<base>`                |
+| exit 128 `couldn't find remote ref <base>`                  | `<base>` がリモートに無い                             | `<base>`（追従する相手が無い） |
+
+今の worktree で `<base>` をチェックアウトしているとき（統合ブランチの上で作業ブランチを切る
+ときなど）は、最新でも refusing で終わる。git は早送りできるかより先にこれを拒否するので、
+ローカルの `<base>` にリモートに無いコミットがあっても non-fast-forward にならない
+（Git 2.54.0 で実測）。そこで、`<base-ref>` を `origin/<base>` に決め直したときは、
+ローカルの `<base>` にしか無いコミットを並べる。
+
+```bash
+git log --oneline origin/<base>..<base>
+```
+
+出力が空でなければ、そのコミットは `origin/<base>` から切る新しいブランチには入らない。多くは
+統合ブランチに直接コミットしたもの（ルール 2 違反）なので、並んだコミットを最終応答に書く。
+リモートの `<base>` が force push で書き換えられたときも並ぶので、ルール 2 違反と決めつけない。
 
 ## ルール 4: コミットは必ず `git-commit` スキルに委譲する
 

@@ -45,7 +45,7 @@ force push はユーザーが手で行う旨を理由に添え（`— push し�
 git switch -c <作業ブランチ> HEAD --no-track
 ```
 
-- git-branch のルール 3 の (a)(b) とルール 7 の確認は踏まない。ほかのベースから切ると手元のコミットを置いていき、(b) の `git pull --rebase` は手元のコミットを付け直す。未コミットの変更は持ち込み、やり直した Step 1 で扱う
+- git-branch のルール 3 の (a)(b) とルール 7 の確認は踏まない。ほかのベースから切ると手元のコミットを置いていく（(b) も、今の worktree に出ている統合ブランチは 2 本目の fetch が refusing で終わるので、`origin/<base>` から切らせる）。未コミットの変更は持ち込み、やり直した Step 1 で扱う
 - 名前は git-workflow のルール 1 で決め、候補は `git show-ref --verify --quiet refs/heads/<名前>` が失敗する（まだ無い）名前から出す。対話時は候補を Step 1 の確認の選択肢に入れ、別に聞かない。ユーザーが入力した名前が既にあれば `git switch -c` が exit 128 になるので、`-C` で上書きせず聞き直す
 - git-branch のルール 3 の (d) は流さない。ベースを選んでいないので `<base-ref>` が無い。`git branch --show-current` が新しいブランチであることだけを確かめる。移したコミットは、やり直した Step 1 の 3. に並ぶ
 - 統合ブランチに残った手元のコミットはこの skill では消さない（消すのは git-workflow のルール 6 の要承認操作）

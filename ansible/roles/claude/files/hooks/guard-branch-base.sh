@@ -103,8 +103,10 @@ ${WORKTREE_NOTE}
 worktree のパスでもないかで分かります):
 
   1. git-branch skill のルール 3 の (a) でベースを選び、(b) に従って最新化する
-       <base-ref> が <base>:        git switch <base> && git pull --rebase origin <base>
-       <base-ref> が origin/<base>: git fetch origin
+       git fetch origin
+       git fetch origin <base>:<base>   # <base-ref> が <base> のときだけ
+     2 本目の結果で <base-ref> を決め直します (git-workflow skill の「ローカルの <base> を
+     早送りする」)。
 
   2. ベースを明示して派生する (-C / -B で切り直すときも <base-ref> を付けます)
        git switch -c <new-branch> <base-ref> --no-track
@@ -114,14 +116,14 @@ worktree のパスでもないかで分かります):
        git branch --show-current            # <new-branch> であること
        git log --oneline <base-ref>..HEAD   # 空であること
 
-リモートにしか無いベースは git switch <base> でローカルに作らず、origin/<base> のまま使います。
-ほかの worktree にあるベースへの git switch <base> は exit 128 で失敗します。
---ignore-other-worktrees で押し通さず、origin/<base> を使います。
+ベースへ git switch <base> で切り替えてから git pull --rebase で追従させません。ローカルの
+<base> に push していないコミットがあると、pull はそれを付け直して通り、新しいブランチに混ざります。
+リモートにしか無いベースもローカルに作らず、origin/<base> のまま使います。
 
-未コミット変更がある場合は、1. の代わりに git-branch skill のルール 3 (b) 例外 1
-に従います (先にルール 7 で扱いを決めます。pull --rebase はステージ済みか未ステージの
-変更があると動きません)。持ち込む場合も 2. で変更は保持されますが、変更のあるファイルの
-中身が現在の HEAD とベースで違うと、git は派生を拒否します (ブランチは作られません)。
+未コミット変更がある場合は、2. の前に git-branch skill のルール 7 で扱いを決めます
+(ルール 3 (b) 例外 1)。1. は作業ツリーに触れないので、そのまま流せます。持ち込む場合も 2. で
+変更は保持されますが、変更のあるファイルの中身が現在の HEAD とベースで違うと、git は派生を
+拒否します (ブランチは作られません)。
 
 cd の移動先が実行時まで決まらない ("\$X" など) か、まだ無いディレクトリ (git init や
 git clone の直後など) のときは、cd する前の場所で判定しています。移動先で派生するなら、
