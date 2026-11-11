@@ -1,0 +1,35 @@
+---
+- name: Fetch yomiyasu
+  ansible.builtin.git:
+    repo: https://github.com/nanaism/yomiyasu.git
+    dest: "{{ codex_yomiyasu_dir }}"
+    version: "{{ codex_yomiyasu_version }}"
+    # 履歴は使わず、版を上げるときもタグを取り直すだけなので浅く取る。
+    depth: 1
+
+- name: Ensure user skills directory exists
+  ansible.builtin.file:
+    path: "{{ codex_skills_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check existing yomiyasu in user skills
+  ansible.builtin.stat:
+    path: "{{ codex_skills_dir }}/yomiyasu"
+  register: codex_yomiyasu_skill
+
+# npx skills add -g などで入れた実体のフォルダは、置き換えずに知らせる。止めると後のロールと適用の記録まで飛ぶ。
+- name: Debug yomiyasu is installed another way
+  ansible.builtin.debug:
+    msg: "{{ codex_skills_dir }}/yomiyasu がリンクではないため、yomiyasu {{ codex_yomiyasu_version }} を置いていない。退避してから流し直す。"
+  when: codex_yomiyasu_skill.stat.exists and not codex_yomiyasu_skill.stat.islnk
+
+- name: Link yomiyasu into user skills
+  ansible.builtin.file:
+    # 版を上げても git が同じ場所で checkout し直すので、リンクは張り替えずに済み、上流で消えたファイルも残らない。
+    src: "{{ codex_yomiyasu_dir }}/skills/yomiyasu"
+    dest: "{{ codex_skills_dir }}/yomiyasu"
+    state: link
+    # check mode では clone されずリンク元が無い。実際に流すときは、上流でパスが変わったらリンク切れにせず止める。
+    force: "{{ ansible_check_mode }}"
+  when: not codex_yomiyasu_skill.stat.exists or codex_yomiyasu_skill.stat.islnk
