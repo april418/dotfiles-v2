@@ -120,7 +120,7 @@ git-workflow のルール 6 の要承認操作には**当たらない**（本文
   退避したときのメッセージと、戻し方（`git switch <元のブランチ>` →
   `git stash list` でメッセージから番号を探す → `git stash pop stash@{N}`）を伝える。
   番号は後から stash が積まれるとずれるので、番号だけで伝えない。
-  stash の `drop` / `clear` は git-workflow のルール 6 の要承認操作なので、放置は安全側である。
+  戻していない stash を消すのは git-workflow のルール 6 の要承認操作なので、放置は安全側である。
 
 - **「そのまま持ち込む」を選んだ場合**:
 
