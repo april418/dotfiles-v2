@@ -98,14 +98,16 @@ UV_EXCLUDE_NEWER=9999-01-01 uv sync
 
 **nvm（Node.js）:**
 
+`<nvm>` は nvm の置き場所で、`NVM_DIR` が空でなければそれ、空なら `$XDG_CONFIG_HOME/nvm`、`XDG_CONFIG_HOME` も空なら `~/.nvm` である（nvm の install.sh と同じ規則）。
+
 ```bash
-source ~/.nvm/nvm.sh && nvm use <version>
+source <nvm>/nvm.sh && nvm use <version>
 ```
 
 インストールされていない場合:
 
 ```bash
-source ~/.nvm/nvm.sh && nvm install <version>
+source <nvm>/nvm.sh && nvm install <version>
 ```
 
 **mise（ポリグロット対応）:**
