@@ -58,6 +58,18 @@
   register: claude_settings_current
   when: claude_settings_stat.stat.exists
 
+- name: Ensure the dotfiles marketplace directory exists
+  ansible.builtin.file:
+    path: "{{ claude_marketplace_dir }}/.claude-plugin"
+    state: directory
+    mode: "0755"
+
+- name: Write the dotfiles marketplace
+  ansible.builtin.copy:
+    content: "{{ claude_marketplace | to_nice_json(indent=2, sort_keys=False, ensure_ascii=False) }}\n"
+    dest: "{{ claude_marketplace_dir }}/.claude-plugin/marketplace.json"
+    mode: "0644"
+
 - name: Merge settings.json
   ansible.builtin.copy:
     # Claude Code は /config や /fast での選択もこのファイルに書き込むため、
@@ -130,7 +142,6 @@
     state: directory
     mode: "0755"
   loop:
-    - frontend-design
     - empirical-prompt-tuning
 
 - name: Download external skills
@@ -139,10 +150,8 @@
     dest: "{{ ansible_facts['env'].HOME }}/.claude/skills/{{ item.dest }}"
     mode: "0644"
   loop:
-    # どちらも main の追従ではなくコミット SHA で固定する。上流はリポジトリの構成変更や
+    # main の追従ではなくコミット SHA で固定する。上流はリポジトリの構成変更や
     # ファイルの再配置が多く、追従するとビルドが壊れる。更新と移動は dotfiles check が知らせる。
-    - url: https://raw.githubusercontent.com/anthropics/claude-code/dbdd79cebfae5891f5b0fab6f7773ea520d289a7/plugins/frontend-design/skills/frontend-design/SKILL.md
-      dest: frontend-design/SKILL.md
     - url: https://raw.githubusercontent.com/mizchi/skills/a41865b34b78f2675a6c73178377a5bcc1b492c6/empirical-prompt-tuning/SKILL.md
       dest: empirical-prompt-tuning/SKILL.md
   loop_control:

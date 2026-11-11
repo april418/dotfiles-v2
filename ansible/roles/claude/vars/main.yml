@@ -7,6 +7,29 @@ claude_character_state_file: "{{ ansible_facts['env'].XDG_STATE_HOME | default(a
 # dotfiles: tags https://github.com/nanaism/yomiyasu
 claude_yomiyasu_version: "v3.0.0"
 
+# anthropics/claude-plugins-official にはタグが無く、マーケットプレイスの ref では固定できない。プラグインの source は
+# sha を取れるので、手元に置くマーケットプレイス（claude_marketplace）に SHA で書く。dotfiles check は raw の URL の
+# SHA を追うので、固定は SKILL.md の URL で持ち、sha はそこから取る。
+claude_frontend_design_skill_url: "https://raw.githubusercontent.com/anthropics/claude-plugins-official/30202c767cfaf325212b3921ab484f83adaec850/plugins/frontend-design/skills/frontend-design/SKILL.md"
+
+# XDG_DATA_HOME が空文字のときも既定値に倒す。
+claude_marketplace_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/dotfiles/claude-marketplace"
+
+# Write the dotfiles marketplace が marketplace.json に書く。
+claude_marketplace:
+  name: dotfiles
+  description: dotfiles がコミットで固定して配るプラグイン
+  owner:
+    name: dotfiles
+  plugins:
+    - name: frontend-design
+      source:
+        source: git-subdir
+        # owner/repo の短縮形は SSH で clone することがあり、known_hosts に github.com が無いと失敗するので、https で書く。
+        url: https://github.com/anthropics/claude-plugins-official.git
+        path: plugins/frontend-design
+        sha: "{{ claude_frontend_design_skill_url.split('/')[5] }}"
+
 # Merge settings.json が files/settings.json の後に重ねる。版を変数で持つので、静的な settings.json には書かない。
 # 取得は Claude Code がセッションの開始後に行う（宣言だけで、プレイブックはクローンしない）。
 claude_plugin_settings:
@@ -16,5 +39,10 @@ claude_plugin_settings:
         source: github
         repo: nanaism/yomiyasu
         ref: "{{ claude_yomiyasu_version }}"
+    dotfiles:
+      source:
+        source: directory
+        path: "{{ claude_marketplace_dir }}"
   enabledPlugins:
     yomiyasu@yomiyasu: true
+    frontend-design@dotfiles: true
