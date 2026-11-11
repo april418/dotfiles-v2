@@ -277,12 +277,28 @@ main worktree である。ローカルに `<head>` が無ければ、gh はロ�
 
    付け替えはこのマージの名指しに含める。`--delete-branch` の削除と同じく、名指しされた
    マージで積んだ PR を閉じないための操作である。ただし積んだ PR の author が自分（AI が
-   作ったもの）でなければ、付け替えずに止めてユーザーに確認する。マージの後に、積んだ PR が
-   `gh pr view <番号> --json state,baseRefName` で OPEN かつ付け替え先を向いていることを確かめる。
+   作ったもの）でなければ、付け替えも下の復旧もせずに止めてユーザーに確認する。マージの後に、
+   積んだ PR が `gh pr view <番号> --json state,baseRefName` で OPEN かつ付け替え先を向いていることを
+   確かめる。
 
-   閉じられてしまったら、消えたブランチをマージ前の SHA でリモートに作り直し
-   （`git push origin <SHA>:refs/heads/<head>`）、`gh pr reopen` → `gh pr edit --base` の後に
-   作り直したブランチを消す。PR の番号を残すにはこの順しかない。
+   閉じられてしまったら、次の順で戻す。PR の番号を残すにはこの順しかない。
+
+   ```bash
+   gh pr view <マージした PR の番号> --json headRefOid --jq .headRefOid   # マージ前の head の SHA
+   git push origin <SHA>:refs/heads/<head>
+   gh pr reopen <積んだ PR の番号>
+   gh pr edit <積んだ PR の番号> --base <この PR の base>
+   gh pr view <積んだ PR の番号> --json state,baseRefName   # OPEN で、付け替え先を向いていること
+   git push origin --delete <head>
+   ```
+
+   作り直しの push は git-workflow のルール 5 の例外で、git-push skill を通さない。`<SHA>` は
+   マージした PR の `headRefOid` から取り、reflog などからは拾わない。例外が認めるのは、
+   リモートにあったコミットを戻す push だけである。作り直し・reopen・付け替え・削除は、この
+   マージの名指しに含める。名指しされたマージで閉じた積んだ PR を元に戻す操作である。削除の前の
+   `gh pr view` で OPEN かつ付け替え先を向いていなければ、作り直したブランチを残して止め、最終応答に
+   書く。削除を auto mode に止められたら、下の「リモートに残ったマージ済みブランチ」と同じく、
+   回避せずにコマンドを示して終える。
 
 stdout が端末でないと、gh はマージの成功もブランチの削除も出力せず、警告とエラーだけを出す
 （`infof` は `IsStdoutTTY()` のときだけ書く）。exit が 0 以外でも、マージは済んでいることがある。
