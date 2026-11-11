@@ -1,6 +1,6 @@
 ---
 name: git-recovery
-description: ブランチに想定外のコミットが混入していたときの復旧手順（切り直し / 新ブランチへ cherry-pick / 1 本のまま明記）と、rebase / cherry-pick / stash pop でコンフリクトが起きたときの扱い。git log <base-ref>..HEAD に説明できないコミットが出たとき、コンフリクトが起きたときに参照する。共通ルールは git-workflow skill にある。
+description: ブランチに想定外のコミットが混入していたときの復旧手順（切り直し / 新ブランチへ cherry-pick / 1 本のまま明記）と、rebase / cherry-pick / stash pop でコンフリクトが起きたときと、stash pop が exit 1 で終わったときの扱い。git log <base-ref>..HEAD に説明できないコミットが出たとき、コンフリクトが起きたとき、stash pop が exit 1 で終わったときに参照する。共通ルールは git-workflow skill にある。
 ---
 
 # 概要
@@ -196,7 +196,15 @@ stash の `drop` のどれもしないことである。どちらの変更を残
 - 衝突した操作と、衝突したファイル
 - 衝突したまま止まった rebase / cherry-pick なら、解いて `--continue` するか、`--abort` で始める前に戻すか
 - `stash pop` なら、退避したときのメッセージ。衝突しても stash は消えずに残っている。
-  衝突しなかった変更は適用済みで、追跡ファイルはステージされ、未追跡ファイルは未追跡のまま戻っている。
-  解いた後に drop するかは、git-workflow のルール 6 に従ってユーザーが決める
+  衝突しなかった変更は適用済みで、追跡ファイルはステージされ、未追跡ファイルは未追跡のまま戻っている
+  （`already exists` が出たパスを除く。次の項）。解いた後に drop するかは、git-workflow のルール 6 に従って
+  ユーザーが決める
+- `stash pop` が `<パス> already exists, no checkout` と `could not restore untracked files from stash` を
+  出したら（exit 1。衝突と同時にも出る）、作業ツリーに同じパスのファイルがあり、そのパスの未追跡ファイルは
+  戻っていない。同じパスは、今の HEAD で追跡されているか、pop の前に作り直されている
+  （`git ls-files -- <パス>` で見分ける）。ほかの未追跡ファイルは戻る。衝突が無ければ、追跡ファイルの変更は
+  ステージされずに適用され、stash の時点で新しく add したファイルはステージされたまま残る。stash は
+  残っている（Git 2.54.0 で実測）。衝突が無くてもここで止まり、drop も、ファイルを動かしての pop の
+  やり直しもしない。`already exists` の行のパスと、退避したときのメッセージを書く
 - ルート 2 の cherry-pick なら、残したルート 2 のブランチ名と、選択肢（混入コミットを含めて
   1 本で出すルート 3 か、手で解いて分離するか）

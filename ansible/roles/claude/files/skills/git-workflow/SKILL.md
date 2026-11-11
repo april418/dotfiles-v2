@@ -20,7 +20,7 @@ Read で SKILL.md を開いただけでは、圧縮の後に本文が戻らな�
 | コミットする                                                                                                         | `git-commit`（ルール 4） | —                       |
 | push する                                                                                                            | `git-push`（ルール 5）   | —                       |
 | PR を作る・PR のために push する・PR をマージする・PR がマージされた直後                                             | `git-pr`                 | 11                      |
-| `git log <base-ref>..HEAD` に説明できないコミットがある・コンフリクトが起きた                                        | `git-recovery`           | 10                      |
+| `git log <base-ref>..HEAD` に説明できないコミットがある・コンフリクトが起きた・`stash pop` が exit 1 で終わった      | `git-recovery`           | 10                      |
 
 ルール番号は git-workflow / git-branch / git-pr / git-recovery を通した通し番号である。
 この skill にあるのは 0, 1, 2, 4, 5, 6, 8, 9。本文に出てくる番号がこの skill に
