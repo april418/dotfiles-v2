@@ -9,3 +9,27 @@ codex_yomiyasu_version: "{{ (lookup('ansible.builtin.file', role_path + '/../cla
 codex_yomiyasu_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/yomiyasu"
 # Codex の文書がユーザー全体の skill の置き場とする場所。CODEX_HOME を変えても HOME の下のまま。
 codex_skills_dir: "{{ ansible_facts['env'].HOME }}/.agents/skills"
+# claude ロールが skill をコピーする先。
+codex_shared_skills_source_dir: "{{ ansible_facts['env'].HOME }}/.claude/skills"
+# claude ロールのプラグインと同じ SHA を使い、固定は claude ロールの claude_frontend_design_skill_url だけで持つ。
+codex_frontend_design_skill_url: "{{ (lookup('ansible.builtin.file', role_path + '/../claude/vars/main.yml') | from_yaml).claude_frontend_design_skill_url }}"
+codex_frontend_design_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/dotfiles/codex-skills/frontend-design"
+# Claude Code に配る skill のうち、Codex にも見せるもの。
+# orchestrate は Claude Code の subagent と worktree の分離を前提にした手順なので入れない。
+codex_shared_skills:
+  - empirical-prompt-tuning
+  - frontend-design
+  - git-branch
+  - git-commit
+  - git-pr
+  - git-push
+  - git-recovery
+  - git-workflow
+  - package-manager
+  - review-tone
+  - ui-audit
+# ~/.claude/skills に無い skill のリンク先。claude ロールがプラグインで入れる skill は、Codex 用に取ってここに書く。
+codex_shared_skill_sources:
+  frontend-design: "{{ codex_frontend_design_dir }}"
+# 名前からリンク先を引く表。codex_shared_skill_sources に無い名前は codex_shared_skills_source_dir の下を指す。
+codex_shared_skill_paths: "{{ dict(codex_shared_skills | zip(codex_shared_skills | map('regex_replace', '^', codex_shared_skills_source_dir ~ '/'))) | combine(codex_shared_skill_sources) }}"

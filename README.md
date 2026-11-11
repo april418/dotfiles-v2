@@ -48,8 +48,33 @@ Codex CLI を入れられなかったときも置く。skill の名前は Codex 
 codex debug prompt-input | grep -c -F -e '- yomiyasu:yomiyasu: '
 ```
 
-`~/.agents/skills/yomiyasu` にリンクではないフォルダ（`npx skills add -g` で入れたものなど）があれば、
-置き換えずに知らせる。`evacuate` で退避してから流し直す。別の場所へのリンクと壊れたリンクは、流すたびに張り替える。
+同じロールで、Claude Code に配る skill のうち `codex_shared_skills`（`ansible/roles/codex/vars/main.yml`）に挙げたものを
+Codex にも見せる。`~/.agents/skills/<名前>` を、`claude` ロールが置いた `~/.claude/skills/<名前>` へのリンクにするので、
+プレイブックを流すたびに Claude Code と同じ版になる。frontend-design は `claude` ロールがプラグインで入れ、
+`~/.claude/skills` には無いので、`claude_frontend_design_skill_url` の SKILL.md を
+`~/.local/share/dotfiles/codex-skills/frontend-design/`（`XDG_DATA_HOME` があればその下）に取り、そこへリンクする
+（`codex_shared_skill_sources`）。Claude Code の subagent と worktree の分離を前提にした `orchestrate` は入れていない。
+skill の中の `AskUserQuestion` などの名前は、グローバル指示の冒頭にあるとおり Codex が読み替える。
+Claude Code の skill を足したり改名したり消したりしたら、Codex に見せるかを決めて `codex_shared_skills` も直す。
+`claude` ロールは古い `~/.claude/skills/<旧名>` を消さず、一覧から外しても `~/.agents/skills` のリンクは残るので、
+どちらも `evacuate` で退避する。古いコピーが残っていると、知らせずにそれへリンクする。
+
+`~/.agents/skills` の yomiyasu と `codex_shared_skills` の名前に、リンクではないフォルダ（`npx skills add -g` で入れたものや、
+下の取り込みが写したものなど）があれば、置き換えずに知らせる。`evacuate` で退避してから流し直す。
+別の場所へのリンクと壊れたリンクは、流すたびに張り替える。リンク元の無い skill は、置かずに知らせる。
+
+Codex / ChatGPT デスクトップの Settings → Import にある Claude Code からの取り込みも、`~/.claude/skills` の
+直下のフォルダを、`orchestrate` や `synced/`・`.trash/` まで含めて `~/.agents/skills` へ写す。写した SKILL.md では、
+単語としての `claude`（`Claude Code`・`claude-code` など）が `Codex` に、`CLAUDE.md` が `AGENTS.md` に置き換わる（`~/.claude/` も `~/.Codex/` になる）。
+取り込みは同じ名前のフォルダやリンクがあれば写さないので、写したものは古いまま残り、このロールのリンクも上書きされない
+（[openai/codex#55903](https://github.com/openai/codex/issues/55903)）。一方、取り込める項目を数えるときはリンクを
+フォルダとみなさないので、リンクにした skill も Import の画面に取り込める項目として出続ける。skill はこのロールのリンクで渡し、
+取り込まない。取り込むと、手で取り込んでも自動更新でも、退避した `orchestrate`・`synced/`・`.trash/` の写しがまた写される。
+取り込みが写した skill は、次の順に片付ける。先に自動更新を止めないと、退避した写しが次の自動更新で戻る。
+
+1. Settings → Import の自動更新（文書の「Keep imported work in sync」）を切るか、取り込む項目から skill を外す
+2. `~/.agents/skills` にある、取り込みが写したフォルダ（写した skill と `orchestrate`・`synced/`・`.trash/`）を `evacuate` で退避する
+3. プレイブックを流す
 
 ブラウザ版 ChatGPT はローカルファイルを自動では読み込まない。
 全チャットに適用する指示は Settings → Personalization の Custom instructions に設定する。
@@ -58,7 +83,8 @@ codex debug prompt-input | grep -c -F -e '- yomiyasu:yomiyasu: '
 仕様: [AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md)、
 [デスクトップの Personalization](https://learn.chatgpt.com/docs/app/settings)、
 [ChatGPT のカスタム指示](https://learn.chatgpt.com/docs/personalize)、
-[skill の置き場](https://learn.chatgpt.com/docs/build-skills)。
+[skill の置き場](https://learn.chatgpt.com/docs/build-skills)、
+[ほかのエージェントからの取り込み](https://learn.chatgpt.com/docs/import)。
 
 ## Claude Code のキャラクター
 
@@ -167,20 +193,24 @@ claude plugin uninstall frontend-design@dotfiles
 claude plugin install frontend-design@dotfiles
 ```
 
+Codex の側は手で揃えなくてよい。プレイブックが同じ URL の SKILL.md を取り直す。
+
 `/plugin` で無効にしても、`enabledPlugins` はリポジトリ側の値なので、プレイブックを流すたびに有効に戻る。
 外すときは `claude_plugin_settings` から yomiyasu の 2 項目を消し、`claude plugin marketplace remove yomiyasu` を流す。
 取得済みなら、プラグインのアンインストールと、配置先の `~/.claude/settings.json` の 2 つのキーの削除まで行われる。
 一度も取得していなければ remove は not found で失敗するので、配置先から `extraKnownMarketplaces.yomiyasu` と
 `enabledPlugins` の `yomiyasu@yomiyasu` を手で消す。宣言が残ると、次のセッションでまた取得される。
-Codex の側も外すときは、`ansible/roles/codex/tasks/main.yml` から `skills.yml` の取り込みを、
-`ansible/roles/codex/vars/main.yml` から `codex_yomiyasu_version`・`codex_yomiyasu_dir`・`codex_skills_dir` を消す。
-配置先の `~/.agents/skills/yomiyasu`（リンク）と `~/.local/share/yomiyasu`（`XDG_DATA_HOME` があればその下）は
-`evacuate` で退避する。取り込みを残したまま `claude_yomiyasu_version` を消すと、codex ロールが版を読めずに止まる。
+Codex の側も外すときは、`ansible/roles/codex/tasks/skills.yml` から名前に yomiyasu を含む 4 つのタスクを、
+`ansible/roles/codex/vars/main.yml` から `codex_yomiyasu_version`・`codex_yomiyasu_dir` を消す。
+`skills.yml` の取り込みと `codex_skills_dir` は、Claude Code と共有する skill（[Codex / ChatGPT のグローバル指示](#codex--chatgpt-のグローバル指示)）が
+使うので残す。配置先の `~/.agents/skills/yomiyasu`（リンク）と `~/.local/share/yomiyasu`（`XDG_DATA_HOME` があればその下）は
+`evacuate` で退避する。yomiyasu のタスクを残したまま `claude_yomiyasu_version` を消すと、codex ロールが版を読めずに止まる。
 両方から外すときは、`files/AGENTS.md` の「手順を持つ skill」にある yomiyasu の行も消す。残すと、無い skill で推敲するよう指示し続ける。
 
 frontend-design を外すときは、vars から `claude_frontend_design_skill_url`・`claude_frontend_design_source`・
 `claude_marketplace_dir`・`claude_marketplace` と、`claude_plugin_settings` の `dotfiles` と `frontend-design@dotfiles` を消す。
-URL が残ると、`dotfiles check` が更新を知らせ続ける。tasks からも、Check the pinned frontend-design URL から
+URL が残ると、`dotfiles check` が更新を知らせ続ける。ただし Codex の側に残すときは、`codex` ロールがこの URL を読むので
+`claude_frontend_design_skill_url` は残す。tasks からも、Check the pinned frontend-design URL から
 Write the dotfiles marketplace までの 3 つと、末尾の Check if installed_plugins.json exists から
 Report the old frontend-design skill までの 5 つを消す。そのうえで `claude plugin marketplace remove dotfiles` を流す。
 登録済みなら、yomiyasu と同じく、プラグインのアンインストールと 2 つのキーの削除まで行われる。一度も登録していなければ
@@ -189,6 +219,16 @@ remove は not found で失敗するので、配置先から `extraKnownMarketpl
 
 ```sh
 evacuate -n claude-marketplace "${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/claude-marketplace"
+```
+
+Codex の側も外すときは、`ansible/roles/codex/tasks/skills.yml` から名前に frontend-design を含む 2 つのタスクを、
+`ansible/roles/codex/vars/main.yml` から `codex_frontend_design_skill_url`・`codex_frontend_design_dir` と、
+`codex_shared_skills`・`codex_shared_skill_sources` の frontend-design を消す。codex のタスクを残したまま
+`claude_frontend_design_skill_url` を消すと、codex ロールが URL を読めずに止まる。配置先のリンクと取った SKILL.md は残るので、
+`evacuate` で取り除く。
+
+```sh
+evacuate -n codex-frontend-design ~/.agents/skills/frontend-design "${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/codex-skills/frontend-design"
 ```
 
 ## AWS CLI
