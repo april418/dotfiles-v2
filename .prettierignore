@@ -3,3 +3,5 @@
 !.claude/CLAUDE.md
 # ccstatusline の TUI が書き出す形のまま置き、書き出したものを貼り直したときに差分を出さない。
 ansible/roles/claude/files/ccstatusline.json
+# yomiyasu の check が git の最上位に作る状態フォルダ。中の .gitignore を prettier は読まない。
+.yomiyasu/
