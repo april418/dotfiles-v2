@@ -22,7 +22,7 @@ Codex が参照先を開くかどうかに依存しない。rules の削除や�
 
 Codex CLI と Codex / ChatGPT デスクトップの、新しいチャットから適用される。
 グローバル指示を読むための追加プラグインは不要。
-Claude Code の権限設定は Codex には適用されない。hook と subagent は、下のとおり同じロールで Codex にも渡す。
+Claude Code の権限設定は Codex には適用されない。hook と subagent は下のとおり同じロールで Codex にも渡す。
 skill など、収録していない Claude 側のファイルは、存在して利用できる場合だけ参照する。
 
 `dotfiles character set <名前>` は Claude Code のキャラクターを配置した後、
@@ -66,15 +66,15 @@ Claude Code の skill を足したり改名したり消したりしたら、Code
 同じロールで、Claude Code の hook のうち `codex_shared_hooks`（`ansible/roles/codex/vars/main.yml`）に挙げたものを
 `~/.codex/hooks.json`（`CODEX_HOME` があればその下）に登録する。登録は `ansible/roles/claude/files/settings.json` の `hooks` から作り、
 コマンドは `claude` ロールが置いた `~/.claude/hooks/` のスクリプトをそのまま指すので、スクリプトの更新は Codex にも届く。
-Codex のシェルのツールは hook に `Bash` という名前で渡るので、matcher も Claude Code と同じものが当たる。
+Codex はシェルのツールを `Bash` という名前で hook に渡すので、matcher も Claude Code と同じものが当たる。
 `reply-language-guard.py` は Claude Code の会話記録の形を読むので入れていない。hook を足したり改名したりしたら、
 Codex に登録するかを決めて `codex_shared_hooks` も直す。一覧の名前が `settings.json` の hook に無ければ、登録せずに知らせる。
 Codex は信頼した hook だけを走らせる。信頼はスクリプトの中身ではなく、`hooks.json` の中の位置（イベントと、その中の組と hook の順番）と、
 matcher・コマンド・`statusMessage`・`timeout` といった登録の内容で覚える。登録が変わった hook は Codex で信頼し直すまで走らず、
 共有する hook を既存のものより前に足すと、後ろの hook も位置がずれて信頼し直しになる。`hooks.json` を書き換えたときは
 プレイブックが知らせる。`hooks.json` はこのロールが書くので、Codex で足した hook は流すたびに消える（前の内容は Ansible のバックアップに残る）。
-Codex は hook の additionalContext が 2,500 トークン（4 バイトを 1 トークンと数える）を超えると、先頭と末尾だけを残して
-ファイルへ退避し、そのパスを載せる。`reload-claude-md.sh` が本文を省く上限は Claude Code に合わせた 9,000 文字なので、
+Codex は hook の additionalContext が 2,500 トークン（4 バイトを 1 トークンと数える）を超えると、全文をファイルに書き出し、
+先頭と末尾とそのファイルのパスだけを載せる。`reload-claude-md.sh` が本文を省く上限は Claude Code に合わせた 9,000 文字なので、
 日本語でおよそ 3,300 文字を超える状態ファイルは、Codex では途中が省かれる。
 
 同じロールで、`ansible/roles/claude/files/agents/*.md` を Codex の subagent（`~/.codex/agents/<名前>.toml`）にする。
@@ -105,7 +105,7 @@ Codex / ChatGPT デスクトップの Settings → Import にある Claude Code 
 | SUBAGENTS      | `~/.codex/agents/<名前>.toml`                                              | プレイブックが上書きする                                                                                                                                                    |
 | projects       | 各リポジトリ直下の `AGENTS.md`（`.claude/CLAUDE.md` を語を置き換えた写し） | `evacuate` で退避する。取り込みは無いか空のときだけ書くので、残すと古いまま読まれ続ける                                                                                     |
 
-取り込みは `hooks.json` と同じ名前の toml があれば書かないので、このロールが置いたものは上書きされない。
+取り込みは `hooks.json` や同じ名前の agent の toml が既にあれば書かないので、このロールが置いたものは上書きされない。
 
 ブラウザ版 ChatGPT はローカルファイルを自動では読み込まない。
 全チャットに適用する指示は Settings → Personalization の Custom instructions に設定する。
