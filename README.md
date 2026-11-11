@@ -123,7 +123,8 @@ claude plugin install frontend-design@dotfiles
 ```
 
 前に frontend-design の SKILL.md を `~/.claude/skills/frontend-design/` へ写していたマシンでは、そのディレクトリが残り、
-同じ skill が 2 つ並ぶ。`evacuate` で取り除く。
+同じ skill が 2 つ並ぶ。残っていればプレイブックが知らせるので、プラグインが入ったのを `claude plugin list` で確かめてから、
+`evacuate` で取り除く。
 
 ```sh
 evacuate -n frontend-design-skill ~/.claude/skills/frontend-design
@@ -157,9 +158,9 @@ marketplace.json の `sha` が変わる。宣言のパスは変わらないの�
 claude plugin update frontend-design@dotfiles
 ```
 
-プラグインの版は `plugin.json` の `version` で決まるので、上流がそれを上げていなければ、update は
-`already at the latest version` と出て何もしない。そのときは入れ直す。入れた SHA は
-`~/.claude/plugins/installed_plugins.json` の `gitCommitSha` で確かめる。
+`plugin.json` に `version` があれば、プラグインの版はそれで決まる（今の固定先は 1.1.1）。上流がそれを上げずに
+SKILL.md だけを変えていると、update は `already at the latest version` と出て何もしない。そのときは入れ直す。
+プレイブックは、`~/.claude/plugins/installed_plugins.json` の `gitCommitSha` が固定の SHA と違えば、そのことを知らせる。
 
 ```sh
 claude plugin uninstall frontend-design@dotfiles
@@ -177,10 +178,18 @@ Codex の側も外すときは、`ansible/roles/codex/tasks/main.yml` から `sk
 `evacuate` で退避する。取り込みを残したまま `claude_yomiyasu_version` を消すと、codex ロールが版を読めずに止まる。
 両方から外すときは、`files/AGENTS.md` の「手順を持つ skill」にある yomiyasu の行も消す。残すと、無い skill で推敲するよう指示し続ける。
 
-frontend-design を外すときは、vars から `claude_marketplace` と、`claude_plugin_settings` の `dotfiles` と
-`frontend-design@dotfiles` を消し、tasks の Write the dotfiles marketplace とその前のディレクトリのタスクも消す。
-そのうえで `claude plugin marketplace remove dotfiles` を流すと、yomiyasu と同じく、プラグインのアンインストールと
-2 つのキーの削除まで行われる。marketplace.json のディレクトリは残るので、`evacuate` で取り除く。
+frontend-design を外すときは、vars から `claude_frontend_design_skill_url`・`claude_frontend_design_source`・
+`claude_marketplace_dir`・`claude_marketplace` と、`claude_plugin_settings` の `dotfiles` と `frontend-design@dotfiles` を消す。
+URL が残ると、`dotfiles check` が更新を知らせ続ける。tasks からも、Check the pinned frontend-design URL から
+Write the dotfiles marketplace までの 3 つと、末尾の Check if installed_plugins.json exists から
+Report the old frontend-design skill までの 5 つを消す。そのうえで `claude plugin marketplace remove dotfiles` を流す。
+登録済みなら、yomiyasu と同じく、プラグインのアンインストールと 2 つのキーの削除まで行われる。一度も登録していなければ
+remove は not found で失敗するので、配置先から `extraKnownMarketplaces.dotfiles` と `enabledPlugins` の
+`frontend-design@dotfiles` を手で消す。marketplace.json のディレクトリは残るので、`evacuate` で取り除く。
+
+```sh
+evacuate -n claude-marketplace "${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/claude-marketplace"
+```
 
 ## AWS CLI
 
