@@ -138,6 +138,10 @@
     url: "{{ item.url }}"
     dest: "{{ ansible_facts['env'].HOME }}/.claude/skills/{{ item.dest }}"
     mode: "0644"
+  # check モードの get_url は HEAD しか送らず、空の本文を配置済みのファイルと比べるので、中身が
+  # 同じでも changed と出る。まだ配置していない HOME では、上のタスクが check モードでは作らない
+  # dest のディレクトリが無くて落ちる。どちらも更新の有無を表さないので、check モードでは飛ばす。
+  when: not ansible_check_mode
   loop:
     # どちらも main の追従ではなくコミット SHA で固定する。上流はリポジトリの構成変更や
     # ファイルの再配置が多く、追従するとビルドが壊れる。更新と移動は dotfiles check が知らせる。
