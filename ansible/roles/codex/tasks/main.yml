@@ -76,3 +76,6 @@
 
 - name: Set up hooks
   ansible.builtin.import_tasks: hooks.yml
+
+- name: Set up subagents
+  ansible.builtin.import_tasks: agents.yml

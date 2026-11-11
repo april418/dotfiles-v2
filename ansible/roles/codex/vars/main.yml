@@ -46,3 +46,8 @@ codex_shared_hooks:
   - save-session-state.sh
 # codex_claude_hooks に登録されているコマンドの、先頭の語のファイル名。
 codex_claude_hook_names: "{{ codex_claude_hooks.values() | flatten | map(attribute='hooks') | flatten | selectattr('command', 'defined') | map(attribute='command') | map('split') | map('first') | map('basename') | unique | list }}"
+
+# claude ロールが ~/.claude/agents/ に置く subagent の定義。Codex の agent の toml もここから作る。
+codex_agent_files: "{{ query('ansible.builtin.fileglob', role_path + '/../claude/files/agents/*.md') | sort }}"
+# md を frontmatter と本文に分ける。区切りは先頭の行と、その後で最初に --- だけが書かれた行で、値の中の --- では分けない。
+codex_agent_pattern: '^---\r?\n(?P<meta>[\s\S]*?)\r?\n---[ \t]*\r?\n(?P<body>[\s\S]*)$'

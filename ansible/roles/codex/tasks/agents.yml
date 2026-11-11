@@ -1,0 +1,31 @@
+---
+- name: Ensure Codex agents directory exists
+  ansible.builtin.file:
+    path: "{{ codex_home }}/agents"
+    state: directory
+    mode: "0755"
+
+# frontmatter の無い md（README など）は agent にしない。止めると後のロールと適用の記録まで飛ぶ。
+- name: Debug subagent definition has no frontmatter
+  ansible.builtin.debug:
+    msg: "{{ item | basename }} に name と description のある frontmatter が無いため、Codex の agent にしていない。"
+  loop: "{{ codex_agent_files }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  # codex_agent_parts は、一致すれば (frontmatter, 本文) の組、しなければ空のリスト。
+  vars: &codex_agent_vars
+    codex_agent_parts: "{{ lookup('ansible.builtin.file', item) | regex_findall(codex_agent_pattern) | first | default([], true) }}"
+    codex_agent_meta: "{{ (codex_agent_parts[0] | from_yaml) if codex_agent_parts else {} }}"
+  when: codex_agent_meta.name is not defined or codex_agent_meta.description is not defined
+
+# Codex の Settings → Import は同じ名前の toml があれば書かないので、取り込みの古い写しに戻されることもない。
+- name: Install subagents for Codex and ChatGPT desktop
+  ansible.builtin.template:
+    src: agent.toml.j2
+    dest: "{{ codex_home }}/agents/{{ item | basename | splitext | first }}.toml"
+    mode: "0644"
+  loop: "{{ codex_agent_files }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  vars: *codex_agent_vars
+  when: codex_agent_meta.name is defined and codex_agent_meta.description is defined

@@ -1,0 +1,6 @@
+{#- item は claude ロールの files/agents/<名前>.md。codex_agent_parts と codex_agent_meta は tasks/agents.yml が分けたもの。 -#}
+{#- JSON の文字列は TOML の基本文字列としても読めるので、to_json で引用する。 -#}
+# dotfiles-v2 の codex ロールが ansible/roles/claude/files/agents/{{ item | basename }} から作る。直すときは元の md を直す。
+name = {{ codex_agent_meta.name | to_json }}
+description = {{ codex_agent_meta.description | to_json(ensure_ascii=False) }}
+developer_instructions = {{ codex_agent_parts[1] | trim | to_json(ensure_ascii=False) }}
