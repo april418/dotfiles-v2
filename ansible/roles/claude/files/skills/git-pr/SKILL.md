@@ -261,8 +261,10 @@ main worktree である。ローカルに `<head>` が無ければ、gh はロ�
    gh が `git checkout <base>` で変更を `<base>` へ移すか、checkout が拒否されて、リモートの
    ブランチを消さないままエラーで止まる。linked worktree では gh は触れないが、直後の追従で
    同じルール 7 を踏むので、ここで済ませる。stash は
-   `git stash push -u -m "<head>: <退避した変更の内容>"` で取る。gh がマージせずに止まったら、
-   head の上で `git stash list` からメッセージで探し、`git stash pop stash@{N}` で戻す。
+   `git stash push -u -m "<head>: <退避した変更の内容>"` で取り、直後に
+   `git stash list --format='%gd %H %gs'` でその行の OID を控える。gh がマージせずに止まったら、
+   head の上で `git stash apply <控えた OID>` で戻し、自分の stash を消す（消し方と、apply が
+   exit 1 で終わったときの扱いは、git-branch のルール 3 (b) 例外 1 の戻す手順と同じ）。
    マージまで進んだら、最終応答に、stash した変更がマージした PR に入っていないことも書く。
 4. **この PR の head を base にしている open な PR（積んだ PR）が無いこと。** あれば、先に
    その PR の base をこの PR の base へ付け替える。`--delete-branch` で head を消すと、
