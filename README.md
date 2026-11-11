@@ -73,6 +73,36 @@ dotfiles character set pico
   振る舞いの規則は `files/AGENTS.md` の「場面ごとの振る舞い」にあり、キャラクターのファイルは声だけを持つ
 - 「場面ごとの反応」の場面の名前は `AGENTS.md` の表と揃える。反応の言葉が要らない場面は「入れない」と書く
 
+## Claude Code のプラグイン
+
+`claude` ロールは、プラグインとそのマーケットプレイスを `~/.claude/settings.json` の `enabledPlugins` と
+`extraKnownMarketplaces` に宣言する。宣言は `ansible/roles/claude/vars/main.yml` の `claude_plugin_settings` にあり、
+`files/settings.json` の後に重ねる。
+
+| プラグイン                                                                     | 中身                                                                                                         | 版                                      |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| `yomiyasu@yomiyasu`（[nanaism/yomiyasu](https://github.com/nanaism/yomiyasu)） | AI が書いた日本語を推敲する skill。名前で頼んだときだけ動く（`/yomiyasu:yomiyasu`、「yomiyasu で推敲して」） | `claude_yomiyasu_version`（タグで固定） |
+
+プレイブックはプラグインを取得しない。宣言を読んだ Claude Code が、セッションの開始後にマーケットプレイスを
+クローンしてプラグインを取得する。宣言だけの状態では、`claude plugin install` も `claude plugin marketplace update` も
+マーケットプレイスが見つからずに失敗する。セッションを待たずに入れるときは、宣言と同じ版を指定して流す。
+
+```sh
+claude plugin marketplace add 'nanaism/yomiyasu#<claude_yomiyasu_version の値>'
+claude plugin install yomiyasu@yomiyasu
+```
+
+yomiyasu の lint と check は Python 3 の標準ライブラリで動き、skill の `allowed-tools` により確認なしで実行される。
+Python が無いと、検査を飛ばして目視で点検する。
+
+新しい版の公開から 1 週間たつと `dotfiles check` が知らせる。`claude_yomiyasu_version` を書き換えてプレイブックを流したら、
+`claude plugin list` の Version で上がったかを確かめ、上がっていなければ `claude plugin update yomiyasu@yomiyasu` を流す。
+
+`/plugin` で無効にしても、`enabledPlugins` はリポジトリ側の値なので、プレイブックを流すたびに有効に戻る。
+外すときは `claude_plugin_settings` から消し、`claude plugin marketplace remove yomiyasu` を流す（プラグインも
+アンインストールされる）。配置先の `~/.claude/settings.json` に `extraKnownMarketplaces.yomiyasu` が残っていれば
+手で消す。残ると、次のセッションでまた取得される。
+
 ## AWS CLI
 
 `awscli` ロールは AWS CLI v2 を固定バージョンでインストールする。公式の `install.sh` に版を渡し、
