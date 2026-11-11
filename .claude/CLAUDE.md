@@ -5,8 +5,8 @@
 
 ## `ansible/roles/claude/files/` は配布物である
 
-このディレクトリの中身は `~/.claude/`（`files/bin/` は `~/.local/bin/`）へ
-コピーされ、すべてのプロジェクトで効く。このリポジトリ向けの指示ではない。
+このディレクトリの中身は下の表の配置先（ほとんどは `~/.claude/`）へコピーされ、
+すべてのプロジェクトで効く。このリポジトリ向けの指示ではない。
 
 | リポジトリ                                                       | 配置先                                      |
 | ---------------------------------------------------------------- | ------------------------------------------- |
@@ -15,8 +15,9 @@
 | `files/characters/<名前>.md`（`claude_character` で選んだ 1 つ） | `~/.claude/rules/character.md`              |
 | `files/settings.json`                                            | `~/.claude/settings.json`                   |
 | `files/bin/evacuate`                                             | `~/.local/bin/evacuate`                     |
+| `files/ccstatusline.json`                                        | `~/.config/ccstatusline/settings.json`      |
 
-- 編集はプレイブックを流すまで `~/.claude/`（と `~/.local/bin/`）に反映されない。動作確認は
+- 編集はプレイブックを流すまで配置先に反映されない。動作確認は
   `HOME` を一時ディレクトリに向けて claude ロールだけを流すと、実環境を
   汚さずに配置結果を見られる
 - `files/settings.json` は上書きではなく、配置先の既存の内容へ重ねる。
