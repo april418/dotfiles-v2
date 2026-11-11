@@ -57,11 +57,11 @@ git ls-remote --exit-code --heads origin refs/heads/<候補>
 #### 通常ケース（作業ツリーが clean）
 
 ```bash
-# `<base-ref>` が `<base>` の場合（ローカルにあり、ほかの worktree に無い）: 一旦 checkout してから rebase pull
+# `<base-ref>` が `<base>` の場合: 一旦 checkout してから rebase pull
 git switch <base>
 git pull --rebase origin <base>
 
-# `<base-ref>` が `origin/<base>` の場合（リモートにしか無い、またはほかの worktree にある）: fetch して直接派生に使う
+# `<base-ref>` が `origin/<base>` の場合: fetch して直接派生に使う
 git fetch origin
 ```
 
