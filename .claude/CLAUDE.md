@@ -23,6 +23,8 @@
   ここにあるキーは配列も含めてリポジトリ側の値になるため、`/model` や
   `/permissions` で配置先を変えても、そのキーなら流すたびに戻る。キーを
   消しても配置先には残るので、`~/.claude/settings.json` からも手で消す
+- プラグインの `extraKnownMarketplaces` と `enabledPlugins` は、版を変数で持つため
+  `vars/main.yml` の `claude_plugin_settings` に置き、`files/settings.json` の後に重ねる
 - `files/rules/` の .md は配置先で毎セッション読まれる。リポジトリで消したり改名したり
   しても配置先には残って効き続けるので、`~/.claude/rules/` からも `evacuate` で取り除く。
   `character.md` はキャラクターのタスクが書くので、`files/rules/` に同じ名前を置かない
