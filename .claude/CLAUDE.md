@@ -34,6 +34,9 @@
   codex ロールが `~/.agents/skills/` にもリンクして Codex に見せる。skill を足したり改名したり
   消したりしたら、Codex に見せるかを決めてこの一覧も直す。直さないと、足した skill が Codex に
   見えず、消した skill の古いコピーへのリンクが残る。手順は README の「Codex / ChatGPT のグローバル指示」にある
+- hook の登録（`files/settings.json` の `hooks`）のうち `ansible/roles/codex/vars/main.yml` の
+  `codex_shared_hooks` に挙げたものは、codex ロールが `~/.codex/hooks.json` にも登録する。hook を足したり
+  改名したりしたら、Codex に登録するかを決めてこの一覧も直す。直さないと、足した hook が Codex で走らない
 - **このファイルを消さない。** リポジトリに CLAUDE.md が 1 つも無いと、
   Claude Code は `files/AGENTS.md` をこのリポジトリの指示として読み込む
 
