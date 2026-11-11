@@ -1,0 +1,23 @@
+---
+# 一覧に claude ロールが登録しない名前があるときなど。止めると後のロールと適用の記録まで飛ぶ。
+- name: Debug shared hook is not registered for Claude Code
+  ansible.builtin.debug:
+    msg: "{{ item }} が claude ロールの files/settings.json の hooks に無いため、Codex に登録していない。codex_shared_hooks を claude ロールの hook と揃える。"
+  loop: "{{ codex_shared_hooks | difference(codex_claude_hook_names) }}"
+
+# codex_home は instructions.yml が先に作る。
+# コマンドは claude ロールが置いた ~/.claude/hooks/ のスクリプトを指すので、スクリプトの更新は Codex にも届く。
+# Codex の Settings → Import は hooks.json があれば書かないので、取り込みの古い写しに戻されることもない。
+- name: Install hooks for Codex and ChatGPT desktop
+  ansible.builtin.template:
+    src: hooks.json.j2
+    dest: "{{ codex_home }}/hooks.json"
+    mode: "0644"
+    backup: true
+  register: codex_hooks_file
+
+# Codex は登録の位置と内容で信頼を覚え、変わった hook は信頼し直すまで走らせない。
+- name: Debug hooks need trust again
+  ansible.builtin.debug:
+    msg: "{{ codex_home }}/hooks.json を書き換えた。登録が変わった hook は、Codex で信頼し直すまで走らない。"
+  when: codex_hooks_file is changed

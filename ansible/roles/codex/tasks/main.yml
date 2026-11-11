@@ -73,3 +73,9 @@
 # ChatGPT デスクトップ同梱の codex も同じ場所を読むので、CLI を入れられなかったときも置く。
 - name: Set up skills
   ansible.builtin.import_tasks: skills.yml
+
+- name: Set up hooks
+  ansible.builtin.import_tasks: hooks.yml
+
+- name: Set up subagents
+  ansible.builtin.import_tasks: agents.yml

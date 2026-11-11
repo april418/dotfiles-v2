@@ -33,3 +33,21 @@ codex_shared_skill_sources:
   frontend-design: "{{ codex_frontend_design_dir }}"
 # 名前からリンク先を引く表。codex_shared_skill_sources に無い名前は codex_shared_skills_source_dir の下を指す。
 codex_shared_skill_paths: "{{ dict(codex_shared_skills | zip(codex_shared_skills | map('regex_replace', '^', codex_shared_skills_source_dir ~ '/'))) | combine(codex_shared_skill_sources) }}"
+
+# claude ロールが ~/.claude/settings.json に重ねる hook の登録。Codex の hooks.json もここから作る。
+codex_claude_hooks: "{{ (lookup('ansible.builtin.file', role_path + '/../claude/files/settings.json') | from_json).hooks }}"
+# Claude Code の hook のうち、Codex にも登録するもの。コマンドの先頭の語のファイル名で選ぶ。
+# reply-language-guard.py は Claude Code の会話記録の形を読むので入れない。
+codex_shared_hooks:
+  - dotfiles
+  - guard-branch-base.sh
+  - prune-evacuated.py
+  - reload-claude-md.sh
+  - save-session-state.sh
+# codex_claude_hooks に登録されているコマンドの、先頭の語のファイル名。
+codex_claude_hook_names: "{{ codex_claude_hooks.values() | flatten | map(attribute='hooks') | flatten | selectattr('command', 'defined') | map(attribute='command') | map('split') | map('first') | map('basename') | unique | list }}"
+
+# claude ロールが ~/.claude/agents/ に置く subagent の定義。Codex の agent の toml もここから作る。
+codex_agent_files: "{{ query('ansible.builtin.fileglob', role_path + '/../claude/files/agents/*.md') | sort }}"
+# md を frontmatter と本文に分ける。区切りは先頭の行と、その後で最初に --- だけが書かれた行で、値の中の --- では分けない。
+codex_agent_pattern: '^---\r?\n(?P<meta>[\s\S]*?)\r?\n---[ \t]*\r?\n(?P<body>[\s\S]*)$'

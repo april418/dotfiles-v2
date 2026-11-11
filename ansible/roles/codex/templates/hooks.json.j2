@@ -1,0 +1,18 @@
+{#- codex_shared_hooks に挙げたコマンドだけを残し、空になった matcher の組とイベントは落とす。 -#}
+{%- set ns = namespace(events={}, groups=[], handlers=[]) -%}
+{%- for event, groups in codex_claude_hooks.items() -%}
+{%-   set ns.groups = [] -%}
+{%-   for group in groups -%}
+{%-     set ns.handlers = [] -%}
+{%-     for handler in group.hooks if handler.command is defined and (handler.command.split() | first | basename) in codex_shared_hooks -%}
+{%-       set ns.handlers = ns.handlers + [handler] -%}
+{%-     endfor -%}
+{%-     if ns.handlers -%}
+{%-       set ns.groups = ns.groups + [group | combine({'hooks': ns.handlers})] -%}
+{%-     endif -%}
+{%-   endfor -%}
+{%-   if ns.groups -%}
+{%-     set ns.events = ns.events | combine({event: ns.groups}) -%}
+{%-   endif -%}
+{%- endfor -%}
+{{ {'hooks': ns.events} | to_nice_json(indent=2, ensure_ascii=False) }}
