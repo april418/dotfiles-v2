@@ -105,8 +105,8 @@ worktree のパスでもないかで分かります):
   1. git-branch skill のルール 3 の (a) でベースを選び、(b) に従って最新化する
        git fetch origin
        git fetch origin <base>:<base>   # <base-ref> が <base> のときだけ
-     2 本目が exit 1 (non-fast-forward) か exit 128 (refusing to fetch) で終わったら、
-     <base-ref> を origin/<base> に引き直します。
+     2 本目の結果で <base-ref> を決め直します (git-workflow skill の「ローカルの <base> を
+     早送りする」)。
 
   2. ベースを明示して派生する (-C / -B で切り直すときも <base-ref> を付けます)
        git switch -c <new-branch> <base-ref> --no-track
