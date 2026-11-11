@@ -96,22 +96,37 @@ dotfiles character set pico
 `extraKnownMarketplaces` に宣言する。宣言は `ansible/roles/claude/vars/main.yml` の `claude_plugin_settings` にあり、
 `files/settings.json` の後に重ねる。
 
-| プラグイン                                                                     | 中身                                                                                                                                                                                 | 版                                      |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| `yomiyasu@yomiyasu`（[nanaism/yomiyasu](https://github.com/nanaism/yomiyasu)） | AI が書いた日本語を推敲する skill。名前を出したとき（`/yomiyasu:yomiyasu`、「yomiyasu で推敲して」）、スキルでの推敲をはっきり頼んだとき、CLAUDE.md などで使うよう指示したときに動く | `claude_yomiyasu_version`（タグで固定） |
+| プラグイン                                                                                                                                                  | 中身                                                                                                                                                                                 | 版                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `yomiyasu@yomiyasu`（[nanaism/yomiyasu](https://github.com/nanaism/yomiyasu)）                                                                              | AI が書いた日本語を推敲する skill。名前を出したとき（`/yomiyasu:yomiyasu`、「yomiyasu で推敲して」）、スキルでの推敲をはっきり頼んだとき、CLAUDE.md などで使うよう指示したときに動く | `claude_yomiyasu_version`（タグで固定）                     |
+| `frontend-design@dotfiles`（[anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official/tree/main/plugins/frontend-design)） | UI を新しく作るときや作り直すときに、見た目の方向づけを示す skill                                                                                                                    | `claude_frontend_design_skill_url` の SHA（コミットで固定） |
+
+anthropics/claude-plugins-official にはタグが無く、マーケットプレイスの `ref` では固定できない。そこでプレイブックは
+`~/.local/share/dotfiles/claude-marketplace/`（`XDG_DATA_HOME` があればその下）に `dotfiles` という名前の
+マーケットプレイスを書き、そこで frontend-design の取得元をコミット SHA で指す（vars の `claude_marketplace`）。
+Claude Code はこのディレクトリを写さずにその場で読むので、残しておく。
 
 どの文章を `yomiyasu:yomiyasu` で推敲するかは、共有のグローバル指示（`files/AGENTS.md`）の「手順を持つ skill」の節が決める。
 この節は Codex のグローバル指示にも入り、Codex には `codex` ロールが同じ版の skill を置く
 （[Codex / ChatGPT のグローバル指示](#codex--chatgpt-のグローバル指示)）。
 
 プレイブックはプラグインを取得しない。宣言を読んだ Claude Code が、セッションの開始後にマーケットプレイスを
-クローンしてプラグインを取得する。宣言だけの状態では、マーケットプレイスがまだ取得されていないので、
-`claude plugin install` も `claude plugin marketplace update` も not found で失敗する。セッションを待たずに入れるときは、
-宣言と同じ版を指定して流す。
+登録して（github のものはクローンして）プラグインを取得する。宣言だけの状態では、マーケットプレイスがまだ登録されて
+いないので、`claude plugin install` も `claude plugin marketplace update` も not found で失敗する。セッションを待たずに
+入れるときは、宣言と同じ source でマーケットプレイスを足してから入れる。
 
 ```sh
 claude plugin marketplace add 'nanaism/yomiyasu#<claude_yomiyasu_version の値>'
 claude plugin install yomiyasu@yomiyasu
+claude plugin marketplace add "${XDG_DATA_HOME:-$HOME/.local/share}/dotfiles/claude-marketplace"
+claude plugin install frontend-design@dotfiles
+```
+
+前に frontend-design の SKILL.md を `~/.claude/skills/frontend-design/` へ写していたマシンでは、そのディレクトリが残り、
+同じ skill が 2 つ並ぶ。`evacuate` で取り除く。
+
+```sh
+evacuate -n frontend-design-skill ~/.claude/skills/frontend-design
 ```
 
 yomiyasu の lint と check は Python 3 の標準ライブラリで動き、skill の `allowed-tools` により確認なしで実行される。
@@ -133,6 +148,24 @@ claude plugin update yomiyasu@yomiyasu
 
 Codex の側は手で揃えなくてよい。プレイブックが clone を新しいタグへ checkout し直し、リンクはそのまま新しい版を指す。
 
+frontend-design は、固定した SKILL.md が上流で変わってから 1 週間たつと `dotfiles check` が知らせる（SKILL.md 以外の
+ファイルの変更は知らせない）。`claude_frontend_design_skill_url` の SHA を書き換えてプレイブックを流すと、
+marketplace.json の `sha` が変わる。宣言のパスは変わらないので、yomiyasu のように読み込まれなくなることはない。
+続けてプラグインを更新する。
+
+```sh
+claude plugin update frontend-design@dotfiles
+```
+
+プラグインの版は `plugin.json` の `version` で決まるので、上流がそれを上げていなければ、update は
+`already at the latest version` と出て何もしない。そのときは入れ直す。入れた SHA は
+`~/.claude/plugins/installed_plugins.json` の `gitCommitSha` で確かめる。
+
+```sh
+claude plugin uninstall frontend-design@dotfiles
+claude plugin install frontend-design@dotfiles
+```
+
 `/plugin` で無効にしても、`enabledPlugins` はリポジトリ側の値なので、プレイブックを流すたびに有効に戻る。
 外すときは `claude_plugin_settings` から yomiyasu の 2 項目を消し、`claude plugin marketplace remove yomiyasu` を流す。
 取得済みなら、プラグインのアンインストールと、配置先の `~/.claude/settings.json` の 2 つのキーの削除まで行われる。
@@ -143,6 +176,11 @@ Codex の側も外すときは、`ansible/roles/codex/tasks/main.yml` から `sk
 配置先の `~/.agents/skills/yomiyasu`（リンク）と `~/.local/share/yomiyasu`（`XDG_DATA_HOME` があればその下）は
 `evacuate` で退避する。取り込みを残したまま `claude_yomiyasu_version` を消すと、codex ロールが版を読めずに止まる。
 両方から外すときは、`files/AGENTS.md` の「手順を持つ skill」にある yomiyasu の行も消す。残すと、無い skill で推敲するよう指示し続ける。
+
+frontend-design を外すときは、vars から `claude_marketplace` と、`claude_plugin_settings` の `dotfiles` と
+`frontend-design@dotfiles` を消し、tasks の Write the dotfiles marketplace とその前のディレクトリのタスクも消す。
+そのうえで `claude plugin marketplace remove dotfiles` を流すと、yomiyasu と同じく、プラグインのアンインストールと
+2 つのキーの削除まで行われる。marketplace.json のディレクトリは残るので、`evacuate` で取り除く。
 
 ## AWS CLI
 
