@@ -42,7 +42,7 @@ Codex がユーザー全体の skill を探す `~/.agents/skills/yomiyasu` を�
 Codex CLI を入れられなかったときも置く。skill の名前は Codex でも `yomiyasu:yomiyasu` になる
 （skill のフォルダにある `.codex-plugin/plugin.json` による）。Codex は skill の変化を自分で拾い、
 一覧に出てこなければ Codex を起動し直す。一覧に載ったかは、モデルを呼ばずに数えられる。
-1 なら載っていて、0 なら載っていない。
+1 なら載っていて、0 なら載っていない。グローバル指示にも `yomiyasu:yomiyasu` の文字があるので、一覧の行の形で数える。
 
 ```sh
 codex debug prompt-input | grep -c -F -e '- yomiyasu:yomiyasu: '
@@ -100,6 +100,10 @@ dotfiles character set pico
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
 | `yomiyasu@yomiyasu`（[nanaism/yomiyasu](https://github.com/nanaism/yomiyasu)） | AI が書いた日本語を推敲する skill。名前を出したとき（`/yomiyasu:yomiyasu`、「yomiyasu で推敲して」）、スキルでの推敲をはっきり頼んだとき、CLAUDE.md などで使うよう指示したときに動く | `claude_yomiyasu_version`（タグで固定） |
 
+どの文章を `yomiyasu:yomiyasu` で推敲するかは、共有のグローバル指示（`files/AGENTS.md`）の「手順を持つ skill」の節が決める。
+この節は Codex のグローバル指示にも入り、Codex には `codex` ロールが同じ版の skill を置く
+（[Codex / ChatGPT のグローバル指示](#codex--chatgpt-のグローバル指示)）。
+
 プレイブックはプラグインを取得しない。宣言を読んだ Claude Code が、セッションの開始後にマーケットプレイスを
 クローンしてプラグインを取得する。宣言だけの状態では、マーケットプレイスがまだ取得されていないので、
 `claude plugin install` も `claude plugin marketplace update` も not found で失敗する。セッションを待たずに入れるときは、
@@ -138,6 +142,7 @@ Codex の側も外すときは、`ansible/roles/codex/tasks/main.yml` から `sk
 `ansible/roles/codex/vars/main.yml` から `codex_yomiyasu_version`・`codex_yomiyasu_dir`・`codex_skills_dir` を消す。
 配置先の `~/.agents/skills/yomiyasu`（リンク）と `~/.local/share/yomiyasu`（`XDG_DATA_HOME` があればその下）は
 `evacuate` で退避する。取り込みを残したまま `claude_yomiyasu_version` を消すと、codex ロールが版を読めずに止まる。
+両方から外すときは、`files/AGENTS.md` の「手順を持つ skill」にある yomiyasu の行も消す。残すと、無い skill で推敲するよう指示し続ける。
 
 ## AWS CLI
 
