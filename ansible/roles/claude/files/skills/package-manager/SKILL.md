@@ -208,8 +208,6 @@ lockfile を再生成して整合性を取る。
      exclude-newer-package = { cool-pkg = "2025-12-31T00:00:00Z", another-pkg = false }
      ```
 
-     注: `exclude-newer-package` キーは uv 公式 API（公式ドキュメント参照）。`[tool.uv.sources]` 配下のオプションではない。
-
 3. **バージョンを下げる**: 制約を満たす古いバージョンを使用する
 
 `--config.minimum-release-age=0` や `--exclude-newer=9999-01-01` のような CLI フラグや環境変数で制約を無効化しない（ルール 1）。
