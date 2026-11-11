@@ -262,7 +262,8 @@ main worktree である。ローカルに `<head>` が無ければ、gh はロ�
    ブランチを消さないままエラーで止まる。linked worktree では gh は触れないが、直後の追従で
    同じルール 7 を踏むので、ここで済ませる。stash は
    `git stash push -u -m "<head>: <退避した変更の内容>"` で取り、直後に
-   `git stash list --format='%gd %H %gs'` でその行の OID を控える。gh がマージせずに止まったら、
+   `git stash list --format='%gd %H %gs'` でその行の OID を控える（以降のコマンドにそのまま書く。
+   シェル変数は次の Bash の呼び出しに残らない）。gh がマージせずに止まったら、
    head の上で `git stash apply <控えた OID>` で戻し、自分の stash を消す（消し方と、apply が
    exit 1 で終わったときの扱いは、git-branch のルール 3 (b) 例外 1 の戻す手順と同じ）。
    マージまで進んだら、最終応答に、stash した変更がマージした PR に入っていないことも書く。

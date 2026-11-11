@@ -235,11 +235,14 @@ git 操作のうちコミット作成を行う場面では、**自前で `git co
 **同じコマンドでも状態によって変わる**ので、コマンド名ではなく「今これを打つと何が
 失われうるか」で判断する。
 
-stash の drop のうち、自分で退避して `git stash apply <控えた OID>` が exit 0 で戻し終えた entry を、
-直前の `git stash list` で引いた番号で消し、`Dropped` に出た OID を控えた OID と照らすものは
-承認なしで行う（git-commit の Step 3、git-branch のルール 3 (b) 例外 1、git-pr のルール 11 の
-マージ前の確認）。中身は作業ツリーにあり、取り違えても `git stash store` で戻せるので、上の
-基準に当たらない。
+stash の drop のうち、自分で退避した entry を、直前の `git stash list` で引いた番号で消し、
+`Dropped` に出た OID を控えた OID と照らすものは、次の場面に限って承認なしで行う。どちらも
+中身は作業ツリーかコミットに入っていて、取り違えても `git stash store` で戻せるので、上の基準に
+当たらない。
+
+- `git stash apply <控えた OID>` が exit 0 で戻し終えた後（git-commit の Step 3 のファイル単位の
+  分割、git-branch のルール 3 (b) 例外 1、git-pr のルール 11 の「`gh pr merge` を打つ前」の 3.）
+- git-commit の Step 3 の hunk 単位の分割で、4. の `git diff <控えた OID> HEAD` が空だった後
 
 統合ブランチ（`develop` / `master` / `main`）への force push は、ユーザーが要求しても行わない（ルール 2。git-push skill は Step 1 で止める）。
 
