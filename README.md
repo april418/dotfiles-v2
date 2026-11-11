@@ -94,6 +94,8 @@ claude plugin install yomiyasu@yomiyasu
 ```
 
 yomiyasu の lint と check は Python 3 の標準ライブラリで動き、skill の `allowed-tools` により確認なしで実行される。
+ファイルを渡したときに読むのは作業フォルダの中のものだけで、作業フォルダの外のものと、作業フォルダからのパスに
+点で始まる部分（`.claude/` など）を含むものは、読まずに終了コード 2 で止まる。標準入力からは読める。
 check は原稿の写しと記録を git の最上位の `.yomiyasu/`（環境変数 `YOMIYASU_STATE_DIR` で変えられる）に書き、
 既定の場所では `.gitignore` も置くので git の管理には入らない。Python が無いと、検査を飛ばして目視で点検する。
 

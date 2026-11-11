@@ -5,7 +5,7 @@ claude_character_state_file: "{{ ansible_facts['env'].XDG_STATE_HOME | default(a
 
 # マーケットプレイスの github source は ref（ブランチかタグ）でしか固定できず、SHA を書けないのでタグで固定する。
 # dotfiles: tags https://github.com/nanaism/yomiyasu
-claude_yomiyasu_version: "v2.5.0"
+claude_yomiyasu_version: "v3.0.0"
 
 # Merge settings.json が files/settings.json の後に重ねる。版を変数で持つので、静的な settings.json には書かない。
 # 取得は Claude Code がセッションの開始後に行う（宣言だけで、プレイブックはクローンしない）。
