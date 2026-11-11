@@ -79,13 +79,14 @@ dotfiles character set pico
 `extraKnownMarketplaces` に宣言する。宣言は `ansible/roles/claude/vars/main.yml` の `claude_plugin_settings` にあり、
 `files/settings.json` の後に重ねる。
 
-| プラグイン                                                                     | 中身                                                                                                         | 版                                      |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| `yomiyasu@yomiyasu`（[nanaism/yomiyasu](https://github.com/nanaism/yomiyasu)） | AI が書いた日本語を推敲する skill。名前で頼んだときだけ動く（`/yomiyasu:yomiyasu`、「yomiyasu で推敲して」） | `claude_yomiyasu_version`（タグで固定） |
+| プラグイン                                                                     | 中身                                                                                                                                                                                 | 版                                      |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| `yomiyasu@yomiyasu`（[nanaism/yomiyasu](https://github.com/nanaism/yomiyasu)） | AI が書いた日本語を推敲する skill。名前を出したとき（`/yomiyasu:yomiyasu`、「yomiyasu で推敲して」）、スキルでの推敲をはっきり頼んだとき、CLAUDE.md などで使うよう指示したときに動く | `claude_yomiyasu_version`（タグで固定） |
 
 プレイブックはプラグインを取得しない。宣言を読んだ Claude Code が、セッションの開始後にマーケットプレイスを
-クローンしてプラグインを取得する。宣言だけの状態では、`claude plugin install` も `claude plugin marketplace update` も
-マーケットプレイスが見つからずに失敗する。セッションを待たずに入れるときは、宣言と同じ版を指定して流す。
+クローンしてプラグインを取得する。宣言だけの状態では、マーケットプレイスがまだ取得されていないので、
+`claude plugin install` も `claude plugin marketplace update` も not found で失敗する。セッションを待たずに入れるときは、
+宣言と同じ版を指定して流す。
 
 ```sh
 claude plugin marketplace add 'nanaism/yomiyasu#<claude_yomiyasu_version の値>'
@@ -93,15 +94,25 @@ claude plugin install yomiyasu@yomiyasu
 ```
 
 yomiyasu の lint と check は Python 3 の標準ライブラリで動き、skill の `allowed-tools` により確認なしで実行される。
-Python が無いと、検査を飛ばして目視で点検する。
+check は原稿の写しと記録を git の最上位の `.yomiyasu/`（環境変数 `YOMIYASU_STATE_DIR` で変えられる）に書き、
+既定の場所では `.gitignore` も置くので git の管理には入らない。Python が無いと、検査を飛ばして目視で点検する。
 
-新しい版の公開から 1 週間たつと `dotfiles check` が知らせる。`claude_yomiyasu_version` を書き換えてプレイブックを流したら、
-`claude plugin list` の Version で上がったかを確かめ、上がっていなければ `claude plugin update yomiyasu@yomiyasu` を流す。
+新しい版の公開から 1 週間たつと `dotfiles check` が知らせる。`claude_yomiyasu_version` を書き換えてプレイブックを流すと、
+取得済みのマーケットプレイスの source が宣言と食い違い、プラグインは読み込まれなくなる（`claude plugin list` が
+`failed to load` と `added but ignored` を出す）。前に別の版や `ref` なしで足していたマシンに初めて配ったときも同じになる。
+宣言の版でマーケットプレイスを足し直してから、プラグインをその版に合わせる。足し直すだけでは版は変わらず、
+足し直す前の `claude plugin update` は not found で失敗する。合ったかは `claude plugin list` の Version で確かめる。
+
+```sh
+claude plugin marketplace add 'nanaism/yomiyasu#<claude_yomiyasu_version の値>'
+claude plugin update yomiyasu@yomiyasu
+```
 
 `/plugin` で無効にしても、`enabledPlugins` はリポジトリ側の値なので、プレイブックを流すたびに有効に戻る。
-外すときは `claude_plugin_settings` から消し、`claude plugin marketplace remove yomiyasu` を流す（プラグインも
-アンインストールされる）。配置先の `~/.claude/settings.json` に `extraKnownMarketplaces.yomiyasu` が残っていれば
-手で消す。残ると、次のセッションでまた取得される。
+外すときは `claude_plugin_settings` から yomiyasu の 2 項目を消し、`claude plugin marketplace remove yomiyasu` を流す。
+取得済みなら、プラグインのアンインストールと、配置先の `~/.claude/settings.json` の 2 つのキーの削除まで行われる。
+一度も取得していなければ remove は not found で失敗するので、配置先から `extraKnownMarketplaces.yomiyasu` と
+`enabledPlugins` の `yomiyasu@yomiyasu` を手で消す。宣言が残ると、次のセッションでまた取得される。
 
 ## AWS CLI
 
