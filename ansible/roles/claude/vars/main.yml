@@ -2,3 +2,19 @@
 # files/dotfiles も読むので、同じ規則で決める（dotfiles ロールの dotfiles_state_dir）。
 # XDG_STATE_HOME が空文字のときも既定値に倒す。
 claude_character_state_file: "{{ ansible_facts['env'].XDG_STATE_HOME | default(ansible_facts['env'].HOME + '/.local/state', true) }}/dotfiles/claude-character.json"
+
+# マーケットプレイスの github source は ref（ブランチかタグ）でしか固定できず、SHA を書けないのでタグで固定する。
+# dotfiles: tags https://github.com/nanaism/yomiyasu
+claude_yomiyasu_version: "v2.5.0"
+
+# Merge settings.json が files/settings.json の後に重ねる。版を変数で持つので、静的な settings.json には書かない。
+# 取得は Claude Code がセッションの開始後に行う（宣言だけで、プレイブックはクローンしない）。
+claude_plugin_settings:
+  extraKnownMarketplaces:
+    yomiyasu:
+      source:
+        source: github
+        repo: nanaism/yomiyasu
+        ref: "{{ claude_yomiyasu_version }}"
+  enabledPlugins:
+    yomiyasu@yomiyasu: true

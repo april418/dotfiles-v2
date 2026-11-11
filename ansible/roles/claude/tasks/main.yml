@@ -76,7 +76,7 @@
     claude_settings_merged: >-
       {{ (claude_settings_current.content | default('') | b64decode | trim or '{}')
          | from_json
-         | combine(lookup('ansible.builtin.file', 'settings.json') | from_json,
+         | combine(lookup('ansible.builtin.file', 'settings.json') | from_json, claude_plugin_settings,
                    recursive=True, list_merge='replace') }}
 
 - name: Ensure ccstatusline config directory exists
