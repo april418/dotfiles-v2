@@ -47,6 +47,27 @@
     dest: "{{ ansible_facts['env'].HOME }}/.claude/rules/"
     mode: "0644"
 
+- name: Check the pinned frontend-design URL
+  ansible.builtin.assert:
+    that:
+      - claude_frontend_design_skill_url is match('^https://raw\.githubusercontent\.com/[\w.-]+/[\w.-]+/[0-9a-f]{40}/.+/skills/[^/]+/SKILL\.md$')
+    fail_msg: >-
+      claude_frontend_design_skill_url は
+      https://raw.githubusercontent.com/<owner>/<repo>/<40 桁の SHA>/<プラグインのパス>/skills/<skill 名>/SKILL.md の形で書く
+    quiet: true
+
+- name: Ensure the dotfiles marketplace directory exists
+  ansible.builtin.file:
+    path: "{{ claude_marketplace_dir }}/.claude-plugin"
+    state: directory
+    mode: "0755"
+
+- name: Write the dotfiles marketplace
+  ansible.builtin.copy:
+    content: "{{ claude_marketplace | to_nice_json(indent=2, sort_keys=False, ensure_ascii=False) }}\n"
+    dest: "{{ claude_marketplace_dir }}/.claude-plugin/marketplace.json"
+    mode: "0644"
+
 - name: Check if settings.json exists
   ansible.builtin.stat:
     path: "{{ ansible_facts['env'].HOME }}/.claude/settings.json"
@@ -130,7 +151,6 @@
     state: directory
     mode: "0755"
   loop:
-    - frontend-design
     - empirical-prompt-tuning
 
 - name: Download external skills
@@ -143,11 +163,47 @@
   # dest のディレクトリが無くて落ちる。どちらも更新の有無を表さないので、check モードでは飛ばす。
   when: not ansible_check_mode
   loop:
-    # どちらも main の追従ではなくコミット SHA で固定する。上流はリポジトリの構成変更や
+    # main の追従ではなくコミット SHA で固定する。上流はリポジトリの構成変更や
     # ファイルの再配置が多く、追従するとビルドが壊れる。更新と移動は dotfiles check が知らせる。
-    - url: https://raw.githubusercontent.com/anthropics/claude-code/dbdd79cebfae5891f5b0fab6f7773ea520d289a7/plugins/frontend-design/skills/frontend-design/SKILL.md
-      dest: frontend-design/SKILL.md
     - url: https://raw.githubusercontent.com/mizchi/skills/a41865b34b78f2675a6c73178377a5bcc1b492c6/empirical-prompt-tuning/SKILL.md
       dest: empirical-prompt-tuning/SKILL.md
   loop_control:
     label: "{{ item.dest }}"
+
+- name: Check if installed_plugins.json exists
+  ansible.builtin.stat:
+    path: "{{ ansible_facts['env'].HOME }}/.claude/plugins/installed_plugins.json"
+  register: claude_installed_plugins_stat
+
+- name: Read installed_plugins.json
+  ansible.builtin.slurp:
+    src: "{{ ansible_facts['env'].HOME }}/.claude/plugins/installed_plugins.json"
+  register: claude_installed_plugins
+  when: claude_installed_plugins_stat.stat.exists
+
+- name: Report the outdated frontend-design plugin
+  ansible.builtin.debug:
+    msg:
+      "frontend-design@dotfiles に入っているのは {{ claude_frontend_design_installed | join('、') }} で、\
+      固定した {{ claude_frontend_design_source.sha }} と違う。claude plugin update frontend-design@dotfiles を流し、\
+      already at the latest version と出たら uninstall と install で入れ直す（README の「Claude Code のプラグイン」）"
+  vars:
+    claude_frontend_design_installed: "{{ (claude_installed_plugins.content | b64decode | from_json).get('plugins', {}).get('frontend-design@dotfiles', []) | map(attribute='gitCommitSha', default='') | list }}"
+  # plugin.json の version が同じままだと、SHA を上げても update は入れ直さず、古いまま黙って残る。
+  when: >-
+    claude_installed_plugins_stat.stat.exists
+    and claude_frontend_design_installed | length > 0
+    and claude_frontend_design_source.sha not in claude_frontend_design_installed
+
+- name: Check if the old frontend-design skill exists
+  ansible.builtin.stat:
+    path: "{{ ansible_facts['env'].HOME }}/.claude/skills/frontend-design"
+  register: claude_old_frontend_design
+
+- name: Report the old frontend-design skill
+  ansible.builtin.debug:
+    msg:
+      "~/.claude/skills/frontend-design が残っていて、プラグインの frontend-design:frontend-design と並ぶ。\
+      プラグインが入ったのを claude plugin list で確かめてから、\
+      evacuate -n frontend-design-skill ~/.claude/skills/frontend-design で取り除く"
+  when: claude_old_frontend_design.stat.exists
