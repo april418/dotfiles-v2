@@ -30,6 +30,10 @@
 - `files/rules/` の .md は配置先で毎セッション読まれる。リポジトリで消したり改名したり
   しても配置先には残って効き続けるので、`~/.claude/rules/` からも `evacuate` で取り除く。
   `character.md` はキャラクターのタスクが書くので、`files/rules/` に同じ名前を置かない
+- skill のうち `ansible/roles/codex/vars/main.yml` の `codex_shared_skills` に挙げたものは、
+  codex ロールが `~/.agents/skills/` にもリンクして Codex に見せる。skill を足したり改名したり
+  消したりしたら、Codex に見せるかを決めてこの一覧も直す。直さないと、足した skill が Codex に
+  見えず、消した skill の古いコピーへのリンクが残る。手順は README の「Codex / ChatGPT のグローバル指示」にある
 - **このファイルを消さない。** リポジトリに CLAUDE.md が 1 つも無いと、
   Claude Code は `files/AGENTS.md` をこのリポジトリの指示として読み込む
 

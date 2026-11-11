@@ -33,3 +33,67 @@
     # check mode では clone されずリンク元が無い。実際に流すときは、上流でパスが変わったらリンク切れにせず止める。
     force: "{{ ansible_check_mode }}"
   when: not codex_yomiyasu_skill.stat.exists or codex_yomiyasu_skill.stat.islnk
+
+- name: Ensure frontend-design directory for Codex exists
+  ansible.builtin.file:
+    path: "{{ codex_frontend_design_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Download frontend-design for Codex
+  ansible.builtin.get_url:
+    url: "{{ codex_frontend_design_skill_url }}"
+    dest: "{{ codex_frontend_design_dir }}/SKILL.md"
+    mode: "0644"
+  # check モードでは上のタスクが dest のディレクトリを作らず、空の HOME では落ちる。HEAD だけの比較は
+  # 更新の有無も表さないので飛ばす（claude ロールの Download external skills と同じ）。
+  when: not ansible_check_mode
+
+- name: Check existing shared skills in user skills
+  ansible.builtin.stat:
+    path: "{{ codex_skills_dir }}/{{ item }}"
+  loop: "{{ codex_shared_skills }}"
+  register: codex_shared_skill_target_stats
+
+- name: Check sources of shared skills
+  ansible.builtin.stat:
+    path: "{{ codex_shared_skill_paths[item] }}"
+  loop: "{{ codex_shared_skills }}"
+  register: codex_shared_skill_source_stats
+
+# Codex の Settings → Import が写したフォルダなど、実体のフォルダは置き換えずに知らせる。
+# 止めると後のロールと適用の記録まで飛ぶ。
+- name: Debug shared skill is not a link
+  ansible.builtin.debug:
+    msg: "{{ codex_skills_dir }}/{{ item.item }} がリンクではないため、{{ item.item }} を置いていない。退避してから流し直す。"
+  loop: "{{ codex_shared_skill_target_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.stat.exists and not item.stat.islnk
+
+# 一覧に claude ロールが置かない名前があるときなど。止めると後のロールと適用の記録まで飛ぶ。
+# check mode では claude ロールもこのロールもリンク元を作らないので、無くても知らせない。
+- name: Debug shared skill source is missing
+  ansible.builtin.debug:
+    msg: "{{ codex_shared_skill_paths[item.item] }} が無いため、{{ item.item }} を置いていない。codex_shared_skills を claude ロールの skill と揃える。"
+  loop: "{{ codex_shared_skill_source_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not ansible_check_mode and not item.stat.exists
+
+# コピーせずリンクにするので、claude ロールが skill を更新すると Codex にも同じ版が見える。
+# Codex の取り込みは同じ名前があれば写さないので、リンクを古い写しで上書きされることもない。
+- name: Link shared skills into user skills
+  ansible.builtin.file:
+    src: "{{ codex_shared_skill_paths[item.item] }}"
+    dest: "{{ codex_skills_dir }}/{{ item.item }}"
+    state: link
+    # check mode ではリンク元が無い。
+    force: "{{ ansible_check_mode }}"
+  loop: "{{ codex_shared_skill_target_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+    index_var: codex_shared_skill_index
+  when:
+    - not item.stat.exists or item.stat.islnk
+    - ansible_check_mode or codex_shared_skill_source_stats.results[codex_shared_skill_index].stat.exists
