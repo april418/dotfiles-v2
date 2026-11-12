@@ -19,6 +19,7 @@ codex_frontend_design_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansi
 codex_shared_skills:
   - empirical-prompt-tuning
   - frontend-design
+  - gh-issue
   - git-branch
   - git-commit
   - git-pr
