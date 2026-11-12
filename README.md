@@ -73,9 +73,11 @@ Codex は信頼した hook だけを走らせる。信頼はスクリプトの�
 matcher・コマンド・`statusMessage`・`timeout` といった登録の内容で覚える。登録が変わった hook は Codex で信頼し直すまで走らず、
 共有する hook を既存のものより前に足すと、後ろの hook も位置がずれて信頼し直しになる。`hooks.json` を書き換えたときは
 プレイブックが知らせる。`hooks.json` はこのロールが書くので、Codex で足した hook は流すたびに消える（前の内容は Ansible のバックアップに残る）。
-Codex は hook の additionalContext が 2,500 トークン（4 バイトを 1 トークンと数える）を超えると、全文をファイルに書き出し、
-先頭と末尾とそのファイルのパスだけを載せる。`reload-claude-md.sh` が本文を省く上限は Claude Code に合わせた 9,000 文字なので、
-日本語でおよそ 3,300 文字を超える状態ファイルは、Codex では途中が省かれる。
+Codex はフックの `additionalContext` が上限を超えると、全文をファイルに保存し、先頭と末尾の抜粋と保存先をモデルに渡す。
+既定の上限は概算 2,500 トークンで、4 バイトを約 1 トークンとして数える。
+会話の要約後に判断ログを復元する `reload-claude-md.sh` には、Codex 側で `additionalContextLimit: 9000` を設定する。
+これでフックが返す最大 9,000 文字が収まる。案内文とログの合計が 9,000 文字を超えると、フックはログ本文を省き、
+元のファイルを読むようモデルに伝える。
 
 同じロールで、`ansible/roles/claude/files/agents/*.md` を Codex の subagent（`~/.codex/agents/<名前>.toml`）にする。
 frontmatter の `name` と `description`、本文を写し、`tools` と `model` は写さないので、ツールと権限は呼び出したセッションのものになる。
