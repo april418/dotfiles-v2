@@ -94,8 +94,8 @@
 経ったこと、diff の精読や CI green のような事前の検証は、どれも承認の代わりに
 ならない。内容が正しいかと実行してよいかは別の判断である。
 
-git / GitHub の操作の細則は git-workflow skill のルール 0 と git-pr skill のルール 11
-にある。
+git / GitHub の操作の細則は git-workflow skill のルール 0 と git-pr skill のルール 11 に、
+Issue への書き込みの細則は gh-issue skill の「書き込みと承認」にある。
 
 ## 検証
 
@@ -262,6 +262,8 @@ rules・skill・agent の定義）の改訂を含むときは、`implementation-
   止まったら stderr の指示に従い、迂回しない
 - パッケージマネージャーやランタイムのバージョンマネージャーを操作する前に
   package-manager skill を呼ぶ
+- GitHub の Issue を読んで作業に取りかかる前と、Issue に書き込む前に gh-issue skill を呼ぶ。
+  ほかのセッションが先に着手していないかを確かめ、同じ Issue に書き手を重ねないためである
 - 記事・ドキュメント・PR 本文・コミットメッセージなどの日本語を書いたり直したりするときは、
   yomiyasu:yomiyasu skill で推敲する。他人が読み返す文章に、AI の書いた日本語の癖を
   残さないためである。口調を保つ応答本文と review-tone で書く PR のコメント、短い
