@@ -20,7 +20,7 @@ AGENT_LABELS = [DOING_LABEL, SKIP_LABEL]
 TRACKER_LABEL_PREFIX = "repo:"
 TRACKER_CONFIG_KEY = "gh-issue.tracker"
 CLAIM_PATTERN = re.compile(r"^着手: ブランチ `([^`\n]+)`(?: セッション `([^`\n]+)`)?", re.MULTILINE)
-RELEASE_PATTERN = re.compile(r"^(?:手放し|済み): ブランチ `([^`\n]+)`", re.MULTILINE)
+RELEASE_PATTERN = re.compile(r"^(手放し|済み): ブランチ `([^`\n]+)`(?: セッション `([^`\n]+)`)?", re.MULTILINE)
 TRUSTED_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 # 書き込み先が作業中のリポジトリより広く見えると、作業中のリポジトリの名前と作業の中身が漏れる。
 VISIBILITY_RANK = {"PRIVATE": 0, "INTERNAL": 1, "PUBLIC": 2}
@@ -199,36 +199,55 @@ def ref(node: dict) -> str:
     return f"{(node.get('repository') or {}).get('nameWithOwner', '?')}#{node.get('number')}"
 
 
-def current_claim(comments: list[dict], unlabeled: list[dict]) -> tuple[dict | None, list[dict]]:
-    """最後の手放しより後の最初の着手と、その後に重なった着手を返す。
+def releases_claim(release: dict, claim: dict) -> bool:
+    # 2 つのセッションが同じブランチ名を選ぶことがあるので、セッションの ID があればそれで照らす。
+    if release["session"] and claim["session"]:
+        return release["session"] == claim["session"]
+    return release["branch"] == claim["branch"]
 
-    手放しは、信頼する書き手の「手放し:」「済み:」のコメントと、agent:doing を外した記録の両方で数える。
-    ラベルを外すには triage 以上の権限が要るので、外した人は信頼する書き手である。
+
+def current_claim(comments: list[dict], unlabeled: list[dict]) -> tuple[dict | None, list[dict], dict | None]:
+    """勝っている着手、その後に重なった着手、最後の手放しを返す。
+
+    勝つのは、手放されていない信頼する書き手の着手のうち最初のもの。勝っている着手の「手放し:」「済み:」と
+    agent:doing を外した記録は、重なった着手もまとめて外す（重なった側は手を引いているため）。負けた着手の
+    「手放し:」が外すのはその着手だけで、どの着手にも当たらない手放しは何も外さない。ラベルを外すには
+    triage 以上の権限が要るので、外した人は信頼する書き手である。
     """
     # ISO 8601 の UTC の時刻は文字列の順に並べれば時刻の順になる。同じ時刻なら手放しを先に置く。
     events = [
-        (e.get("createdAt") or "", 0, None) for e in unlabeled if (e.get("label") or {}).get("name") == DOING_LABEL
+        (e.get("createdAt") or "", 0, {"kind": "unlabeled", "branch": None, "session": None})
+        for e in unlabeled
+        if (e.get("label") or {}).get("name") == DOING_LABEL
     ]
     for comment in comments:
         if not is_trusted(comment.get("author"), comment.get("authorAssociation")):
             continue
         body = comment.get("body") or ""
-        if RELEASE_PATTERN.search(body):
-            events.append((comment.get("createdAt") or "", 0, None))
-        match = CLAIM_PATTERN.search(body)
-        if match:
-            claim = {"branch": match.group(1), "session": match.group(2), "at": comment.get("createdAt")}
-            events.append((comment.get("createdAt") or "", 1, claim))
-    winner = None
-    competing = []
-    for _, kind, claim in sorted(events, key=lambda e: (e[0], e[1])):
-        if kind == 0:
-            winner, competing = None, []
-        elif winner is None:
-            winner = claim
+        at = comment.get("createdAt") or ""
+        release = RELEASE_PATTERN.search(body)
+        if release:
+            events.append((at, 0, {"kind": release.group(1), "branch": release.group(2), "session": release.group(3)}))
+        claim = CLAIM_PATTERN.search(body)
+        if claim:
+            events.append(
+                (at, 1, {"branch": claim.group(1), "session": claim.group(2), "at": comment.get("createdAt")})
+            )
+    active: list[dict] = []
+    last_release = None
+    for at, kind, data in sorted(events, key=lambda e: (e[0], e[1])):
+        if kind == 1:
+            active.append(data)
+            continue
+        if data["kind"] == "unlabeled" or (active and releases_claim(data, active[0])):
+            cleared = "all" if active else "none"
+            active = []
         else:
-            competing.append(claim)
-    return winner, competing
+            kept = [c for c in active if not releases_claim(data, c)]
+            cleared = "one" if len(kept) < len(active) else "none"
+            active = kept
+        last_release = {**data, "at": at, "cleared": cleared}
+    return (active[0] if active else None), active[1:], last_release
 
 
 def signals(node: dict, repo: str) -> dict:
@@ -253,7 +272,7 @@ def signals(node: dict, repo: str) -> dict:
     blocked_by = [ref(b) for b in nodes(node.get("blockedBy")) if b.get("state") == "OPEN"]
 
     comment_nodes = nodes(node.get("comments"))
-    claim, competing = current_claim(comment_nodes, nodes(node.get("unlabeled")))
+    claim, competing, last_release = current_claim(comment_nodes, nodes(node.get("unlabeled")))
     sub = node.get("subIssuesSummary") or {}
     sub_total, sub_done = sub.get("total") or 0, sub.get("completed") or 0
 
@@ -295,6 +314,7 @@ def signals(node: dict, repo: str) -> dict:
         "claim_branch": (claim or {}).get("branch"),
         "claim_session": (claim or {}).get("session"),
         "claim_at": (claim or {}).get("at"),
+        "last_release": last_release,
         "competing_claims": competing,
         "linked_branches": branches,
         "open_prs": [{"ref": k, "closes": v["closes"]} for k, v in open_prs.items() if v["trusted"]],
