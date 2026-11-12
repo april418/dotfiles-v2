@@ -5,6 +5,11 @@
 {%-   for group in groups -%}
 {%-     set ns.handlers = [] -%}
 {%-     for handler in group.hooks if handler.command is defined and (handler.command.split() | first | basename) in codex_shared_hooks -%}
+{%-       set name = handler.command.split() | first | basename -%}
+{#- 復元フックは最大 9,000 文字を返す。UTF-8 では最大 4 バイト/文字で、Codex は 4 バイトを約 1 トークンと数える。 -#}
+{%-       if event == 'SessionStart' and name == 'reload-claude-md.sh' -%}
+{%-         set handler = handler | combine({'additionalContextLimit': 9000}) -%}
+{%-       endif -%}
 {%-       set ns.handlers = ns.handlers + [handler] -%}
 {%-     endfor -%}
 {%-     if ns.handlers -%}
