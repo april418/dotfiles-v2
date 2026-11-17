@@ -218,14 +218,25 @@
         ]
       }
     ],
-    "PostToolUse": [
+    "PostToolUse": [],
+    "PostToolBatch": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/reply-language-guard.py",
-            "timeout": 5
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/reply-language-guard.py",
+            "timeout": 10
           }
         ]
       }
