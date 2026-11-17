@@ -50,7 +50,7 @@ codex debug prompt-input | grep -c -F -e '- yomiyasu:yomiyasu: '
 
 同じロールで、Claude Code に配る skill のうち `codex_shared_skills`（`ansible/roles/codex/vars/main.yml`）に挙げたものを
 Codex にも見せる。`~/.agents/skills/<名前>` を、`claude` ロールが置いた `~/.claude/skills/<名前>` へのリンクにするので、
-プレイブックを流すたびに Claude Code と同じ版になる。frontend-design は `claude` ロールがプラグインで入れ、
+プレイブックを流すたびに Claude Code と同じバージョンになる。frontend-design は `claude` ロールがプラグインで入れ、
 `~/.claude/skills` には無いので、`claude_frontend_design_skill_url` の SKILL.md を
 `~/.local/share/dotfiles/codex-skills/frontend-design/`（`XDG_DATA_HOME` があればその下）に取り、そこへリンクする
 （`codex_shared_skill_sources`）。Claude Code の subagent と worktree の分離を前提にした `orchestrate` は入れていない。
@@ -155,7 +155,7 @@ dotfiles character set pico
 `extraKnownMarketplaces` に宣言する。宣言は `ansible/roles/claude/vars/main.yml` の `claude_plugin_settings` にあり、
 `files/settings.json` の後に重ねる。
 
-| プラグイン                                                                                                                                                  | 中身                                                                                                                                                                                 | 版                                                          |
+| プラグイン                                                                                                                                                  | 中身                                                                                                                                                                                 | バージョン                                                  |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
 | `yomiyasu@yomiyasu`（[nanaism/yomiyasu](https://github.com/nanaism/yomiyasu)）                                                                              | AI が書いた日本語を推敲する skill。名前を出したとき（`/yomiyasu:yomiyasu`、「yomiyasu で推敲して」）、スキルでの推敲をはっきり頼んだとき、CLAUDE.md などで使うよう指示したときに動く | `claude_yomiyasu_version`（タグで固定）                     |
 | `frontend-design@dotfiles`（[anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official/tree/main/plugins/frontend-design)） | UI を新しく作るときや作り直すときに、見た目の方向づけを示す skill                                                                                                                    | `claude_frontend_design_skill_url` の SHA（コミットで固定） |
@@ -166,7 +166,7 @@ anthropics/claude-plugins-official にはタグが無く、マーケットプレ
 Claude Code はこのディレクトリを写さずにその場で読むので、残しておく。
 
 どの文章を `yomiyasu:yomiyasu` で推敲するかは、共有のグローバル指示（`files/AGENTS.md`）の「手順を持つ skill」の節が決める。
-この節は Codex のグローバル指示にも入り、Codex には `codex` ロールが同じ版の skill を置く
+この節は Codex のグローバル指示にも入り、Codex には `codex` ロールが同じバージョンの skill を置く
 （[Codex / ChatGPT のグローバル指示](#codex--chatgpt-のグローバル指示)）。
 
 応答本文の言語は、フック `files/hooks/reply-language-guard.py` が見る。ツールのバッチの後（`PostToolBatch`）に、
@@ -201,10 +201,10 @@ yomiyasu の lint と check は Python 3 の標準ライブラリで動き、ski
 check は原稿の写しと記録を git の最上位の `.yomiyasu/`（環境変数 `YOMIYASU_STATE_DIR` で変えられる）に書き、
 既定の場所では `.gitignore` も置くので git の管理には入らない。Python が無いと、検査を飛ばして目視で点検する。
 
-新しい版の公開から 1 週間たつと `dotfiles check` が知らせる。`claude_yomiyasu_version` を書き換えてプレイブックを流すと、
+新しいバージョンの公開から 1 週間たつと `dotfiles check` が知らせる。`claude_yomiyasu_version` を書き換えてプレイブックを流すと、
 取得済みのマーケットプレイスの source が宣言と食い違い、プラグインは読み込まれなくなる（`claude plugin list` が
-`failed to load` と `added but ignored` を出す）。前に別の版や `ref` なしで足していたマシンに初めて配ったときも同じになる。
-宣言の版でマーケットプレイスを足し直してから、プラグインをその版に合わせる。足し直すだけでは版は変わらず、
+`failed to load` と `added but ignored` を出す）。前に別のバージョンや `ref` なしで足していたマシンに初めて配ったときも同じになる。
+宣言のバージョンでマーケットプレイスを足し直してから、プラグインをそのバージョンに合わせる。足し直すだけではバージョンは変わらず、
 足し直す前の `claude plugin update` は not found で失敗する。合ったかは `claude plugin list` の Version で確かめる。
 
 ```sh
@@ -212,7 +212,7 @@ claude plugin marketplace add 'nanaism/yomiyasu#<claude_yomiyasu_version の値>
 claude plugin update yomiyasu@yomiyasu
 ```
 
-Codex の側は手で揃えなくてよい。プレイブックが clone を新しいタグへ checkout し直し、リンクはそのまま新しい版を指す。
+Codex の側は手で揃えなくてよい。プレイブックが clone を新しいタグへ checkout し直し、リンクはそのまま新しいバージョンを指す。
 
 frontend-design は、固定した SKILL.md が上流で変わってから 1 週間たつと `dotfiles check` が知らせる（SKILL.md 以外の
 ファイルの変更は知らせない）。`claude_frontend_design_skill_url` の SHA を書き換えてプレイブックを流すと、
@@ -223,7 +223,7 @@ marketplace.json の `sha` が変わる。宣言のパスは変わらないの�
 claude plugin update frontend-design@dotfiles
 ```
 
-`plugin.json` に `version` があれば、プラグインの版はそれで決まる（今の固定先は 1.1.1）。上流がそれを上げずに
+`plugin.json` に `version` があれば、プラグインのバージョンはそれで決まる（今の固定先は 1.1.1）。上流がそれを上げずに
 SKILL.md だけを変えていると、update は `already at the latest version` と出て何もしない。そのときは入れ直す。
 プレイブックは、`~/.claude/plugins/installed_plugins.json` の `gitCommitSha` が固定の SHA と違えば、そのことを知らせる。
 
@@ -243,7 +243,7 @@ Codex の側も外すときは、`ansible/roles/codex/tasks/skills.yml` から�
 `ansible/roles/codex/vars/main.yml` から `codex_yomiyasu_version`・`codex_yomiyasu_dir` を消す。
 `skills.yml` の取り込みと `codex_skills_dir` は、Claude Code と共有する skill（[Codex / ChatGPT のグローバル指示](#codex--chatgpt-のグローバル指示)）が
 使うので残す。配置先の `~/.agents/skills/yomiyasu`（リンク）と `~/.local/share/yomiyasu`（`XDG_DATA_HOME` があればその下）は
-`evacuate` で退避する。yomiyasu のタスクを残したまま `claude_yomiyasu_version` を消すと、codex ロールが版を読めずに止まる。
+`evacuate` で退避する。yomiyasu のタスクを残したまま `claude_yomiyasu_version` を消すと、codex ロールがバージョンを読めずに止まる。
 両方から外すときは、`files/AGENTS.md` の「手順を持つ skill」にある yomiyasu の行も消す。残すと、無い skill で推敲するよう指示し続ける。
 
 frontend-design を外すときは、vars から `claude_frontend_design_skill_url`・`claude_frontend_design_source`・
@@ -272,13 +272,13 @@ evacuate -n codex-frontend-design ~/.agents/skills/frontend-design "${XDG_DATA_H
 
 ## AWS CLI
 
-`awscli` ロールは AWS CLI v2 を固定バージョンでインストールする。公式の `install.sh` に版を渡し、
+`awscli` ロールは AWS CLI v2 を固定バージョンでインストールする。公式の `install.sh` にバージョンを渡し、
 `~/.local/share/aws-cli`（`XDG_DATA_HOME` があればその下）へ入れて、`~/.local/bin/aws` から起動する。
 Linux では、`install.sh` が使う `unzip` と `gpg` を先に sudo でパッケージから入れる。
 
 `~/.local/bin` は PATH の末尾にあるので、Homebrew や OS のパッケージで入れた別の `aws`
 （`/opt/homebrew/bin`、`/usr/local/bin`、`/usr/bin`、`/snap/bin` など）があると、そちらが使われる。
-固定した版を使うときは、別の `aws` を取り除く。
+固定したバージョンを使うときは、別の `aws` を取り除く。
 
-`aws update` などで固定より新しい版が入っていれば、そのまま使う。固定より古い版へ戻すときは、
+`aws update` などで固定より新しいバージョンが入っていれば、そのまま使う。固定より古いバージョンへ戻すときは、
 `~/.local/share/aws-cli` と `~/.local/bin/aws`、`~/.local/bin/aws_completer` を取り除いてからプレイブックを流す。
