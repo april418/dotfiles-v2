@@ -5,7 +5,7 @@ description: パッケージマネージャー（pnpm, npm, yarn, uv 等）や�
 
 # 概要
 
-依存関係に関するコマンド（install, update, add, remove, audit 等）と、ランタイムの版の
+依存関係に関するコマンド（install, update, add, remove, audit 等）と、ランタイムのバージョンの
 切り替えに当てる規則である。
 
 対象ツール:
@@ -119,8 +119,8 @@ mise use python@<version>
 
 バージョン不一致のまま `engine-strict=false` 等で回避するのは **ルール 1 違反** である。
 
-git-push skill の push 前のチェックで PM を流すときに限り、Node.js の版の確認と切り替えは、照らさずに流す場面も含めて git-push の node.md の「PATH 解決のフォールバック」（「nvm の版の選び方」を含む）と「PATH で見つけた PM の node の版」に従い、**ルール 2 の例外** とする。
-git-push は確認先を優先順で 1 つに絞らず、版を切り替えるときは `nvm use` の代わりにその版の `bin` を `PATH` の先頭に足す。合う版が無くても `nvm install` はしない。
+git-push skill の push 前のチェックで PM を流すときに限り、Node.js のバージョンの確認と切り替えは、照らさずに流す場面も含めて git-push の node.md の「PATH 解決のフォールバック」（「nvm のバージョンの選び方」を含む）と「PATH で見つけた PM の node のバージョン」に従い、**ルール 2 の例外** とする。
+git-push は確認先を優先順で 1 つに絞らず、バージョンを切り替えるときは `nvm use` の代わりにそのバージョンの `bin` を `PATH` の先頭に足す。合うバージョンが無くても `nvm install` はしない。
 
 ---
 
@@ -205,7 +205,7 @@ lockfile を再生成して整合性を取る。
      [tool.uv]
      exclude-newer = "1 week"  # 全体に効くグローバル制約
      # 個別パッケージの除外は dict 形式: { package = "日付" or false }
-     # - 日付（RFC 3339 形式）を渡すとそのパッケージはその日付までに公開された版のみ許可
+     # - 日付（RFC 3339 形式）を渡すとそのパッケージはその日付までに公開されたバージョンのみ許可
      # - false を渡すと、そのパッケージのみ exclude-newer 制約から完全除外
      exclude-newer-package = { cool-pkg = "2025-12-31T00:00:00Z", another-pkg = false }
      ```
