@@ -200,26 +200,24 @@ def ref(node: dict) -> str:
 
 
 def releases_claim(release: dict, claim: dict) -> bool:
-    # 2 つのセッションが同じブランチ名を選ぶことがあるので、セッションの ID があればそれで照らす。
-    if release["session"] and claim["session"]:
+    # 2 つのセッションが同じブランチ名を選ぶことがあるので、ID のある手放しは ID でだけ照らす。
+    # ブランチで照らすと、同じブランチ名の ID の無い着手まで外してしまう。
+    if release["session"]:
         return release["session"] == claim["session"]
     return release["branch"] == claim["branch"]
 
 
 def current_claim(comments: list[dict], unlabeled: list[dict]) -> tuple[dict | None, list[dict], dict | None]:
-    """勝っている着手、その後に重なった着手、最後の手放しを返す。
+    """勝っている着手、その後に重なった着手、最後に着手を外した手放しを返す。
 
     勝つのは、手放されていない信頼する書き手の着手のうち最初のもの。勝っている着手の「手放し:」「済み:」と
     agent:doing を外した記録は、重なった着手もまとめて外す（重なった側は手を引いているため）。負けた着手の
-    「手放し:」が外すのはその着手だけで、どの着手にも当たらない手放しは何も外さない。ラベルを外すには
+    「手放し:」「済み:」が外すのはその着手だけで、どの着手にも当たらない手放しは何も外さない。ラベルを外すには
     triage 以上の権限が要るので、外した人は信頼する書き手である。
     """
-    # ISO 8601 の UTC の時刻は文字列の順に並べれば時刻の順になる。同じ時刻なら手放しを先に置く。
-    events = [
-        (e.get("createdAt") or "", 0, {"kind": "unlabeled", "branch": None, "session": None})
-        for e in unlabeled
-        if (e.get("label") or {}).get("name") == DOING_LABEL
-    ]
+    # ISO 8601 の UTC の時刻は文字列の順に並べれば時刻の順になる。同じ時刻なら手放しを着手より先に置き、
+    # 手放しのコメントをラベルを外した記録より先に置く（安定ソートなので、足した順が残る）。
+    events = []
     for comment in comments:
         if not is_trusted(comment.get("author"), comment.get("authorAssociation")):
             continue
@@ -233,6 +231,11 @@ def current_claim(comments: list[dict], unlabeled: list[dict]) -> tuple[dict | N
             events.append(
                 (at, 1, {"branch": claim.group(1), "session": claim.group(2), "at": comment.get("createdAt")})
             )
+    events.extend(
+        (e.get("createdAt") or "", 0, {"kind": "unlabeled", "branch": None, "session": None})
+        for e in unlabeled
+        if (e.get("label") or {}).get("name") == DOING_LABEL
+    )
     active: list[dict] = []
     last_release = None
     for at, kind, data in sorted(events, key=lambda e: (e[0], e[1])):
@@ -246,7 +249,9 @@ def current_claim(comments: list[dict], unlabeled: list[dict]) -> tuple[dict | N
             kept = [c for c in active if not releases_claim(data, c)]
             cleared = "one" if len(kept) < len(active) else "none"
             active = kept
-        last_release = {**data, "at": at, "cleared": cleared}
+        # 書いてからラベルを外す手順では、後の記録が何も外さない。外した手放しを残さないと辿れない。
+        if cleared != "none":
+            last_release = {**data, "at": at, "cleared": cleared}
     return (active[0] if active else None), active[1:], last_release
 
 
