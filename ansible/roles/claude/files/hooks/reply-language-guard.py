@@ -13,9 +13,9 @@
 - Stop: 最終応答（last_assistant_message）が英語なら、日本語で書き直させる。最終応答の後には
   ツールを呼ばないので、PostToolBatch では間に合わない。造語は書き直させず、次のバッチで名指しする
 
-長い合間の一文は、会話記録でも画面でも thinking の要約に置き換わることがあり、その要約は英語のこともある。
-置き換わった一文は text の無いメッセージの最後の thinking に入るので、それが英語なら英語にずれた合間の
-一文として扱う。ほかの thinking はモデルの考えの要約で、書き方では直せないので見ない。
+Claude Code では、合間の一文が会話記録でも画面でも thinking の要約に置き換わることがあり、その要約は英語の
+こともある。置き換わった一文は text の無いメッセージの thinking に入る。会話記録では、空の thinking の
+直後か、2 つ以上ある thinking の最後に入っている。どちらにも当たらない thinking は見ない。
 """
 
 import hashlib
@@ -29,9 +29,9 @@ import tempfile
 
 # バッチごとに走るので、会話記録は末尾だけを読む。
 TAIL_BYTES = 2 * 1024 * 1024
-# 1 回に見る text の数。会話記録の遅れで前のバッチに間に合わなかった text を拾える数にしてある。
-RECENT_TEXTS = 10
-# 見た text の記録（本文のハッシュ）を残す数。RECENT_TEXTS より十分多ければ、同じ text を 2 回見ない。
+# 1 回に見るメッセージの数。会話記録の遅れで前のバッチに間に合わなかった text を拾える数にしてある。
+RECENT_MESSAGES = 10
+# 見た text の記録を残す数。RECENT_MESSAGES の中の text の数より十分多ければ、同じ text を 2 回見ない。
 SEEN_LIMIT = 500
 # Linux の /tmp はほかのユーザーと共有なので、uid を名前に入れ、自分だけが読み書きできるようにする。
 STATE_DIR = os.path.join(tempfile.gettempdir(), f"claude-reply-language-guard-{os.getuid()}")
@@ -46,10 +46,13 @@ NOT_PROSE = [
     re.compile(r"https?://\S+"),
     re.compile(r"\S*/\S*"),
 ]
+# 指摘の文面の形を読む lint の出力形式。違う形式では語を取り出せないので、知らせて lint を使わない。
+LINT_FORMAT_VERSION = 2
 # yomiyasu の calque の型のうち、名詞の造語に当たるもの。型1（動詞）と型3（句）は定着した言い方との境が
 # 文脈で決まるので、会話の中では名指ししない。
 CALQUE_NOUN_TYPES = {"2", "4", "5"}
-# 同じ行に型1の動詞と名詞の型が当たると、lint の文面では語が型ごとに分かれない。動詞は辞書形の語尾で外す。
+# 同じ行に型1の動詞や型3の句と名詞の型が当たると、lint の文面では語が型ごとに分かれない。型3は lint の句の
+# 名前と照らして外し、型1の動詞は辞書形の語尾で外す。
 VERB_ENDING = re.compile("[うくぐすつぬぶむる]$")
 
 ENGLISH_MID = (
@@ -58,7 +61,7 @@ ENGLISH_MID = (
 )
 ENGLISH_SUMMARY = (
     "直近の合間の一文が、画面では英語の要約（{snippets}）に置き換わって表示された。合間の一文は日本語で、"
-    "グローバル指示の「言語」の長さ（1 文か短い 2 文）に収める。長い一文は要約に置き換わることがある。"
+    "グローバル指示の「言語」の長さ（1 文か短い 2 文）に収める。"
 )
 ENGLISH_FINAL = (
     "直前の最終応答が英語になっている。ユーザーが別の言語を求めていなければ、ツールを呼ばずに同じ内容を日本語で"
@@ -82,14 +85,20 @@ def is_english(text):
     return len(KANA.findall(text)) <= words * 0.1
 
 
+def is_structured(text):
+    """JSON の形の最終応答。スクリプトが読む出力なので、日本語に書き直させない。"""
+    return text.lstrip().startswith(("{", "["))
+
+
 def text_key(text):
     return hashlib.sha256(text.strip().encode()).hexdigest()[:32]
 
 
 def recent_texts(path):
-    """メインの会話の最後の RECENT_TEXTS 件のメッセージから、画面に出た行を古い順に (種類, 本文) で返す。
+    """メインの会話の最後の RECENT_MESSAGES 件のメッセージから、画面に出た行を古い順に (記録の鍵, 種類, 本文) で返す。
 
-    種類は "text"（text の block）か "summary"（text が無いメッセージの英語の thinking の要約）。
+    種類は "text"（text の block）か "summary"（text が無いメッセージで、合間の一文が置き換わった thinking の
+    要約）。鍵はメッセージの id と block の位置で、同じ一文を後のメッセージで繰り返しても別の鍵になる。
     記録が無ければ空。
     """
     try:
@@ -124,7 +133,7 @@ def recent_texts(path):
         key = message.get("id") or entry.get("uuid")
         if key not in messages:
             # いちばん古いメッセージは、読み始めの位置で block が欠けていることがあるので 1 件多く集めて捨てる。
-            if len(messages) > RECENT_TEXTS:
+            if len(messages) > RECENT_MESSAGES:
                 break
             messages[key] = {"text": [], "thinking": []}
         for c in message.get("content") or []:
@@ -134,15 +143,21 @@ def recent_texts(path):
                 if body or c["type"] == "thinking":
                     messages[key][c["type"]].insert(0, body)
     found = []
-    for blocks in list(messages.values())[:RECENT_TEXTS]:
+    for key, blocks in list(messages.items())[:RECENT_MESSAGES]:
+        items = []
         if blocks["text"]:
             # advisor のようなサーバー側のツールを挟むと、1 つのメッセージに text が複数入る。つなぐと、英語の
             # text が日本語の text に埋もれて英語と判定されないので、block ごとに見る。
-            found += [("text", t) for t in reversed(blocks["text"])]
-        # text の無いメッセージでは、置き換わった合間の一文は 2 つ以上ある thinking の最後に入る。前のものは
-        # 考えの要約で、書き方では直せない。
-        elif len(blocks["thinking"]) >= 2 and is_english(blocks["thinking"][-1]):
-            found.append(("summary", blocks["thinking"][-1]))
+            items = [(f"{key}:t{i}", "text", t) for i, t in enumerate(blocks["text"])]
+        elif len(blocks["thinking"]) >= 2:
+            thinking = blocks["thinking"]
+            last = len(thinking) - 1
+            items = [
+                (f"{key}:h{i}", "summary", t)
+                for i, t in enumerate(thinking)
+                if t and (i == last or (i > 0 and not thinking[i - 1]))
+            ]
+        found += reversed(items)
     found.reverse()
     return found
 
@@ -161,7 +176,7 @@ def state_path(session_id):
 
 
 def load_state(session_id):
-    """セッションの状態。seen は見た text のハッシュの並び、seeded は前からある text を見たことにしたか。"""
+    """セッションの状態。seen は見た text の鍵の並び、seeded は前からある text を見たことにしたか。"""
     try:
         with open(state_path(session_id), encoding="utf-8") as f:
             state = json.load(f)
@@ -189,6 +204,11 @@ def first_time(session_id, key):
     state["seen"].append(key)
     save_state(session_id, state)
     return True
+
+
+def stop_key(text):
+    """Stop が書き直させた最終応答の鍵。Stop の入力にはメッセージの id が無いので本文で決める。"""
+    return "stop:" + text_key(text)
 
 
 def load_lint():
@@ -219,22 +239,41 @@ def load_lint():
     return module
 
 
+def phrase_names(lint):
+    """lint の型3の句の名前。"""
+    phrases = getattr(lint, "_CALQUE_PHRASES", ()) + getattr(lint, "_CALQUE_PHRASES_V250", ())
+    return {name for name, _ in phrases}
+
+
 def calque_words(lint, words, text):
-    """text の中の、英語の術語を直訳した名詞の候補。lint の指摘の文面から語を取り出す。"""
+    """text の中の、英語の術語を直訳した名詞の候補。lint の指摘の文面から語を取り出す。
+
+    lint の出力形式が LINT_FORMAT_VERSION と違えば、文面から語を取り出せないので ValueError を出す。
+    """
+    result = lint.lint_text(text, words=words)
+    if result.get("format_version") != LINT_FORMAT_VERSION:
+        raise ValueError(
+            f"yomiyasu lint の出力形式が {result.get('format_version')} で、{LINT_FORMAT_VERSION} ではない"
+        )
+    phrases = phrase_names(lint)
     found = []
-    for finding in lint.lint_text(text, words=words).get("findings", []):
+    for finding in result.get("findings", []):
         message = finding.get("message") or ""
         if finding.get("rule") == "translated_term":
             found += re.findall(r"直訳「([^」]+)」", message)
         elif finding.get("rule") == "calque" and CALQUE_NOUN_TYPES & set(re.findall(r"型(\d)", message)):
             hit = re.search(r"当たった言い方: ([^）]+)）", message)
             if hit:
-                found += [w for w in hit.group(1).split("、") if not VERB_ENDING.search(w.strip())]
+                found += [
+                    w
+                    for w in hit.group(1).split("、")
+                    if w.strip() not in phrases and not VERB_ENDING.search(w.strip())
+                ]
     return list(dict.fromkeys(w.strip() for w in found if w.strip()))
 
 
 def project_words(lint, cwd):
-    """作業ディレクトリから上にたどった git の最上位の .yomiyasu-words（allow.txt と flag.txt）。読めなければ None。"""
+    """作業ディレクトリから上にたどった git の最上位の .yomiyasu-words（allow.txt で外す語）。読めなければ None。"""
     try:
         return lint.resolve_words(cwd)
     except (OSError, getattr(lint, "WordsError", OSError)):
@@ -258,12 +297,14 @@ def on_batch(payload, session_id):
     state = load_state(session_id)
     if not state["seeded"]:
         # 途中から入れたセッションや再開したセッションで、前からある text をまとめて指摘しない。
-        state["seen"] += [text_key(t) for _, t in found[:-1]]
+        state["seen"] += [key for key, _, _ in found[:-1]]
         state["seeded"] = True
-    new = [(kind, t) for kind, t in found if text_key(t) not in state["seen"]]
-    summaries = [t for kind, t in new if kind == "summary"]
+    # Stop が書き直させた最終応答は、ここで重ねて指摘しない。
+    new = [(kind, t) for key, kind, t in found if key not in state["seen"] and stop_key(t) not in state["seen"]]
+    state["seen"] += [key for key, _, t in found if key not in state["seen"]]
     english = [t for kind, t in new if kind == "text" and is_english(t)]
-    japanese = [t for kind, t in new if kind == "text" and not is_english(t) and KANA.search(t)]
+    summaries = [t for kind, t in new if kind == "summary" and is_english(t)]
+    japanese = [t for _, t in new if not is_english(t) and KANA.search(t)]
     calques = []
     lint_error = None
     if japanese:
@@ -276,7 +317,6 @@ def on_batch(payload, session_id):
                     calques += calque_words(lint, words, text)
         except Exception as e:  # noqa: BLE001
             lint_error = f"reply-language-guard が yomiyasu の lint で失敗した（{type(e).__name__}: {str(e)[:200]}）"
-    state["seen"] += [text_key(t) for _, t in new]
     save_state(session_id, state)
     notes = []
     if english:
@@ -295,7 +335,7 @@ def on_stop(payload, session_id):
     if payload.get("stop_hook_active"):
         return None, None
     text = payload.get("last_assistant_message") or ""
-    if not is_english(text) or not first_time(session_id, text_key(text)):
+    if is_structured(text) or not is_english(text) or not first_time(session_id, stop_key(text)):
         return None, None
     return ENGLISH_FINAL, None
 
