@@ -16,6 +16,16 @@ import sys
 DOING_LABEL = "agent:doing"
 SKIP_LABEL = "agent:skip"
 AGENT_LABELS = [DOING_LABEL, SKIP_LABEL]
+# 高い順に並べる。同じ種類のラベルが複数付いていれば、先にあるほうを採る。
+PRIORITY_LABELS = {"priority:high": "high", "priority:medium": "medium", "priority:low": "low"}
+DIFFICULTY_LABELS = {
+    "difficulty:expert": "expert",
+    "difficulty:hard": "hard",
+    "difficulty:medium": "medium",
+    "difficulty:easy": "easy",
+}
+KNOWN_LABELS = [*AGENT_LABELS, *PRIORITY_LABELS, *DIFFICULTY_LABELS]
+PRIORITY_ORDER = {value: i for i, value in enumerate(PRIORITY_LABELS.values())}
 # 別のリポジトリを書き込み先にしたとき、作業中のリポジトリ向けの Issue をこのラベルで見分ける。
 TRACKER_LABEL_PREFIX = "repo:"
 TRACKER_CONFIG_KEY = "gh-issue.tracker"
@@ -173,8 +183,8 @@ def tracker_repo_name() -> str | None:
 def resolve(repo_option: str | None) -> tuple[dict, dict | None, str | None]:
     """作業中のリポジトリ、書き込み先、書き込み先を使えない理由を返す。--repo を渡したら書き込み先は読まない。"""
     if repo_option:
-        return describe_repo(repo_option, AGENT_LABELS), None, None
-    work = describe_repo(work_repo_name(), AGENT_LABELS)
+        return describe_repo(repo_option, KNOWN_LABELS), None, None
+    work = describe_repo(work_repo_name(), KNOWN_LABELS)
     try:
         tracker_name = tracker_repo_name()
         if not tracker_name or tracker_name.lower() == work["name"].lower():
@@ -183,7 +193,7 @@ def resolve(repo_option: str | None) -> tuple[dict, dict | None, str | None]:
             split_repo(tracker_name)
         except GhError as e:
             raise GhError(f"git config の {TRACKER_CONFIG_KEY} が OWNER/REPO の形でない: {tracker_name}") from e
-        tracker = describe_repo(tracker_name, [*AGENT_LABELS, TRACKER_LABEL_PREFIX + work["name"]])
+        tracker = describe_repo(tracker_name, [*KNOWN_LABELS, TRACKER_LABEL_PREFIX + work["name"]])
         if VISIBILITY_RANK.get(tracker["visibility"], 2) > VISIBILITY_RANK.get(work["visibility"], 0):
             raise GhError(
                 f"書き込み先 {tracker['name']}（{tracker['visibility']}）が作業中のリポジトリ"
@@ -255,6 +265,10 @@ def current_claim(comments: list[dict], unlabeled: list[dict]) -> tuple[dict | N
     return (active[0] if active else None), active[1:], last_release
 
 
+def highest(labels: list[str], table: dict[str, str]) -> str | None:
+    return next((value for label, value in table.items() if label in labels), None)
+
+
 def signals(node: dict, repo: str) -> dict:
     """GraphQL の Issue のノードから、着手の判断に使う信号を組み立てる。"""
     labels = [n.get("name") for n in nodes(node.get("labels"))]
@@ -316,6 +330,8 @@ def signals(node: dict, repo: str) -> dict:
         "author": {"login": author.get("login"), "bot": author.get("__typename") == "Bot", "association": association},
         "trusted": trusted,
         "labels": labels,
+        "priority": highest(labels, PRIORITY_LABELS),
+        "difficulty": highest(labels, DIFFICULTY_LABELS),
         "claim_branch": (claim or {}).get("branch"),
         "claim_session": (claim or {}).get("session"),
         "claim_at": (claim or {}).get("at"),
@@ -366,6 +382,8 @@ def cmd_backlog(args: argparse.Namespace) -> dict:
         else:
             issues += tracked
             open_total[f"{tracker['name']} ({label})"] = tracked_total
+    # 優先度のラベルが無い Issue は中として並べる。同じ優先度なら作成の古い順にする。
+    issues.sort(key=lambda i: (PRIORITY_ORDER.get(i["priority"], PRIORITY_ORDER["medium"]), i["created_at"] or ""))
     return {
         "work": work,
         "tracker": tracker,
