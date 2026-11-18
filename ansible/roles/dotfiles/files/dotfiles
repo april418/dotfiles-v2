@@ -39,7 +39,7 @@ DEFAULT_REPO = os.path.join(HOME, ".dotfiles")
 ZINIT_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "zinit")
 NVM_REPO_URL = "https://github.com/nvm-sh/nvm.git"
 GITHUB_API = "https://api.github.com"
-# native インストーラーの配布元。<チャンネル> を引くと、そのチャンネルの版だけを返す。
+# native インストーラーの配布元。<チャンネル> を引くと、そのチャンネルのバージョンだけを返す。
 CLAUDE_RELEASES = "https://downloads.claude.ai/claude-code-releases"
 
 # 配置に効くのはこの下だけ。install など外側の変更で流すよう促すと、
@@ -64,7 +64,7 @@ KNOWN_BIN_DIRS = [
 ]
 
 # 認証を求められてもプロンプトを出さずに失敗させる。バックグラウンドで止まったままになるため。
-# 色は止める。FORCE_COLOR などを継承すると、出力から版を読み取るときにエスケープ列が混ざる。
+# 色は止める。FORCE_COLOR などを継承すると、出力からバージョンを読み取るときにエスケープ列が混ざる。
 CHILD_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "NO_COLOR": "1"}
 # 自動のメンテナンスを止める。利用者が同じ checkout で作業中だとロックを奪い合う。
 # --no-auto-maintenance は git 2.29 からなので、古い git でも無視される設定で渡す。
@@ -234,7 +234,7 @@ def notice(summary, short, commands, details=None, steps=None, keys=None):
 
     steps は update が実行する (表示, argv) の並び。渡さなければ update の対象にしない。
     keys は断られた内容と比べる値の並びで、省くと summary だけ。summary に件数しか出ないものは、
-    取り込み先の版や SHA を渡す。件数だと、上げた後に同じ件数の更新が来たときに断ったものと区別できない。
+    取り込み先のバージョンや SHA を渡す。件数だと、上げた後に同じ件数の更新が来たときに断ったものと区別できない。
     """
     return {
         "summary": summary,
@@ -323,7 +323,7 @@ def check_dotfiles():
         # install と同じく先に認証を済ませる。become は macOS 以外の作業にしか無く、
         # 認証が残っていないと ansible は聞かずに "Missing sudo password" で失敗する。
         apply_steps.insert(0, ("sudo -v", ["sudo", "-v"]))
-    # venv の Python が消える（Homebrew の cleanup が使われなくなった版を消すなど）と、コマンドはあっても起動しない。
+    # venv の Python が消える（Homebrew の cleanup が使われなくなったバージョンを消すなど）と、コマンドはあっても起動しない。
     # 子プロセスを起動せずに分かる範囲で、シェルを開くたびに確かめる。
     problem = "見つからない" if playbook_bin is None else interpreter_problem(playbook_bin)
     if problem:
@@ -405,7 +405,7 @@ class Tool:
 
     fetch はネットワークを使ってよく、refresh だけが呼ぶ。返した dict が evaluate と skipped に渡る。
     evaluate と skipped はシェルやセッションを開くたびに呼ばれるので、手元の状態だけで速く判定する。
-    更新した直後に古い通知が残らないよう、入っている版などは毎回読み直す。
+    更新した直後に古い通知が残らないよう、入っているバージョンなどは毎回読み直す。
     """
 
     def skipped(self, data):
@@ -413,12 +413,12 @@ class Tool:
         return None
 
     def remark(self, data):
-        """dotfiles check にだけ添える補足（待ち期間で見送っている版など）。無ければ None。"""
+        """dotfiles check にだけ添える補足（待ち期間で見送っているバージョンなど）。無ければ None。"""
         return None
 
 
 def release_cooldown(owner, name, tags, releases=None):
-    """ツールの取得の結果。settled は公開から PIN_COOLDOWN を過ぎた最大の版、newest はそれを含む最大の版。"""
+    """ツールの取得の結果。settled は公開から PIN_COOLDOWN を過ぎた最大のバージョン、newest はそれを含む最大のバージョン。"""
     if releases is None:
         releases = github_api(f"/repos/{owner}/{name}/releases?per_page=100")
     settled, _ = settled_tag(owner, name, tags, releases)
@@ -432,7 +432,7 @@ def release_cooldown(owner, name, tags, releases=None):
 
 
 def waiting_remark(installed, data):
-    """待ち期間のために見送っている版があれば、その説明。"""
+    """待ち期間のために見送っているバージョンがあれば、その説明。"""
     newest, settled = data.get("newest"), data.get("settled")
     if not isinstance(newest, str) or version_key(installed) is None or version_key(installed) >= version_key(newest):
         return None
@@ -462,8 +462,8 @@ class Uv(Tool):
     def fetch(self):
         if not self.standalone:
             return {"unsupported": True}
-        # uv self update は uv の設定の exclude-newer を見ずに最新を入れるので、公開日時で選んで版を名指しする。
-        # 1 件に 40 を超えるアセットが付き、100 件だと 8 MB を超える。待ちを過ぎた版は直近の数十件にある。
+        # uv self update は uv の設定の exclude-newer を見ずに最新を入れるので、公開日時で選んでバージョンを名指しする。
+        # 1 件に 40 を超えるアセットが付き、100 件だと 8 MB を超える。待ちを過ぎたバージョンは直近の数十件にある。
         releases = github_api("/repos/astral-sh/uv/releases?per_page=20")
         tags = [
             r["tag_name"]
@@ -476,7 +476,7 @@ class Uv(Tool):
         settled, installed = data["settled"], self.installed()
         if settled and version_key(installed) and version_key(installed) < version_key(settled):
             try:
-                # 勧める前に、その版へ上げられるかを uv に確かめさせる。
+                # 勧める前に、そのバージョンへ上げられるかを uv に確かめさせる。
                 run([self.path, "self", "update", "--dry-run", settled], FETCH_TIMEOUT)
             except FetchError as e:
                 # レシートと実体が食い違うときに出る。毎回の失敗として扱うと通知が出続ける。
@@ -504,9 +504,9 @@ class Uv(Tool):
         settled = data.get("settled")
         if data.get("unsupported") or settled is None:
             return None
-        # 版はコマンドの引数になるので、リリースの版の形をしていなければ使わない。
+        # バージョンはコマンドの引数になるので、リリースのバージョンの形をしていなければ使わない。
         if not isinstance(settled, str) or not re.fullmatch(r"\d+\.\d+\.\d+", settled):
-            raise ValueError(f"版として読めない（{settled!r}）")
+            raise ValueError(f"バージョンとして読めない（{settled!r}）")
         installed = self.installed()
         if version_key(installed) is None or version_key(installed) >= version_key(settled):
             return None
@@ -553,7 +553,7 @@ class Nvm(Tool):
         tags = re.findall(r"refs/tags/(v\d+\.\d+\.\d+)$", run(args, FETCH_TIMEOUT)[0], re.MULTILINE)
         if not tags:
             raise FetchError("リリースのタグが見つからない")
-        # 固定バージョンの node_nvm_version と同じく、公開から日の浅い版は勧めない。
+        # 固定バージョンの node_nvm_version と同じく、公開から日の浅いバージョンは勧めない。
         return release_cooldown("nvm-sh", "nvm", tags)
 
     def installed(self):
@@ -600,8 +600,8 @@ class ClaudeCode(Tool):
         self.path = path
 
     def installed(self):
-        """native インストーラーで入れたものなら版、そうでなければ None。"""
-        # native のランチャーは ~/.local/share/claude/versions/<版> へのリンクなので、claude --version を起動せずに読める。
+        """native インストーラーで入れたものならバージョン、そうでなければ None。"""
+        # native のランチャーは ~/.local/share/claude/versions/<バージョン> へのリンクなので、claude --version を起動せずに読める。
         # Homebrew や npm で入れたもの、デスクトップアプリが同梱するものはこの形にならない。
         target = os.path.realpath(self.path)
         versions = os.path.dirname(target)
@@ -620,14 +620,14 @@ class ClaudeCode(Tool):
     def fetch(self):
         if self.installed() is None:
             return {"unsupported": True}
-        # Claude Code は起動すれば自分でチャンネルの版へ上がるので、ほかのツールのような待ち期間は置かない。
+        # Claude Code は起動すれば自分でチャンネルのバージョンへ上がるので、ほかのツールのような待ち期間は置かない。
         channel = self.channel()
         status, body = http_get(f"{CLAUDE_RELEASES}/{channel}")
         if status != 200:
-            raise FetchError(f"{channel} チャンネルの版を取得できない（HTTP {status}）")
+            raise FetchError(f"{channel} チャンネルのバージョンを取得できない（HTTP {status}）")
         version = body.decode("utf-8", "replace").strip()
         if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-            raise FetchError(f"{channel} チャンネルの版を読めない（{version[:40]!r}）")
+            raise FetchError(f"{channel} チャンネルのバージョンを読めない（{version[:40]!r}）")
         return {"channel": channel, "version": version}
 
     def skipped(self, data):
@@ -641,11 +641,11 @@ class ClaudeCode(Tool):
 
     def evaluate(self, data):
         installed, latest = self.installed(), data.get("version")
-        # 別のチャンネルの版を勧めると、claude update で上げても通知が消えない。
+        # 別のチャンネルのバージョンを勧めると、claude update で上げても通知が消えない。
         if installed is None or latest is None or data.get("channel") != self.channel():
             return None
         if not isinstance(latest, str) or not re.fullmatch(r"\d+\.\d+\.\d+", latest):
-            raise ValueError(f"版として読めない（{latest!r}）")
+            raise ValueError(f"バージョンとして読めない（{latest!r}）")
         if version_key(installed) >= version_key(latest):
             return None
         summary = f"Claude Code {installed} → {latest}"
@@ -655,7 +655,7 @@ class ClaudeCode(Tool):
     def remark(self, data):
         if self.evaluate(data) is None:
             return None
-        return "自動更新と同じく、待ち期間なしでチャンネルの版へ上げる"
+        return "自動更新と同じく、待ち期間なしでチャンネルのバージョンへ上げる"
 
 
 class GitTool(Tool):
@@ -798,12 +798,12 @@ class Brew(Tool):
     def remark(self, data):
         if not any(self.still_outdated(p) for p in data.get("packages", [])):
             return None
-        return "Homebrew は版の公開日時を持たないので、待ち期間なしで上げる"
+        return "Homebrew はバージョンの公開日時を持たないので、待ち期間なしで上げる"
 
     @staticmethod
     def still_outdated(package):
-        # 上げると版ごとのディレクトリが増える。取得時の current_version より新しい版に上がることもあるので、
-        # 取得時に入っていた版以外があるかで見る。Caskroom には .metadata もある。
+        # 上げるとバージョンごとのディレクトリが増える。取得時の current_version より新しいバージョンに上がることもあるので、
+        # 取得時に入っていたバージョン以外があるかで見る。Caskroom には .metadata もある。
         try:
             versions = [v for v in os.listdir(package["dir"]) if not v.startswith(".")]
         except OSError:
@@ -821,7 +821,7 @@ class Brew(Tool):
             f"Homebrew（{len(names)} 件）",
             ["brew upgrade"],
             steps=[("brew upgrade", [self.path, "upgrade"])],
-            # 要約は名前しか出さないので、同じパッケージの次の版が出ても変わらない。
+            # 要約は名前しか出さないので、同じパッケージの次のバージョンが出ても変わらない。
             keys=[f"brew:{p['name']}@{p.get('latest')}" for p in remaining],
         )
 
@@ -888,14 +888,14 @@ def check_tools(remarks=False):
 
 # ---------------------------------------------------------------- 固定バージョン
 #
-# ansible/ 配下と .github/workflows の YAML を走査して、版を固定している箇所を見つける。
-# 書き方は RAW_PIN・TAG_MARKER・USES_SHA の 3 つ。目印や SHA があるのに版を読めないものは、
+# ansible/ 配下と .github/workflows の YAML を走査して、バージョンを固定している箇所を見つける。
+# 書き方は RAW_PIN・TAG_MARKER・USES_SHA の 3 つ。目印や SHA があるのにバージョンを読めないものは、
 # 黙って落とさずに問題として出す。
 
-# 公開から日が浅い版は勧めない。pnpm の minimum-release-age と uv の exclude-newer（どちらも 1 週間）に
+# 公開から日が浅いバージョンは勧めない。pnpm の minimum-release-age と uv の exclude-newer（どちらも 1 週間）に
 # 揃える。raw とリリースの無いタグはコミットの日時で測るので、日時を偽った上流の乗っ取りまでは防げない。
 PIN_COOLDOWN = 7 * 24 * 60 * 60
-# リリースの無いタグのコミットの日時を引く回数の上限。aws-cli は平日に毎日版を出すので、
+# リリースの無いタグのコミットの日時を引く回数の上限。aws-cli は平日に毎日新しいバージョンを出すので、
 # PIN_COOLDOWN の中に 8 件並ぶことがある。足りないと最新版を確かめられず、取得の失敗になる。
 TAG_LOOKUP_LIMIT = 15
 DIFF_MAX_LINES = 200
@@ -927,7 +927,7 @@ def github_api(path):
 
 
 def settled_tag(owner, name, tags, releases=None):
-    """tags のうち、公開から PIN_COOLDOWN を過ぎた最大の版とその公開日時を返す。どれも日が浅ければ (None, None)。
+    """tags のうち、公開から PIN_COOLDOWN を過ぎた最大のバージョンとその公開日時を返す。どれも日が浅ければ (None, None)。
 
     releases は取得済みの GitHub のリリースの一覧。渡さなければ取りに行く。
     """
@@ -942,10 +942,10 @@ def settled_tag(owner, name, tags, releases=None):
                 continue
             published = release.get("published_at")
         else:
-            # リリースを作らないリポジトリもある。その版のコミットの日時で代えるが、呼ぶ回数に上限を置く。
+            # リリースを作らないリポジトリもある。そのバージョンのコミットの日時で代えるが、呼ぶ回数に上限を置く。
             if lookups >= TAG_LOOKUP_LIMIT:
                 raise FetchError(
-                    f"公開から日が経った版を見つけられない（リリースの無い版を {TAG_LOOKUP_LIMIT} 件まで調べた）"
+                    f"公開から日が経ったバージョンを見つけられない（リリースの無いバージョンを {TAG_LOOKUP_LIMIT} 件まで調べた）"
                 )
             lookups += 1
             published = github_api(f"/repos/{owner}/{name}/commits/{tag}")["commit"]["committer"]["date"]
@@ -979,7 +979,7 @@ class Pin(Tool):
 
 
 class BrokenPin(Pin):
-    """固定しようとしているのに版を読めない箇所。"""
+    """固定しようとしているのにバージョンを読めない箇所。"""
 
     def __init__(self, rel, line, problem):
         super().__init__(f"broken:{rel}:{line}", f"{rel}:{line}", rel, line)
@@ -1030,7 +1030,7 @@ class RawPin(Pin):
         suggested, date = self.settled_commit(head, self.file)
         if suggested is None or suggested == self.sha:
             return {"pinned": self.sha, "suggested": None}
-        # 日の浅い版をすでに固定しているなら、古いほうへ戻すことになるので勧めない。
+        # 日の浅いバージョンをすでに固定しているなら、古いほうへ戻すことになるので勧めない。
         pinned_date = github_api(f"/repos/{self.owner}/{self.name}/commits/{self.sha}")["commit"]["committer"]["date"]
         if parse_time(pinned_date) >= parse_time(date):
             return {"pinned": self.sha, "suggested": None}
@@ -1108,9 +1108,9 @@ class RawPin(Pin):
 
 
 class TagPin(Pin):
-    """`# dotfiles: tags <URL> [接頭辞]` の次の行で固定した版。
+    """`# dotfiles: tags <URL> [接頭辞]` の次の行で固定したバージョン。
 
-    接頭辞は、`wrangler@4.1.0` のようにパッケージごとにタグを打つモノレポで、版より前の部分を書く。
+    接頭辞は、`wrangler@4.1.0` のようにパッケージごとにタグを打つモノレポで、バージョンより前の部分を書く。
     """
 
     def __init__(self, rel, line, url, prefix, m):
@@ -1123,7 +1123,7 @@ class TagPin(Pin):
         out = run(["git", "ls-remote", "--tags", "--refs", self.url], FETCH_TIMEOUT)[0]
         tags = set(re.findall(rf"refs/tags/({re.escape(self.prefix)}v?\d+(?:\.\d+)+)$", out, re.MULTILINE))
         if not tags:
-            raise FetchError("版のタグが見つからない")
+            raise FetchError("バージョンのタグが見つからない")
         github = GITHUB_URL.match(self.url)
         if not github:
             latest, published = max(tags, key=version_key), None
@@ -1150,7 +1150,7 @@ class ActionPin(Pin):
         label = f"{self.owner}/{self.name}{self.sub}"
         super().__init__(f"action:{rel}:{label}#{occurrence}", label, rel, line)
         if self.current is None:
-            self.problem = "SHA で固定しているが、版のコメント（# vX.Y.Z）が無いため確かめられない"
+            self.problem = "SHA で固定しているが、バージョンのコメント（# vX.Y.Z）が無いため確かめられない"
 
     def fetch(self):
         if self.problem:
@@ -1164,7 +1164,7 @@ class ActionPin(Pin):
             if m and (m.group(2) or m.group(1) not in commits):
                 commits[m.group(1)] = sha
         if not commits:
-            raise FetchError("版のタグが見つからない")
+            raise FetchError("バージョンのタグが見つからない")
         latest, published = settled_tag(self.owner, self.name, commits)
         return {"latest": latest, "published": published, "sha": commits.get(latest), "tags": commits}
 
@@ -1230,7 +1230,7 @@ def find_pins(repo):
                 found.append(
                     TagPin(rel, i + 2, *marker.groups(), target)
                     if target
-                    else BrokenPin(rel, i + 1, '目印の次の行から版を読めない（key: "vX.Y.Z" の形で書く）')
+                    else BrokenPin(rel, i + 1, '目印の次の行からバージョンを読めない（key: "vX.Y.Z" の形で書く）')
                 )
     return found
 
@@ -1477,7 +1477,7 @@ def run_check():
             print("  ? ローカルで分かる範囲では差分が無い" if unknown else "  ✓ 最新")
 
     pins = check_pins(dotfiles["where"], dotfiles["remote"])
-    for section, empty in ((tools, "確かめられるツールが入っていない"), (pins, "固定している版が無い")):
+    for section, empty in ((tools, "確かめられるツールが入っていない"), (pins, "固定しているバージョンが無い")):
         found_updates, found_unknown = print_items(section, empty)
         updates |= found_updates
         unknown |= found_unknown
@@ -1615,7 +1615,7 @@ def run_pins(repo, fmt):
     pins = find_pins(repo)
     # 走査が壊れて 0 件になったのを「すべて最新」と取り違えると、issue が閉じたまま気づけない。
     if not pins:
-        print(f"{repo} に固定している版が見つからない", file=sys.stderr)
+        print(f"{repo} に固定しているバージョンが見つからない", file=sys.stderr)
         return 2
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         fetched = {pin.key: pool.submit(attempt, pin.fetch) for pin in pins}
@@ -1630,7 +1630,7 @@ def run_pins(repo, fmt):
                 print(f"{item['label']}: {item['problem']}", file=sys.stderr)
         print_pins_markdown(items)
     else:
-        print_items({"label": "固定バージョン", "items": items}, "固定している版が無い")
+        print_items({"label": "固定バージョン", "items": items}, "固定しているバージョンが無い")
     return 1 if updates else 2 if unknown else 0
 
 
@@ -1653,7 +1653,7 @@ MARKDOWN_MAX_BYTES = 120_000
 
 
 def print_pins_markdown(items):
-    parts = ["dotfiles pins が、固定している版を確かめた結果。直したら、次の定期実行でこの issue は閉じる。\n"]
+    parts = ["dotfiles pins が、固定しているバージョンを確かめた結果。直したら、次の定期実行でこの issue は閉じる。\n"]
     found = [item for item in items if item["notice"]]
     if found:
         rows = ["| 対象 | 状態 | 直し方 |", "| --- | --- | --- |"]
@@ -1703,8 +1703,8 @@ UPDATE_GROUPS = [
     ("tools", "t", "ツール", "tools"),
     ("brew", "b", "Homebrew", "tools"),
 ]
-# 質問の選択肢に添える。Homebrew は版の公開日時を持たず、待ち期間なしで上げる。Claude Code も待たないが、
-# 起動すれば自分で上がる版へ上げるだけなので、ツールには添えない。
+# 質問の選択肢に添える。Homebrew はバージョンの公開日時を持たず、待ち期間なしで上げる。Claude Code も待たないが、
+# 起動すれば自分で上がるバージョンへ上げるだけなので、ツールには添えない。
 UPDATE_NOTES = {"brew": "待ち期間なし"}
 
 
@@ -2178,7 +2178,7 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
             return 2
         ids, asked_keys = {g["id"] for g in chosen}, {k for g in chosen for k in g["keys"]}
         current = update_groups(check_dotfiles(), check_tools())
-        # 答えを待つ間に別のシェルが上げたものは飛ばす。取得で版が進んだものは、見せていない版へ上げないよう飛ばす。
+        # 答えを待つ間に別のシェルが上げたものは飛ばす。取得でバージョンが進んだものは、見せていないバージョンへ上げないよう飛ばす。
         remaining, changed = [], []
         for g in current:
             if g["id"] in ids:
@@ -2352,7 +2352,7 @@ def main():
     # サブコマンドやオプションを変えたら、zsh の補完（files/_dotfiles）も合わせる。
     parser = argparse.ArgumentParser(
         prog="dotfiles",
-        description="dotfiles と、それが入れたツール・固定している版の更新を確かめて上げる。Claude Code のキャラクターも切り替える。",
+        description="dotfiles と、それが入れたツール・固定しているバージョンの更新を確かめて上げる。Claude Code のキャラクターも切り替える。",
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     check_help = (

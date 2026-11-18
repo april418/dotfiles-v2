@@ -45,7 +45,7 @@
   register: codex_install
   when: codex_npm.rc is defined and codex_npm.rc == 0
   changed_when: codex_install.rc == 0
-  # engine-strict=true の下で node が古いと EBADENGINE になる。要求する版は codex が上げていくので、数字を持たずに
+  # engine-strict=true の下で node が古いと EBADENGINE になる。要求するバージョンは codex が上げていくので、数字を持たずに
   # npm の判定を使う。止めると後のロールと適用の記録まで飛ぶので、入れずに知らせる。
   failed_when: codex_install.rc != 0 and 'EBADENGINE' not in codex_install.stderr
 

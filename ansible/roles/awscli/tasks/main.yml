@@ -1,5 +1,5 @@
 ---
-# install.sh は ~/.local/bin のリンクではなく導入先の aws と版を比べるので、ロールも導入先を読む。
+# install.sh は ~/.local/bin のリンクではなく導入先の aws とバージョンを比べるので、ロールも導入先を読む。
 - name: Read installed AWS CLI version
   ansible.builtin.command:
     cmd: "{{ awscli_bin_dir }}/aws --version"
@@ -13,7 +13,7 @@
     awscli_installed: "{{ awscli_version_output.stdout | regex_findall('aws-cli/(\\d+(?:\\.\\d+)+)') | first | default('') }}"
 
 - name: Install AWS CLI
-  # install.sh は導入先の版より古い版を渡すと失敗する。aws update で固定より新しくなった版は、そのまま使う。
+  # install.sh は導入先のバージョンより古いバージョンを渡すと失敗する。aws update で固定より新しくなったバージョンは、そのまま使う。
   when:
     - ansible_facts['os_family'] != 'Windows'
     - awscli_installed == '' or awscli_installed is version(awscli_version, '<')

@@ -3,7 +3,7 @@
 codex_version: "0.166.0"
 codex_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/codex"
 
-# Claude Code のプラグインと同じ版を使い、版は claude ロールの claude_yomiyasu_version だけで持つ。
+# Claude Code のプラグインと同じバージョンを使い、バージョンは claude ロールの claude_yomiyasu_version だけで持つ。
 # codex ロールだけを流しても読めるよう、claude ロールの変数が見えることに頼らずファイルから読む。
 codex_yomiyasu_version: "{{ (lookup('ansible.builtin.file', role_path + '/../claude/vars/main.yml') | from_yaml).claude_yomiyasu_version }}"
 codex_yomiyasu_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/yomiyasu"

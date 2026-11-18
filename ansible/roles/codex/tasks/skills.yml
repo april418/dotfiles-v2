@@ -4,7 +4,7 @@
     repo: https://github.com/nanaism/yomiyasu.git
     dest: "{{ codex_yomiyasu_dir }}"
     version: "{{ codex_yomiyasu_version }}"
-    # 履歴は使わず、版を上げるときもタグを取り直すだけなので浅く取る。
+    # 履歴は使わず、バージョンを上げるときもタグを取り直すだけなので浅く取る。
     depth: 1
 
 - name: Ensure user skills directory exists
@@ -26,7 +26,7 @@
 
 - name: Link yomiyasu into user skills
   ansible.builtin.file:
-    # 版を上げても git が同じ場所で checkout し直すので、リンクは張り替えずに済み、上流で消えたファイルも残らない。
+    # バージョンを上げても git が同じ場所で checkout し直すので、リンクは張り替えずに済み、上流で消えたファイルも残らない。
     src: "{{ codex_yomiyasu_dir }}/skills/yomiyasu"
     dest: "{{ codex_skills_dir }}/yomiyasu"
     state: link
@@ -81,7 +81,7 @@
     label: "{{ item.item }}"
   when: not ansible_check_mode and not item.stat.exists
 
-# コピーせずリンクにするので、claude ロールが skill を更新すると Codex にも同じ版が見える。
+# コピーせずリンクにするので、claude ロールが skill を更新すると Codex にも同じバージョンが見える。
 # Codex の取り込みは同じ名前があれば写さないので、リンクを古い写しで上書きされることもない。
 - name: Link shared skills into user skills
   ansible.builtin.file:

@@ -51,13 +51,13 @@ else
   export NVM_DIR="$XDG_CONFIG_HOME/nvm"
 fi
 if [ -s "$NVM_DIR/nvm.sh" ]; then
-  # nvm.sh をそのまま読むと、版を選ぶ nvm use が版の解決に起動のたび 300〜400 ms かける。
-  # 読み込みは --no-use で済ませ、版が名前で決まるときは nvm と同じ関数で PATH などを組む。
+  # nvm.sh をそのまま読むと、バージョンを選ぶ nvm use がバージョンの解決に起動のたび 300〜400 ms かける。
+  # 読み込みは --no-use で済ませ、バージョンが名前で決まるときは nvm と同じ関数で PATH などを組む。
   source "$NVM_DIR/nvm.sh" --no-use
   if (( $+functions[nvm_auto] && $+functions[nvm_change_path] && $+functions[nvm_has] )); then
     () {
       local node=${commands[node]-} version dir
-      # nvm の nvm_auto と同じく、PATH の node が nvm の版ならそれを引き継ぎ、無ければ default を使う。
+      # nvm の nvm_auto と同じく、PATH の node が nvm のバージョンならそれを引き継ぎ、無ければ default を使う。
       if [[ $node == $NVM_DIR/* ]]; then
         [[ $node == $NVM_DIR/versions/node/*/bin/node ]] || return 1
         version=${${node#$NVM_DIR/versions/node/}%%/*}
@@ -65,9 +65,9 @@ if [ -s "$NVM_DIR/nvm.sh" ]; then
         version=v${$(<$NVM_DIR/alias/default)#v}
       fi
       dir=$NVM_DIR/versions/node/$version
-      # 別名（lts/* など）や入っていない版は、nvm 自身の解決に任せる。
+      # 別名（lts/* など）や入っていないバージョンは、nvm 自身の解決に任せる。
       [[ $version == v<->.<->.<-> && -x $dir/bin/node ]] || return 1
-      # nvm 0.40.8 の nvm use が版を切り替えるところと同じ。nvm を上げたら nvm.sh と見比べる。
+      # nvm 0.40.8 の nvm use がバージョンを切り替えるところと同じ。nvm を上げたら nvm.sh と見比べる。
       PATH=$(nvm_change_path "$PATH" /bin "$dir")
       if nvm_has manpath; then
         MANPATH=$(nvm_change_path "${MANPATH-}" /share/man "$dir")
