@@ -47,7 +47,7 @@
 ## 配布する指示を書き換えるとき
 
 `files/AGENTS.md`・`files/rules/`・`files/skills/`・`files/agents/`・`files/characters/`
-は、Claude Opus 5.5 / Fable 5.1 に向けて次のように書く。
+は、Claude Code で選べる最新の Opus と Fable に向けて次のように書く。
 
 - `files/AGENTS.md` は 200 行前後に収める。長いと遵守が落ちる
   （[memory](https://code.claude.com/docs/en/memory)）。毎回の作業で効く判断だけを置き、
