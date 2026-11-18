@@ -65,12 +65,12 @@ fi
 INDENT="    "
 
 DOTFILES_GIT="https://github.com/april418/dotfiles-v2.git"
-# ansible を動かす Python。ansible-core の制御ノードが対応する版にする（2.21 は 3.12〜3.14）。
-# OS の Python を使うと、Homebrew などが既定の版を上げて古い版を消したときに ansible が起動しなくなる。
+# ansible を動かす Python。ansible-core の制御ノードが対応するバージョンにする（2.21 は 3.12〜3.14）。
+# OS の Python を使うと、Homebrew などが既定のバージョンを上げて古いバージョンを消したときに ansible が起動しなくなる。
 ANSIBLE_PYTHON="3.14"
 UV="$HOME/.local/bin/uv"
 # uv ロールが置く uv.toml の exclude-newer = "1 week" を読めるのは 0.9.17 から。
-# 最新へ上げないのは、公開直後の版を入れない方針（dotfiles check の 1 週間ルール）に合わせるため。
+# 最新へ上げないのは、公開直後のバージョンを入れない方針（dotfiles check の 1 週間ルール）に合わせるため。
 UV_MIN_VERSION="0.9.17"
 # PATH の先にほかの ansible（Homebrew の formula など）があっても、uv で入れたものを使う。
 ANSIBLE_PLAYBOOK="$HOME/.local/bin/ansible-playbook"
@@ -273,7 +273,7 @@ setup_python() {
   fi
 }
 
-# $1 が $2 より古い版なら 0 を返す。$1 が空（版を読めない）なら古いとみなす。
+# $1 が $2 より古いバージョンなら 0 を返す。$1 が空（バージョンを読めない）なら古いとみなす。
 version_lt() {
   [ "$1" != "$2" ] && [ "$(printf '%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]
 }

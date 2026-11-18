@@ -36,7 +36,7 @@ claude_marketplace:
       description: UI を新しく作るときや作り直すときに、見た目の方向づけを示す skill
       source: "{{ claude_frontend_design_source }}"
 
-# Merge settings.json が files/settings.json の後に重ねる。版を変数で持つので、静的な settings.json には書かない。
+# Merge settings.json が files/settings.json の後に重ねる。バージョンを変数で持つので、静的な settings.json には書かない。
 # 取得は Claude Code がセッションの開始後に行う（宣言だけで、プレイブックはクローンしない）。
 claude_plugin_settings:
   extraKnownMarketplaces:

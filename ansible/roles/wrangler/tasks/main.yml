@@ -39,7 +39,7 @@
   register: wrangler_install
   when: wrangler_npm.rc is defined and wrangler_npm.rc == 0
   changed_when: wrangler_install.rc == 0
-  # engine-strict=true の下で node が古いと EBADENGINE になる。要求する版は wrangler が上げていくので、数字を持たずに
+  # engine-strict=true の下で node が古いと EBADENGINE になる。要求するバージョンは wrangler が上げていくので、数字を持たずに
   # npm の判定を使う。止めると後のロールと適用の記録まで飛ぶので、入れずに知らせる。
   failed_when: wrangler_install.rc != 0 and 'EBADENGINE' not in wrangler_install.stderr
 
