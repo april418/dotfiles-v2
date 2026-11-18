@@ -184,36 +184,41 @@ lockfile に無いバージョンがその場で解決されて入りうるう�
 
 ## ルール 4: リリース年齢制約（minimumReleaseAge / exclude-newer）への対処
 
-パッケージの公開日が制約に満たずインストールに失敗した場合、
-以下のいずれかで対処する:
+パッケージの公開日が制約に満たずインストールに失敗したら、制約を満たすうちで最も新しいバージョンを指定して
+入れ直す。制約は公開直後の悪意あるバージョンを避けるための守りなので、緩めずに進められる手を既定にする。
+頼まれたバージョンより古いものを入れることになるので、入れたバージョンを最終応答に書く。
 
-1. **待つ**: パッケージが公開されて十分な期間が経過するのを待つ
-2. **除外設定に追加**: 設定ファイルに除外を追加する（CLI フラグではなくファイル編集）
-   - **pnpm** (`pnpm-workspace.yaml`):
-
-     ```yaml
-     minimumReleaseAge: 10080
-     minimumReleaseAgeExclude:
-       - cool-pkg
-       - "@scope/another-pkg"
-     ```
-
-     除外は **配列** で 1 パッケージずつ指定する。globパターン不可。
-
-   - **uv** (`pyproject.toml` の `[tool.uv]`、または `uv.toml`):
-
-     ```toml
-     [tool.uv]
-     exclude-newer = "1 week"  # 全体に効くグローバル制約
-     # 個別パッケージの除外は dict 形式: { package = "日付" or false }
-     # - 日付（RFC 3339 形式）を渡すとそのパッケージはその日付までに公開されたバージョンのみ許可
-     # - false を渡すと、そのパッケージのみ exclude-newer 制約から完全除外
-     exclude-newer-package = { cool-pkg = "2025-12-31T00:00:00Z", another-pkg = false }
-     ```
-
-3. **バージョンを下げる**: 制約を満たす古いバージョンを使用する
+そのバージョンでないと困る理由（脆弱性の修正、要る機能など）があるときだけ、除外設定に足すことを提案する。
+除外はそのパッケージの守りを緩めるので、パッケージ名・バージョン・理由を示して `AskUserQuestion` で承認を
+取ってから、設定ファイルを編集する（下の書き方。CLI フラグは使わない。ルール 1）。承認が得られなければ、
+そのバージョンが制約を満たすまで待つ。非対話では除外せず、古いバージョンで足りなければ止めて、除外が要る
+理由を最終応答に書く。
 
 `--config.minimum-release-age=0` や `--exclude-newer=9999-01-01` のような CLI フラグや環境変数で制約を無効化しない（ルール 1）。
+
+### 除外設定の書き方
+
+pnpm（`pnpm-workspace.yaml`）:
+
+```yaml
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  - cool-pkg
+  - "@scope/another-pkg"
+```
+
+除外は配列で 1 パッケージずつ指定する。glob パターンは使えない。
+
+uv（`pyproject.toml` の `[tool.uv]`、または `uv.toml`）:
+
+```toml
+[tool.uv]
+exclude-newer = "1 week"  # 全体に効くグローバル制約
+# 個別パッケージの除外は dict 形式: { package = "日付" or false }
+# - 日付（RFC 3339 形式）を渡すとそのパッケージはその日付までに公開されたバージョンのみ許可
+# - false を渡すと、そのパッケージのみ exclude-newer 制約から完全除外
+exclude-newer-package = { cool-pkg = "2025-12-31T00:00:00Z", another-pkg = false }
+```
 
 ---
 
@@ -247,5 +252,6 @@ pnpm dlx pnpm@11 --pm-on-fail=ignore audit --prod
 
 - [ ] ランタイムバージョンはプロジェクトの要求と一致しているか？（git-push の push 前のチェックでは、ルール 2 の例外のとおり git-push の手順に従う）
 - [ ] CLI フラグでプロジェクト設定やグローバル設定をバイパスしていないか？
+- [ ] リリース年齢制約に当たったとき、除外する前に制約を満たすバージョンで足りるかを見たか？（除外は承認を取ってから）
 - [ ] lockfile の再生成が必要な変更をしていないか？
 - [ ] 使用しているパッケージマネージャーはプロジェクトのものと一致しているか？
