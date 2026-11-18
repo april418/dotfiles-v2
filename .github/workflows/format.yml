@@ -65,6 +65,10 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: git ls-files -z -- '*.sh' install '*/.bashrc' '*/.bash_profile' | xargs -0 shfmt --diff
 
-      - name: ruff
+      - name: ruff format
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: ruff format --check
+
+      - name: ruff check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: ruff check
