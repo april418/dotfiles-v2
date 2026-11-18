@@ -147,7 +147,7 @@ git log --oneline '@{upstream}..HEAD'             # 表の 1 行目（upstream �
 git log --oneline HEAD --not --remotes=<remote>   # ほかの行（初回 push、[gone]、upstream と違う remote）。<remote> は push 先
 ```
 
-`@{upstream}..HEAD` を引用符で囲むのは、囲まないと `Bash(git log:*)` の allow があっても規則で通らず、auto mode では classifier に回るためである。回ったのは `@{...}` と `..` が 1 つの語に並ぶ形（`HEAD..@{u}` も）で、`@{upstream}` や `stash@{0}` だけなら囲まなくても通った（Claude Code 2.1.304 で実測）。
+`@{upstream}..HEAD` を引用符で囲むのは、囲まないと `Bash(git log:*)` の allow があっても規則で通らず、auto mode では classifier に回るためである。classifier に回るのは `@{...}` と `..` が 1 つの語に並ぶ形（`HEAD..@{u}` も）で、`@{upstream}` や `stash@{0}` だけなら囲まなくても通る（Claude Code 2.1.304 で実測）。
 
 初回 push で `git log -5` のように件数で区切ると、自分のコミットが 0 件でもベースのコミットが並び、0 件を判定できない。`--not --remotes=<remote>` はその remote のどのブランチにも無いコミットだけを出す。追跡 ref の残りがあると分かったときの数え方は remote-tracking.md にある。
 数える前に `git for-each-ref --count=1 refs/remotes/<remote>/` が空なら、`git fetch <remote>` する（2. で fetch した remote には流さない。残りがあると分かった remote の見方は remote-tracking.md）。一度も fetch していない remote には remote-tracking ref が無く、何も除かれずに push 済みのコミットまで並ぶ（`git remote add` しただけの remote で、Git 2.54.0 で実測）。
