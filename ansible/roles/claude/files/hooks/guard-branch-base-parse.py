@@ -753,7 +753,7 @@ def main():
     text = sys.stdin.buffer.read().decode("utf-8", "surrogateescape")
     try:
         found = branches(text, cwd)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # トランスクリプトに出るのは stderr の 1 行目だけなので、トレースバックにしない
         print(
             f"guard-branch-base: コマンド文字列を解析できず、判定していない ({type(e).__name__}: {e})", file=sys.stderr

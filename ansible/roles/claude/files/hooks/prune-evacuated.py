@@ -78,7 +78,7 @@ def main():
     lines = []
     try:
         removed, failed = prune()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # 黙ると、消す仕組みが壊れたまま退避物が溜まっていくことに気づけない。
         lines.append(f"prune-evacuated が失敗した（{type(e).__name__}）")
         removed, failed = [], []

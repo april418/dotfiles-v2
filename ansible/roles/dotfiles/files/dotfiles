@@ -864,13 +864,13 @@ def evaluate_all(found, entries, remarks=False):
             if data is not None:
                 item["notice"] = obj.evaluate(data)
                 item["skipped"] = obj.skipped(data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # 1 つの判定の失敗で、ほかの項目や dotfiles 本体の通知まで消さない。
             item["problem"] = f"判定できなかった（{type(e).__name__}: {e}）"
         if remarks and data is not None and not item["problem"]:
             try:
                 item["remark"] = obj.remark(data)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 # 補足が作れなくても、判定の結果はそのまま使える。
                 item["remark"] = f"補足を作れなかった（{type(e).__name__}: {e}）"
         items.append(item)
@@ -1298,7 +1298,8 @@ def attempt(fetch):
         return fetch(), None
     except FetchError as e:
         return None, str(e)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
+        # 投げると refresh の future.result() で止まり、ほかの項目の結果も書けない。想定外の失敗もその項目の理由として残す。
         return None, f"{type(e).__name__}: {e}"
 
 
@@ -1595,7 +1596,7 @@ def run_notify(fmt, style="plain"):
         rows = notify_rows(repo, dotfiles, tools)
         groups = update_groups(dotfiles, tools)
         sync_pending(groups)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # 黙ると利用者は dotfiles check を実行する理由が無く、壊れたまま気づけない。
         rows, groups = [("warn", "error", "dotfiles notify", [f"失敗した（{type(e).__name__}）"])], []
     if not rows:
@@ -2428,7 +2429,7 @@ def main():
             # 質問の前に止められたときは何も出ていないので、notify にいつもの通知を出させる。
             print()
             return 1 if args.startup else 2
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if args.startup:
                 # シェルを開くたびにトレースバックを出さない。1 を返して、続く notify にいつもの通知を出させる。
                 print(f"dotfiles update が失敗した（{type(e).__name__}: {e}）")
@@ -2438,13 +2439,13 @@ def main():
     if args.command == "pins":
         try:
             return run_pins(os.path.abspath(args.repo), args.format)
-        except Exception:
+        except Exception:  # noqa: BLE001
             # 1 は「更新あり」なので、想定外の失敗で issue を作らないよう区別する。
             traceback.print_exc()
             return 2
     try:
         updates, unknown = run_check()
-    except Exception:
+    except Exception:  # noqa: BLE001
         # 1 は「更新あり」の意味なので、想定外の失敗をそれと区別する。
         traceback.print_exc()
         return 2

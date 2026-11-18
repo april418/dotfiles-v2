@@ -353,13 +353,13 @@ def main():
         return
     try:
         context, notice = on_stop(payload, session_id) if event == "Stop" else on_batch(payload, session_id)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # バッチごとに走るので、知らせるのはセッションに 1 回だけにする。黙ると壊れたことに気づけない。
         try:
             if first_time(session_id, "error"):
                 message = f"reply-language-guard が失敗した（{type(e).__name__}: {str(e)[:200]}）"
                 print(json.dumps({"systemMessage": message}, ensure_ascii=False))
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             # 記録を書けないと、知らせるのもバッチごとになるので黙る。
             pass
         return
