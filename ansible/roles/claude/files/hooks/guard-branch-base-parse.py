@@ -609,7 +609,7 @@ def shell_script(args):
 def git(args, cwd):
     """git を実行し、成功すれば標準出力を、失敗すれば None を返す。"""
     try:
-        result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, errors="replace")
+        result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, errors="replace", check=False)
     except OSError:
         return None
     return result.stdout if result.returncode == 0 else None
@@ -681,7 +681,7 @@ def map_refspec(specs, ref):
         if spec.startswith("^"):
             negative.append(spec[1:])
             continue
-        body = spec[1:] if spec.startswith("+") else spec
+        body = spec.removeprefix("+")
         src, colon, dst = body.rpartition(":")
         positive.append((src, dst) if colon else (body, None))
     # git の query_matches_negative_refspec は、パターンの refspec を dst 側で ref に当てるので、

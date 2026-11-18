@@ -85,6 +85,7 @@ def git(repo, *args):
             text=True,
             timeout=10,
             env=CHILD_ENV,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -410,11 +411,9 @@ class Tool:
 
     def skipped(self, data):
         """確かめなかった理由。確かめたなら None。"""
-        return None
 
     def remark(self, data):
         """dotfiles check にだけ添える補足（待ち期間で見送っているバージョンなど）。無ければ None。"""
-        return None
 
 
 def release_cooldown(owner, name, tags, releases=None):

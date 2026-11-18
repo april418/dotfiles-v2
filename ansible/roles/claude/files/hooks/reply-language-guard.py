@@ -40,7 +40,7 @@ KANA = re.compile("[\u3040-\u30ff]+")
 WORD = re.compile(r"[A-Za-z]{2,}")
 # コード・コマンド・パスは原文のまま書く決まりなので、英語かどうかの判定から外す。
 NOT_PROSE = [
-    re.compile(r"```.*?```", re.S),
+    re.compile(r"```.*?```", re.DOTALL),
     re.compile(r"`[^`\n]*`"),
     re.compile(r"\[[^\]]*\]\([^)]*\)"),
     re.compile(r"https?://\S+"),
@@ -102,14 +102,13 @@ def recent_texts(path):
     記録が無ければ空。
     """
     try:
-        f = open(path, "rb")
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - TAIL_BYTES))
+            data = f.read()
     except FileNotFoundError:
         return []
-    with f:
-        f.seek(0, os.SEEK_END)
-        size = f.tell()
-        f.seek(max(0, size - TAIL_BYTES))
-        data = f.read()
     lines = data.split(b"\n")
     if size > TAIL_BYTES:
         # 途中から読んだので、最初の行は欠けている。
