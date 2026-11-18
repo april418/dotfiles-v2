@@ -29,8 +29,9 @@ PRIORITY_ORDER = {value: i for i, value in enumerate(PRIORITY_LABELS.values())}
 # 別のリポジトリを書き込み先にしたとき、作業中のリポジトリ向けの Issue をこのラベルで見分ける。
 TRACKER_LABEL_PREFIX = "repo:"
 TRACKER_CONFIG_KEY = "gh-issue.tracker"
-CLAIM_PATTERN = re.compile(r"^着手: ブランチ `([^`\n]+)`(?: セッション `([^`\n]+)`)?", re.MULTILINE)
-RELEASE_PATTERN = re.compile(r"^(手放し|済み): ブランチ `([^`\n]+)`(?: セッション `([^`\n]+)`)?", re.MULTILINE)
+# 着手と手放しはコメントの 1 行目だけで読む。2 行目以降に写した前の着手の行を、新しい着手や手放しに数えない。
+CLAIM_PATTERN = re.compile(r"^着手: ブランチ `([^`\n]+)`(?: セッション `([^`\n]+)`)?")
+RELEASE_PATTERN = re.compile(r"^(手放し|済み): ブランチ `([^`\n]+)`(?: セッション `([^`\n]+)`)?")
 TRUSTED_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 # 書き込み先が作業中のリポジトリより広く見えると、作業中のリポジトリの名前と作業の中身が漏れる。
 VISIBILITY_RANK = {"PRIVATE": 0, "INTERNAL": 1, "PUBLIC": 2}
