@@ -163,8 +163,9 @@ CI で `--frozen-lockfile` 実行時に不整合を起こす。
 ### `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`
 
 このエラーは `pnpm-workspace.yaml` の `overrides` と `pnpm-lock.yaml` が
-不整合であることを示す。`--no-frozen-lockfile` で回避するのではなく、
-lockfile を再生成して整合性を取る。
+不整合であることを示す。CI やビルド（Dockerfile、デプロイ先）の frozen な install に `--no-frozen-lockfile` を
+足して通さず、上の「lockfile の再生成が必要になるケース」の手順で lockfile を再生成してコミットする。そこで足すと、
+lockfile に無いバージョンがその場で解決されて入りうるうえ、リポジトリの lockfile は不整合のまま残る。
 
 ### パッケージマネージャーの混在禁止
 
