@@ -5,3 +5,5 @@ include = [
   "ansible/roles/claude/files/bin/evacuate",
 ]
 line-length = 120
+# フックと dotfiles コマンドは PATH の python3 で動き、macOS では 3.9 が当たる。3.10 以降でしか動かない書き方を勧めさせない。
+target-version = "py39"
