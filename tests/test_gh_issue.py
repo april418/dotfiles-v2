@@ -444,8 +444,6 @@ class ClaimTest(IssuesTestCase):
         result = self.claims([comment("ブランチ `feat/a` で直す", 1)])
         self.assertEqual((result["claim_branch"], result["claim_session"], result["claim_at"]), (None, None, None))
 
-    # SKILL.md は 1 行目が「着手:」のコメントを着手とするが、CLAIM_PATTERN は re.MULTILINE で 2 行目以降の行も拾う。
-    @unittest.expectedFailure
     def test_claim_line_after_first_line_is_not_a_claim(self):
         result = self.claims([comment("前の着手の写し:\n着手: ブランチ `feat/a` セッション `s1`", 1)])
         self.assertEqual((result["claim_branch"], result["claim_session"]), (None, None))
@@ -572,8 +570,6 @@ class ReleaseTest(IssuesTestCase):
         result = self.claims([release("feat/a", 1, "s1")], [unlabeled(2)])
         self.assertEqual((result["claim_branch"], result["last_release"]), (None, None))
 
-    # SKILL.md は 1 行目が「手放し:」「済み:」のコメントで外すが、RELEASE_PATTERN は re.MULTILINE で 2 行目以降の行も拾う。
-    @unittest.expectedFailure
     def test_release_line_after_first_line_clears_nothing(self):
         result = self.claims(
             [claim("feat/a", 1, "s1"), comment("引き継ぎのメモ:\n手放し: ブランチ `feat/a` セッション `s1`", 2)]
