@@ -1299,7 +1299,8 @@ def attempt(fetch):
     except FetchError as e:
         return None, str(e)
     except Exception as e:  # noqa: BLE001
-        # 投げると refresh の future.result() で止まり、ほかの項目の結果も書けない。想定外の失敗もその項目の理由として残す。
+        # 投げると呼び出し側（refresh と run_pins）の future.result() で止まり、ほかの項目の結果も使えない。
+        # 想定外の失敗もその項目の理由として残す。
         return None, f"{type(e).__name__}: {e}"
 
 
@@ -2051,7 +2052,8 @@ def run_steps(steps, live=None, log=None):
     """
     # 色や認証のプロンプトは利用者に見せるので CHILD_ENV は使わない。
     env = {**os.environ, "DOTFILES_UPDATING": "1"}
-    # 要素が入った周回は KeyboardInterrupt を投げて抜けるので、周回ごとに作り直さなくても次の周回の初めは空である。
+    # 要素が入った周回は、KeyboardInterrupt を投げるか、起動に失敗して return するかで必ず抜ける。
+    # 周回ごとに作り直さなくても、次の周回の初めは空である。
     interrupted = []
     for display, argv in steps:
         windowed = live is not None and os.path.basename(argv[0]) not in UNWINDOWED
