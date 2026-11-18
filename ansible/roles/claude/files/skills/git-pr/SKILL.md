@@ -267,8 +267,8 @@ main worktree である。ローカルに `<head>` が無ければ、gh はロ�
    マージまで進んだら、最終応答に、stash した変更がマージした PR に入っていないことも書く。
 4. **この PR の head を base にしている open な PR（積んだ PR）が無いこと。** あれば、先に
    その PR の base をこの PR の base へ付け替える。`--delete-branch` で head を消すと、
-   GitHub は積んだ PR を付け替えずに閉じる（2026-10-20 に `gh pr merge --delete-branch` で実測。
-   付け替えると書いた 2020 年の changelog とは違った）。
+   GitHub は積んだ PR を付け替えずに閉じる（2020 年の changelog は付け替えると書いているが、
+   `gh pr merge --delete-branch` で head を消すと閉じる。2026-10-20 に実測）。
 
    ```bash
    gh pr list --base <head> --state open --json number,title,author
