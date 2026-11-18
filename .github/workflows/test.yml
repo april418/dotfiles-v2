@@ -1,0 +1,31 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions: {}
+
+# 既定の bash -e には pipefail が無く、パイプの左の失敗が隠れる。
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # テストも対象のスクリプトも標準ライブラリだけで動くので、ランナーにある python3 で流す。
+      - name: unittest
+        run: |
+          python3 --version
+          python3 -m unittest discover --start-directory tests --verbose
