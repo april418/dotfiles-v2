@@ -46,7 +46,7 @@ def count_mentions(transcript, roots):
                 for r, needle in needles.items():
                     counts[r] += chunk.count(needle)
                 tail = chunk[-overlap:] if overlap else ""
-    except Exception:
+    except OSError:
         return {r: 0 for r in roots}
     return counts
 

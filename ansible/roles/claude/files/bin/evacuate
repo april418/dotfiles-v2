@@ -151,7 +151,8 @@ def move(src, dest):
 
 
 def evacuate(name, paths):
-    base = f"{datetime.date.today().strftime('%Y%m%d')}-{name}"
+    # 名前の日付は手元のタイムゾーンで付け、prune-evacuated も同じタイムゾーンで読む。
+    base = f"{datetime.datetime.now().astimezone().strftime('%Y%m%d')}-{name}"
     workdirs = []
     failed = False
     moved, pending = [], []
