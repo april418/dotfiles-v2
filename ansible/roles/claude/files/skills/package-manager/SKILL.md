@@ -133,27 +133,7 @@ git-push は確認先を優先順で 1 つに絞らず、バージョンを切�
 - `pnpm-workspace.yaml` の `overrides` を変更した場合
 - `pyproject.toml` の依存関係を変更した場合
 
-変更後は lockfile を再生成する:
-
-```bash
-# pnpm
-pnpm install --no-frozen-lockfile
-
-# npm
-npm install
-
-# yarn
-yarn install
-
-# uv
-uv lock
-```
-
-再生成後は差分を確認し、意図した変更のみであることを検証する:
-
-```bash
-git diff pnpm-lock.yaml   # or package-lock.json, yarn.lock, uv.lock
-```
+変更後は lockfile を再生成し（pnpm は `pnpm install --no-frozen-lockfile`）、`git diff` で lockfile の差分が意図した変更だけかを確かめる。
 
 ### CI 環境との一致
 
@@ -170,14 +150,7 @@ lockfile に無いバージョンがその場で解決されて入りうるう�
 
 ### パッケージマネージャーの混在禁止
 
-1つのプロジェクトで複数のパッケージマネージャーを混在させない。
-
-| lockfile            | 使用すべきマネージャー |
-| ------------------- | ---------------------- |
-| `pnpm-lock.yaml`    | pnpm                   |
-| `package-lock.json` | npm                    |
-| `yarn.lock`         | yarn                   |
-| `uv.lock`           | uv                     |
+1つのプロジェクトで複数のパッケージマネージャーを混在させず、lockfile の PM を使う。
 
 `package.json` に `packageManager` があればそれに、無ければ `devEngines.packageManager` があればそれに、ロックファイルより優先して従う（配列ならロックファイルの PM が含まれていればそれ、無ければ先頭）。
 
