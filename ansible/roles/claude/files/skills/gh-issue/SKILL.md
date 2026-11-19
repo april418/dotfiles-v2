@@ -326,7 +326,8 @@ EOF
 
 承認を得たら、親を立ててから（既にある Issue を親にするなら立てない）、依存の先のものから順に sub-issue を立てる。
 依存は `--blocked-by` で持つ。先の sub-issue が閉じるまで後の sub-issue は `blocked` になり、ほかのセッションも
-着手しない。親は、開いた sub-issue があるあいだ `umbrella` になる。親の sub-issue の一覧は、下の最後の行で読む。
+着手しない。親は、開いた sub-issue があるあいだ `umbrella` になる。親の sub-issue の一覧（番号と、
+開いているか閉じたか）は、下の最後の行で読む。着手できるかは、開いたものを `view` で読んで `status` で決める。
 
 ```bash
 gh issue create --repo <OWNER/REPO> --title '<親の題>' --body-file - <<'EOF'
