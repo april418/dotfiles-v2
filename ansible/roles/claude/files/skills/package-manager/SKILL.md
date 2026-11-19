@@ -133,7 +133,7 @@ git-push は確認先を優先順で 1 つに絞らず、バージョンを切�
 - `pnpm-workspace.yaml` の `overrides` を変更した場合
 - `pyproject.toml` の依存関係を変更した場合
 
-変更後は lockfile を再生成し（pnpm は `pnpm install --no-frozen-lockfile`）、`git diff` で lockfile の差分が意図した変更だけかを確かめる。
+変更後は lockfile を消さずに再生成し（pnpm は `pnpm install --no-frozen-lockfile`）、`git diff` で lockfile の差分が意図した変更だけかを確かめる。
 
 ### CI 環境との一致
 
