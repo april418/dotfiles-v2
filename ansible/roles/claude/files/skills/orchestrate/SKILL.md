@@ -260,7 +260,8 @@ SessionStart フックは、判断ログのファイルが大きいと本文を�
 ## 8. PR を出して次の組へ
 
 - PR を出す前に、指示文の改訂や複数ファイルにまたがる設計判断を含むなら、グローバル指示のとおり
-  `implementation-validator` に見せる
+  `implementation-validator` に見せる。同じものを含むのに PR を出さずに push で止めたブランチは、見せていないことを
+  最終応答（9.）に書く。後で PR を作るときに見せるかを、ユーザーが決められるようにするためである
 - Issue ごとに git-pr skill で PR を出す。出すのは、着手の確認で「#N の PR を作る」を選ばれた Issue と、ユーザーが
   PR を名指しした作業だけにし、ほかは git-workflow のルール 0 のとおり push で止める。本文の Issue の参照は
   gh-issue の「閉じ方」に従う
