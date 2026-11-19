@@ -118,7 +118,7 @@ mise use node@<version>
 mise use python@<version>
 ```
 
-バージョン不一致のまま `engine-strict=false` 等で回避するのは **ルール 1 違反** である。
+バージョン不一致のまま `engine-strict=false` 等で回避するのはルール 1 違反である。
 
 git-push skill の push 前のチェックで PM を流すときに限り、Node.js のバージョンの確認と切り替えは、照らさずに流す場面も含めて git-push の node.md の「PATH 解決のフォールバック」（「nvm のバージョンの選び方」を含む）と「PATH で見つけた PM の node のバージョン」に従い、**ルール 2 の例外** とする。
 git-push は確認先を優先順で 1 つに絞らず、バージョンを切り替えるときは `nvm use` の代わりにそのバージョンの `bin` を `PATH` の先頭に足す。合うバージョンが無くても `nvm install` はしない。
@@ -157,7 +157,7 @@ git diff pnpm-lock.yaml   # or package-lock.json, yarn.lock, uv.lock
 
 ### CI 環境との一致
 
-lockfile は **CI と同じ条件**（同じランタイムバージョン、同じ設定）で生成する。
+lockfile は CI と同じ条件（同じランタイムバージョン、同じ設定）で生成する。
 ローカル環境固有のバイパスフラグを使って生成した lockfile は
 CI で `--frozen-lockfile` 実行時に不整合を起こす。
 
