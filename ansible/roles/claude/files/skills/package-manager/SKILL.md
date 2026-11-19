@@ -118,7 +118,7 @@ mise use node@<version>
 mise use python@<version>
 ```
 
-バージョン不一致のまま `engine-strict=false` 等で回避するのは **ルール 1 違反** である。
+バージョン不一致のまま `engine-strict=false` 等で回避するのはルール 1 違反である。
 
 git-push skill の push 前のチェックで PM を流すときに限り、Node.js のバージョンの確認と切り替えは、照らさずに流す場面も含めて git-push の node.md の「PATH 解決のフォールバック」（「nvm のバージョンの選び方」を含む）と「PATH で見つけた PM の node のバージョン」に従い、**ルール 2 の例外** とする。
 git-push は確認先を優先順で 1 つに絞らず、バージョンを切り替えるときは `nvm use` の代わりにそのバージョンの `bin` を `PATH` の先頭に足す。合うバージョンが無くても `nvm install` はしない。
@@ -133,31 +133,11 @@ git-push は確認先を優先順で 1 つに絞らず、バージョンを切�
 - `pnpm-workspace.yaml` の `overrides` を変更した場合
 - `pyproject.toml` の依存関係を変更した場合
 
-変更後は lockfile を再生成する:
-
-```bash
-# pnpm
-pnpm install --no-frozen-lockfile
-
-# npm
-npm install
-
-# yarn
-yarn install
-
-# uv
-uv lock
-```
-
-再生成後は差分を確認し、意図した変更のみであることを検証する:
-
-```bash
-git diff pnpm-lock.yaml   # or package-lock.json, yarn.lock, uv.lock
-```
+変更後は lockfile を消さずに再生成し（pnpm は `pnpm install --no-frozen-lockfile`）、`git diff` で lockfile の差分が意図した変更だけかを確かめる。
 
 ### CI 環境との一致
 
-lockfile は **CI と同じ条件**（同じランタイムバージョン、同じ設定）で生成する。
+lockfile は CI と同じ条件（同じランタイムバージョン、同じ設定）で生成する。
 ローカル環境固有のバイパスフラグを使って生成した lockfile は
 CI で `--frozen-lockfile` 実行時に不整合を起こす。
 
@@ -170,14 +150,7 @@ lockfile に無いバージョンがその場で解決されて入りうるう�
 
 ### パッケージマネージャーの混在禁止
 
-1つのプロジェクトで複数のパッケージマネージャーを混在させない。
-
-| lockfile            | 使用すべきマネージャー |
-| ------------------- | ---------------------- |
-| `pnpm-lock.yaml`    | pnpm                   |
-| `package-lock.json` | npm                    |
-| `yarn.lock`         | yarn                   |
-| `uv.lock`           | uv                     |
+1つのプロジェクトで複数のパッケージマネージャーを混在させず、lockfile の PM を使う。
 
 `package.json` に `packageManager` があればそれに、無ければ `devEngines.packageManager` があればそれに、ロックファイルより優先して従う（配列ならロックファイルの PM が含まれていればそれ、無ければ先頭）。
 
