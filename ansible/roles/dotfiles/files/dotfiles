@@ -909,14 +909,17 @@ def command_version(name, pattern):
     path = os.path.join(HOME, ".local", "bin", name)
     if not os.path.isfile(path):
         return None
-    m = re.match(pattern, run([path, "--version"], 10)[0].strip())
-    return m.group(1) if m else None
+    out = run([path, "--version"], 10)[0].strip()
+    m = re.match(pattern, out)
+    if not m:
+        raise ValueError(f"{name} --version の出力からバージョンを読めない（{out[:40]!r}）")
+    return m.group(1)
 
 
 def awscli_version():
     directory = os.path.join(DATA_HOME, "aws-cli")
     if sys.platform == "darwin":
-        # `aws --version` は起動に 1 秒近くかかる。install.sh が導入先に残す記録を読む。
+        # `aws --version` は起動に 0.2〜0.9 秒かかり、シェルを開くたびには流せない。install.sh が導入先に残す記録を読む。
         record = read_json(os.path.join(directory, "awscli", "data", "install.json")) or {}
         version = (record.get("script_install") or {}).get("version_resolved")
         installed = os.path.exists(os.path.join(directory, "aws"))
@@ -941,8 +944,8 @@ def claude_plugin_version(name):
     return None
 
 
-# 目印を付けた変数ごとの、入っているバージョンの読み方。ロールの tasks がバージョンを比べるのと同じものを読む。
-# 入っていなければ None を返す。目印を足したら、ここにも足す。
+# 目印を付けた変数ごとの、入っているバージョンの読み方。ロールが入れる導入先を読む（awscli は記録のファイル、
+# yomiyasu は Claude Code の記録）。入っていなければ None を返す。目印を足したら、ここにも足す。
 INSTALLED_VERSIONS = {
     "awscli_version": awscli_version,
     "claude_yomiyasu_version": lambda: claude_plugin_version("yomiyasu@yomiyasu"),
@@ -1045,7 +1048,8 @@ class TagPin(Pin):
         return self._installed
 
     def fetch(self):
-        if self.problem or self.name in CHECKED_AS_TOOL:
+        # 入っていないものの取得に失敗しても、このマシンには関係が無い。取得しなければ失敗の通知も出ない。
+        if self.problem or self.name in CHECKED_AS_TOOL or self.installed() is None:
             return {}
         out = run(["git", "ls-remote", "--tags", "--refs", self.url], FETCH_TIMEOUT)[0]
         tags = set(re.findall(rf"refs/tags/({re.escape(self.prefix)}v?\d+(?:\.\d+)+)$", out, re.MULTILINE))
@@ -1060,9 +1064,17 @@ class TagPin(Pin):
 
     def skipped(self, data):
         if self.name in CHECKED_AS_TOOL:
-            return f"ツールの {CHECKED_AS_TOOL[self.name]} で確かめる"
+            # ツールの節は入っていないものを出さないので、ここで入っていないことを言う。
+            return (
+                "このマシンに入っていない"
+                if Nvm.locate() is None
+                else f"ツールの {CHECKED_AS_TOOL[self.name]} で確かめる"
+            )
         if self.installed() is None:
             return "このマシンに入っていない"
+        # 入っていなかったときの取得の結果には最新が無い。そのまま ✓ にすると確かめたように読める。
+        if "latest" not in data:
+            return "最新版をまだ取得していない（次の取得で確かめる）"
         return None
 
     def evaluate(self, data):
@@ -1070,7 +1082,9 @@ class TagPin(Pin):
         if latest is None or self.name in CHECKED_AS_TOOL:
             return None
         installed = self.installed()
-        if version_key(installed) is None or version_key(installed) >= version_key(latest):
+        if installed is not None and version_key(installed) is None:
+            raise ValueError(f"入っているバージョンを読めない（{installed!r}）")
+        if installed is None or version_key(installed) >= version_key(latest):
             return None
         summary = f"{self.name} {installed} → {latest}"
         when = f"（{data['published'][:10]} 公開）" if data.get("published") else "（公開日は確かめていない）"
@@ -1116,7 +1130,7 @@ def check_pins(repo, remote=None):
     if repo is None:
         section["note"] = "checkout が見つからないため確かめていない"
         return section
-    if remote and count(repo, f"HEAD..{remote}", DEPLOYED_PATH, ".github/workflows"):
+    if remote and count(repo, f"HEAD..{remote}", DEPLOYED_PATH):
         # 古いファイルを見て直すよう勧めると、上流で直した変更とぶつかる。
         section["note"] = "checkout が origin より遅れているため、取り込んでから確かめる"
         return section
@@ -1490,8 +1504,8 @@ def run_notify(fmt, style="plain"):
 
 # ---------------------------------------------------------------- 更新
 #
-# 更新できるものを 3 つに分けて聞き、選ばれたものの手順を実行する。固定バージョンは
-# リポジトリを直す必要があるので含めない。
+# 更新できるものを 3 つに分けて聞き、選ばれたものの手順を実行する。固定バージョンは、固定が古ければ
+# リポジトリを直す必要があり、固定が最新ならプレイブックを流すだけで dotfiles 本体の適用と重なるので含めない。
 
 
 UPDATE_GROUPS = [
