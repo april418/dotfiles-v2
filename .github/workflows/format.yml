@@ -24,7 +24,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # バージョンは手元に入れるロールの vars から読み、手元と揃える。固定の更新は dotfiles pins が知らせる。
+      # バージョンは手元に入れるロールの vars から読み、手元と揃える。手元が古くなったら dotfiles check が知らせる。
       - name: Read pinned versions
         id: versions
         run: |

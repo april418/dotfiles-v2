@@ -36,7 +36,6 @@ _dotfiles() {
         'notify:前回取得した状態から通知を出す'
         'update:更新できるものを表示し、選んだものを更新する'
         'refresh:リモートを取得する'
-        'pins:キャッシュを使わずに固定バージョンだけを確かめる'
         'character:Claude Code のキャラクターを表示する。set で切り替える'
       )
       _describe -t commands 'dotfiles command' commands && ret=0
@@ -57,11 +56,6 @@ _dotfiles() {
             '--only=[聞かずに更新する対象]:target:_sequence compadd - dotfiles tools brew all' \
             '--startup[シェルの起動時に呼ぶ]' \
             '--style=[見た目]:style:(plain powerline)' && ret=0
-          ;;
-        pins)
-          _arguments $help \
-            '--repo=[走査するリポジトリ]:repository:_directories' \
-            '--format=[出力の形式]:format:(text markdown)' && ret=0
           ;;
         character)
           _arguments -C $help \

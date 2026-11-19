@@ -201,7 +201,8 @@ yomiyasu の lint と check は Python 3 の標準ライブラリで動き、ski
 check は原稿の写しと記録を git の最上位の `.yomiyasu/`（環境変数 `YOMIYASU_STATE_DIR` で変えられる）に書き、
 既定の場所では `.gitignore` も置くので git の管理には入らない。Python が無いと、検査を飛ばして目視で点検する。
 
-新しいバージョンの公開から 1 週間たつと `dotfiles check` が知らせる。`claude_yomiyasu_version` を書き換えてプレイブックを流すと、
+入っているバージョン（`~/.claude/plugins/installed_plugins.json`）より新しいバージョンが公開から 1 週間たつと、`dotfiles check` が知らせる。
+`claude_yomiyasu_version` を書き換えてプレイブックを流すと、
 取得済みのマーケットプレイスの source が宣言と食い違い、プラグインは読み込まれなくなる（`claude plugin list` が
 `failed to load` と `added but ignored` を出す）。前に別のバージョンや `ref` なしで足していたマシンに初めて配ったときも同じになる。
 宣言のバージョンでマーケットプレイスを足し直してから、プラグインをそのバージョンに合わせる。足し直すだけではバージョンは変わらず、
@@ -214,9 +215,9 @@ claude plugin update yomiyasu@yomiyasu
 
 Codex の側は手で揃えなくてよい。プレイブックが clone を新しいタグへ checkout し直し、リンクはそのまま新しいバージョンを指す。
 
-frontend-design は、固定した SKILL.md が上流で変わってから 1 週間たつと `dotfiles check` が知らせる（SKILL.md 以外の
-ファイルの変更は知らせない）。`claude_frontend_design_skill_url` の SHA を書き換えてプレイブックを流すと、
-marketplace.json の `sha` が変わる。宣言のパスは変わらないので、yomiyasu のように読み込まれなくなることはない。
+`dotfiles check` は入っているバージョンを最新と比べるが、コミット SHA で固定した frontend-design は入っているバージョンを
+読めないので、その更新は知らせない。上げるときは上流の履歴を見て、`claude_frontend_design_skill_url` の SHA を書き換えてプレイブックを流す。
+すると marketplace.json の `sha` が変わる。宣言のパスは変わらないので、yomiyasu のように読み込まれなくなることはない。
 続けてプラグインを更新する。
 
 ```sh
@@ -248,7 +249,7 @@ Codex の側も外すときは、`ansible/roles/codex/tasks/skills.yml` から�
 
 frontend-design を外すときは、vars から `claude_frontend_design_skill_url`・`claude_frontend_design_source`・
 `claude_marketplace_dir`・`claude_marketplace` と、`claude_plugin_settings` の `dotfiles` と `frontend-design@dotfiles` を消す。
-URL が残ると、`dotfiles check` が更新を知らせ続ける。ただし Codex の側に残すときは、`codex` ロールがこの URL を読むので
+ただし Codex の側に残すときは、`codex` ロールがこの URL を読むので
 `claude_frontend_design_skill_url` は残す。tasks からも、Check the pinned frontend-design URL から
 Write the dotfiles marketplace までの 3 つと、末尾の Check if installed_plugins.json exists から
 Report the old frontend-design skill までの 5 つを消す。そのうえで `claude plugin marketplace remove dotfiles` を流す。

@@ -164,7 +164,7 @@
   when: not ansible_check_mode
   loop:
     # main の追従ではなくコミット SHA で固定する。上流はリポジトリの構成変更や
-    # ファイルの再配置が多く、追従するとビルドが壊れる。更新と移動は dotfiles check が知らせる。
+    # ファイルの再配置が多く、追従するとビルドが壊れる。更新は知らせないので、上げるときは上流の履歴を見る。
     - url: https://raw.githubusercontent.com/mizchi/skills/a41865b34b78f2675a6c73178377a5bcc1b492c6/empirical-prompt-tuning/SKILL.md
       dest: empirical-prompt-tuning/SKILL.md
   loop_control:
