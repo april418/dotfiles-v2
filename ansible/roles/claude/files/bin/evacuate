@@ -183,9 +183,9 @@ def evacuate(name, paths):
             continue
         print(f"evacuated: {src}\n  → {dest}")
         moved.append(dest)
-    for label, dests in (("", moved), (" after the user runs sudo mv", pending)):
+    for label, dests in (("", moved), (" once sudo mv is done", pending)):
         if dests:
-            print(f"\nThe SessionStart hook deletes these after {RETENTION_DAYS} days. To restore them{label}:")
+            print(f"\nRestore{label} (deleted after {RETENTION_DAYS} days):")
             print("  evacuate --restore " + " ".join(shlex.quote(d) for d in dests))
     return not failed
 
