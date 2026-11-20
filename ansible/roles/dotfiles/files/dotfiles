@@ -896,7 +896,7 @@ def check_tools(remarks=False):
 # 公開から日が浅いバージョンは勧めない。pnpm の minimum-release-age と uv の exclude-newer（どちらも 1 週間）に
 # 揃える。リリースの無いタグはコミットの日時で測るので、日時を偽った上流の乗っ取りまでは防げない。
 PIN_COOLDOWN = 7 * 24 * 60 * 60
-# 一覧に載らなかったタグの公開日時（リリースかコミットの日時）を引く回数の上限。aws-cli は平日に毎日新しい
+# 一覧に載らなかったタグの公開日時を、リリースとコミットのそれぞれで引く回数の上限。aws-cli は平日に毎日新しい
 # バージョンを出すので、PIN_COOLDOWN の中に 8 件並ぶことがある。足りないと最新版を確かめられず、取得の失敗になる。
 TAG_LOOKUP_LIMIT = 15
 # リリースの一覧を 1 回に取る件数。openai/codex はリリース 1 件に 400 KB ほどのアセットの一覧が付き、100 件だと
@@ -998,15 +998,16 @@ def settled_tag(owner, name, tags, releases=None):
         releases = github_api(f"/repos/{owner}/{name}/releases?per_page={RELEASES_PER_PAGE}")
         paged = len(releases) >= RELEASES_PER_PAGE
     releases = {r["tag_name"]: r for r in releases}
-    lookups = 0
+    # リリースの無いタグはリリースとコミットの両方を引くので、上限を分けて数える。
+    lookups = {"releases": 0, "commits": 0}
 
     def lookup(path):
-        nonlocal lookups
-        if lookups >= TAG_LOOKUP_LIMIT:
+        kind = path.split("/")[4]
+        if lookups[kind] >= TAG_LOOKUP_LIMIT:
             raise FetchError(
                 f"公開から日が経ったバージョンを見つけられない（公開日時を {TAG_LOOKUP_LIMIT} 回まで引いた）"
             )
-        lookups += 1
+        lookups[kind] += 1
         status, body = http_get(f"{GITHUB_API}{path}", token=github_token())
         if status == 404:
             return None
@@ -2218,7 +2219,10 @@ def parse_steps(value):
 def step(argv, repo, capture=False):
     """コマンドを表示してから流す。0 以外で終わったら BumpError を投げる。capture なら stdout を返す。"""
     print("$ " + shlex.join(argv), flush=True)
-    p = subprocess.run(argv, cwd=repo, stdout=subprocess.PIPE if capture else None, text=True, check=False)
+    try:
+        p = subprocess.run(argv, cwd=repo, stdout=subprocess.PIPE if capture else None, text=True, check=False)
+    except OSError as e:
+        raise BumpError(f"{argv[0]} を起動できない（{e.strerror or e}）")
     if p.returncode != 0:
         raise BumpError(f"{os.path.basename(argv[0])} が {p.returncode} で終了した")
     return p.stdout if capture else None
@@ -2237,7 +2241,45 @@ def require_base(repo, remote, what):
     if branch != base:
         raise BumpError(f"{what}は {base} の上で流す（今は {branch or 'detach した HEAD'}）")
     if git(repo, "rev-parse", "HEAD") != git(repo, "rev-parse", remote):
-        raise BumpError(f"{base} が {remote} と揃っていない（git pull --rebase origin {base} で揃えてから流す）")
+        # 配置に使う checkout なので、check_dotfiles の取り込みと同じく、手元のコミットを書き換えない形で揃える。
+        raise BumpError(f"{base} が {remote} と揃っていない（git pull --ff-only origin {base} で揃えてから流す）")
+
+
+def sync_base(repo, remote):
+    """既定ブランチが remote より遅れているだけなら、早送りで取り込む。"""
+    base = remote.split("/", 1)[1]
+    if (
+        git(repo, "symbolic-ref", "--quiet", "--short", "HEAD") == base
+        and git(repo, "rev-parse", "HEAD") != git(repo, "rev-parse", remote)
+        and git(repo, "merge-base", "--is-ancestor", "HEAD", remote) is not None
+    ):
+        step(["git", "pull", "--ff-only", "origin", base], repo)
+
+
+def bump_branch():
+    return f"feature/pins-bump-{time.strftime('%Y%m%d')}"
+
+
+def pr_preflight(repo, remote):
+    """pr を流せるかを、書き換えと push の前に確かめる。"""
+    require_base(repo, remote, "pr ")
+    # 前に write で書き換えた固定値は通し、ほかの変更があればここで止める。
+    pin_changes(repo)
+    branch = bump_branch()
+    if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None or (
+        git(repo, "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}") is not None
+    ):
+        raise BumpError(f"{branch} がもうある。前の PR を片付けてから流す")
+    # gh が使えないと分かるのが push の後だと、ブランチだけがリモートに残る。
+    listed = step(["gh", "pr", "list", "--state", "open", "--json", "headRefName,url"], repo, capture=True)
+    try:
+        prs = json.loads(listed or "[]")
+    except ValueError:
+        raise BumpError("gh pr list の出力を JSON として読めない")
+    opened = [p.get("url") for p in prs if str(p.get("headRefName", "")).startswith("feature/pins-bump-")]
+    if opened:
+        # 同じ固定値を上げる PR が並ぶと、どちらをマージするかで食い違う。
+        raise BumpError(f"固定値を上げる PR がまだ開いている（{', '.join(opened)}）。マージするか閉じてから流す")
 
 
 def bump_write(repo, names, dry_run):
@@ -2299,8 +2341,14 @@ def pin_changes(repo):
 
     固定値の行のほかに変更があれば BumpError を投げる。PR に説明していない変更を混ぜないため。
     """
+    # 作業ツリーと HEAD が同じでも、index にだけある変更はコミットに入る。
+    staged = git(repo, "diff", "--cached", "--name-only")
+    if staged:
+        raise BumpError(
+            f"ステージした変更がある（{staged.splitlines()[0]} など）。git restore --staged で外してから流す"
+        )
     changed = git(repo, "diff", "--name-only", "HEAD")
-    if changed is None:
+    if staged is None or changed is None:
         raise BumpError("git diff を読めない")
     pin_lines = {}
     for pin in find_pins(repo):
@@ -2308,7 +2356,11 @@ def pin_changes(repo):
             pin_lines.setdefault(pin.rel, set()).add(pin.line - 1)
     found = []
     for rel in changed.splitlines():
-        old = git(repo, "show", f"HEAD:{rel}")
+        # git() は出力の前後の空白を落とすので、行を比べるにはそのままの中身を読む。
+        shown_old = subprocess.run(
+            ["git", "-C", repo, "show", f"HEAD:{rel}"], capture_output=True, text=True, env=CHILD_ENV, check=False
+        )
+        old = shown_old.stdout if shown_old.returncode == 0 else None
         try:
             with open(os.path.join(repo, rel), encoding="utf-8") as f:
                 new = f.read()
@@ -2325,7 +2377,8 @@ def pin_changes(repo):
             raise BumpError(f"固定値の行のほかにも変更がある（{rel}）。コミットするか退避してから流す")
         for i in differ:
             before, after = KEY_VALUE.match(old_lines[i]), KEY_VALUE.match(new_lines[i])
-            if not before or before.group(1) != after.group(1):
+            # クォートや行末のコメントだけを変えた行は、上げた固定値として PR に載せない。
+            if not before or before.group(1) != after.group(1) or before.group(2) == after.group(2):
                 raise BumpError(f"固定値の行のほかにも変更がある（{rel}:{i + 1}）")
             found.append((after.group(1), before.group(2), after.group(2), rel))
     return found
@@ -2343,6 +2396,10 @@ def wait_checks(repo, url):
                 break
         except ValueError:
             pass
+        # チェックがまだ出ていないときのほかの失敗（認証、PR が無い）は、待っても変わらない。
+        if p.returncode not in (0, 8) and "no checks reported" not in p.stderr:
+            lines = [line for line in p.stderr.splitlines() if line.strip()]
+            raise BumpError(f"gh pr checks が失敗したので、マージしていない（{lines[-1] if lines else p.returncode}）")
         if time.time() >= deadline:
             raise BumpError(f"{CHECKS_APPEAR_TIMEOUT} 秒待っても CI のチェックが出てこないので、マージしていない")
         time.sleep(5)
@@ -2354,17 +2411,13 @@ def wait_checks(repo, url):
 
 def bump_pr(repo, remote, merge):
     """書き換えた固定値をブランチにコミットして PR を作る。merge ならマージして既定ブランチを取り込む。"""
-    require_base(repo, remote, "pr ")
+    pr_preflight(repo, remote)
     changes = pin_changes(repo)
     if not changes:
         print("コミットする固定値の変更が無い")
         return
     base = remote.split("/", 1)[1]
-    branch = f"feature/pins-bump-{time.strftime('%Y%m%d')}"
-    if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None or (
-        git(repo, "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}") is not None
-    ):
-        raise BumpError(f"{branch} がもうある。前の PR を片付けてから流す")
+    branch = bump_branch()
     listed = "\n".join(f"- {name}: {old} → {new}" for name, old, new, _ in changes)
     subject = "chore(ansible): 固定バージョンを上げる"
     after = [command for name, _, new, _ in changes if name in AFTER_APPLY for command in AFTER_APPLY[name](new)]
@@ -2374,19 +2427,35 @@ def bump_pr(repo, remote, merge):
         "マージした後、各マシンで `dotfiles bump --steps apply` を流す（プレイブックを流し、"
         + ("続けて " + "、".join(f"`{c}`" for c in after) + " を流す）。" if after else "その後の手順は無い）。")
     )
-    step(["git", "switch", "-c", branch, remote, "--no-track"], repo)
-    step(["git", "add", "--", *sorted({rel for *_, rel in changes})], repo)
-    step(["git", "commit", "-m", subject, "-m", listed], repo)
-    step(["git", "push", "-u", "origin", branch], repo)
-    url = step(
-        ["gh", "pr", "create", "--base", base, "--head", branch, "--title", subject, "--body", body], repo, capture=True
-    ).strip()
-    print(url)
-    if merge:
-        wait_checks(repo, url)
-        # --delete-branch は手元のブランチの切り替えと削除も gh に任せるので使わず、下で git に流させる。
-        step(["gh", "pr", "merge", url, "--merge"], repo)
-    step(["git", "switch", base], repo)
+    done = []
+    try:
+        step(["git", "switch", "-c", branch, remote, "--no-track"], repo)
+        done.append(f"{branch} を切った")
+        # パスを渡すと、index にほかの変更があってもこのファイルだけをコミットする。
+        step(["git", "commit", "-m", subject, "-m", listed, "--", *sorted({rel for *_, rel in changes})], repo)
+        done.append("コミットした")
+        step(["git", "push", "-u", "origin", branch], repo)
+        done.append("push した")
+        url = step(
+            ["gh", "pr", "create", "--base", base, "--head", branch, "--title", subject, "--body", body],
+            repo,
+            capture=True,
+        ).strip()
+        print(url)
+        done.append(f"PR を作った（{url}）")
+        if merge:
+            wait_checks(repo, url)
+            # --delete-branch は手元のブランチの切り替えと削除も gh に任せるので使わず、下で git に流させる。
+            step(["gh", "pr", "merge", url, "--merge"], repo)
+            done.append("マージした")
+        step(["git", "switch", base], repo)
+    except BumpError as e:
+        # 再実行は require_base で止まるので、続けるか戻すかは手で決める。
+        raise BumpError(
+            f"{e}。済んだこと: {'、'.join(done) or 'なし'}。"
+            f"続けるなら残りを手で流す。戻すなら git switch {base} のあと git branch -D {branch} を流し、"
+            f"push していれば PR を閉じて git push origin --delete {branch} も流す"
+        )
     if not merge:
         print(f"PR をマージした後に dotfiles bump --steps apply を流す。{branch} は手元に残している")
         return
@@ -2399,7 +2468,9 @@ def bump_pr(repo, remote, merge):
 
 def bump_apply(repo, remote):
     """プレイブックを流し、プレイブックだけでは入れ替わらないものの手順（AFTER_APPLY）も流す。"""
-    # マージしていない固定値を入れると、このマシンだけほかのマシンとずれる。
+    # マージしていない固定値を入れると、このマシンだけほかのマシンとずれる。マージした後にほかのマシンで流すときは
+    # 遅れているので、先に取り込む。
+    sync_base(repo, remote)
     require_base(repo, remote, "apply ")
     if git(repo, "diff", "--name-only", "HEAD", "--", DEPLOYED_PATH):
         raise BumpError(f"{DEPLOYED_PATH}/ にコミットしていない変更がある（PR にしてマージしてから流す）")
@@ -2409,6 +2480,9 @@ def bump_apply(repo, remote):
         raise BumpError(
             f"ansible-playbook が起動しない（{problem}）。{shown(os.path.join(repo, 'install'))} を流し直す"
         )
+    if os.uname().sysname != "Darwin" and os.geteuid() != 0 and find_tool("sudo"):
+        # check_dotfiles の手順と同じく、認証が残っていないと ansible は聞かずに "Missing sudo password" で失敗する。
+        step(["sudo", "-v"], repo)
     step([playbook_bin, os.path.join(repo, "ansible", "playbook.yml"), "--connection=local"], repo)
     for pin in find_pins(repo):
         if not isinstance(pin, TagPin) or pin.name not in AFTER_APPLY:
@@ -2437,6 +2511,8 @@ def run_bump(names, steps, merge, dry_run):
         usage = "--merge は pr と使う"
     elif {"pr", "apply"} <= steps and not merge:
         usage = "pr の後に apply を流すには --merge を付ける（マージ前に流すと、このマシンだけ上げた値が入る）"
+    elif {"write", "apply"} <= steps and "pr" not in steps:
+        usage = "write の後に apply を流すには pr と --merge も付ける（書き換えた値はマージしてから入れる）"
     if usage:
         print(f"dotfiles bump: {usage}", file=sys.stderr)
         return 2
@@ -2446,9 +2522,9 @@ def run_bump(names, steps, merge, dry_run):
         return 2
     try:
         step(["git", "fetch", "origin"], repo)
-        if "pr" in steps:
+        if {"write", "pr"} <= steps:
             # 書き換えた後に流せないと分かるより、先に止まるほうが手戻りが無い。
-            require_base(repo, remote, "pr ")
+            pr_preflight(repo, remote)
         if "write" in steps:
             if count(repo, f"HEAD..{remote}", DEPLOYED_PATH):
                 raise BumpError(
@@ -2466,7 +2542,10 @@ def run_bump(names, steps, merge, dry_run):
                 return 1
             if not changes and not pin_changes(repo):
                 print("上げる固定値は無い")
-                return 0
+                # マージ済みの固定値をまだ入れていないマシンもあるので、apply は流す。
+                if "apply" not in steps:
+                    return 0
+                steps = steps - {"pr"}
         if "pr" in steps:
             bump_pr(repo, remote, merge)
         if "apply" in steps:

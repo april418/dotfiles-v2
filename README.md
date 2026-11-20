@@ -29,9 +29,10 @@ dotfiles bump --steps all --merge  # 書き換えから、PR、マージ、プ�
 dotfiles bump --steps apply        # PR をマージした後に、ほかのマシンで流す
 ```
 
-`pr` と `apply` は master の上で origin/master と揃っているときだけ流れる。`pr` は固定値の行のほかに変更があると
-止まる。`apply` は、マージしていない固定値をこのマシンだけに入れないよう、`ansible/` にコミットしていない変更があると
-止まる。同じ理由で、`pr` の後に続けて `apply` を流すには `--merge` が要る。
+`pr` は master の上で origin/master と揃っているときだけ流れる。固定値の行のほかに変更があるときと、固定値を上げる
+PR がまだ開いているときは止まる。`apply` は、master が origin/master より遅れていれば `git pull --ff-only` で取り込んでから
+流す。マージしていない固定値をこのマシンだけに入れないよう、`apply` は `ansible/` にコミットしていない変更があると止まる。
+同じ理由で、`write` や `pr` の後に続けて `apply` を流すには、`pr` と `--merge` が要る。上げるものが無いときも `apply` は流す。
 
 ## Codex / ChatGPT のグローバル指示
 
