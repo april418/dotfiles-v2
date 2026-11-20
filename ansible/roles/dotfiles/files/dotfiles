@@ -1576,10 +1576,15 @@ def say(style, plain, color="info", icon=None, title=None, items=(), indent=0):
 
 
 def say_kind(style, kind, text, indent=0):
-    """KINDS の印を付けて 1 行出す。powerline ではアイコンにだけ背景を敷き、text を続ける。"""
-    # text の頭のツールや固定バージョンの名前まで背景を敷くと、節の見出しと見分けにくい。
+    """KINDS の印を付けて 1 行出す。powerline では印を色付きのアイコンに替え、背景は敷かない。"""
     mark, color, icon = KINDS[kind]
-    say(style, f"{' ' * indent}{mark} {text}", color, icon, items=[text], indent=indent)
+    if style != "powerline":
+        print(f"{' ' * indent}{mark} {text}", flush=True)
+        return
+    # 節の中の項目や一覧の行なので、背景は節の見出しにだけ残して見分けやすくする。
+    text = text.replace(" → ", " \uf061 ")
+    body = f"{PL_COLORS['info']}{text}\033[0m" if color == "info" else text
+    print(f"{' ' * indent}{PL_COLORS[color]}{PL_ICONS[icon]}\033[0m {body}", flush=True)
 
 
 def run_notify(fmt, style="plain"):
