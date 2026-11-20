@@ -41,7 +41,7 @@ _dotfiles_pins() {
 _dotfiles() {
   local curcontext=$curcontext state state_descr line ret=1
   typeset -A opt_args
-  local -a help=('(- : *)'{-h,--help}'[ヘルプを表示する]')
+  local -a help=('(- : *)'{-h,--help}'[show help]')
 
   _arguments -C $help \
     '1: :->command' \
@@ -50,12 +50,12 @@ _dotfiles() {
   case $state in
     command)
       local -a commands=(
-        'check:更新の有無と更新手順を表示する'
-        'notify:前回取得した状態から通知を出す'
-        'update:更新できるものを表示し、選んだものを更新する'
-        'bump:固定バージョンを最新に上げる'
-        'refresh:リモートを取得する'
-        'character:Claude Code のキャラクターを表示する。set で切り替える'
+        'check:fetch and show updates'
+        'notify:notify from the last fetch'
+        'update:choose and apply updates'
+        'bump:bump pins to the latest'
+        'refresh:fetch'
+        'character:show or switch the Claude Code character'
       )
       _describe -t commands 'dotfiles command' commands && ret=0
       ;;
@@ -67,20 +67,20 @@ _dotfiles() {
           ;;
         notify)
           _arguments $help \
-            '--format=[出力の形式]:format:(text claude)' \
-            '--style=[見た目]:style:(plain powerline)' && ret=0
+            '--format=[output format]:format:(text claude)' \
+            '--style=[style]:style:(plain powerline)' && ret=0
           ;;
         update)
           _arguments $help \
-            '--only=[聞かずに更新する対象]:target:_sequence compadd - dotfiles tools brew all' \
-            '--startup[シェルの起動時に呼ぶ]' \
-            '--style=[見た目]:style:(plain powerline)' && ret=0
+            '--only=[update without asking]:target:_sequence compadd - dotfiles tools brew all' \
+            '--startup[for shell startup]' \
+            '--style=[style]:style:(plain powerline)' && ret=0
           ;;
         bump)
           _arguments $help \
-            '--steps=[流すステップ]:step:_sequence compadd - write pr apply all' \
-            '--merge[CI を待って PR をマージする]' \
-            '--dry-run[書き換えずに上がるものだけを表示する]' \
+            '--steps=[steps to run]:step:_sequence compadd - write pr apply all' \
+            '--merge[wait for CI and merge the PR]' \
+            '--dry-run[show bumps without editing]' \
             '*:pinned variable:_dotfiles_pins' && ret=0
           ;;
         character)
@@ -89,7 +89,7 @@ _dotfiles() {
             '*:: :->character_argument' && ret=0
           case $state in
             character_command)
-              local -a character_commands=('set:キャラクターを切り替える。名前を省くと聞く')
+              local -a character_commands=('set:switch the character')
               _describe -t commands 'dotfiles character command' character_commands && ret=0
               ;;
             character_argument)
