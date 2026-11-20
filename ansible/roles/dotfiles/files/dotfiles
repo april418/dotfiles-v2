@@ -1366,8 +1366,13 @@ def spawn_refresh():
 # ---------------------------------------------------------------- 表示
 
 
-def print_notice(found, style):
-    say_kind(style, "update", found["summary"], indent=2)
+def print_notice(found, style, name=None):
+    """name は項目の名前。summary がその名前で始まれば、powerline で名前を見出しにする。"""
+    summary = found["summary"]
+    if name and summary.startswith(name + " "):
+        say_kind(style, "update", summary, 2, name, [summary[len(name) + 1 :]])
+    else:
+        say_kind(style, "update", summary, indent=2)
     # 手順はコピーして流すので、powerline でもセグメントに入れない。
     for command in found["commands"]:
         print(f"      {command}")
@@ -1411,14 +1416,14 @@ def run_check(style):
         unknown |= found_unknown
     if update_groups(dotfiles, tools):
         print()
-        say(style, "Update: dotfiles update")
+        say(style, "Update: dotfiles update", title="Update", items=["dotfiles update"])
     return updates, unknown
 
 
 def print_items(section, empty, style, icon):
     """節を表示し、(更新があるか, 判定できなかったものがあるか) を返す。icon は PL_ICONS のキー。"""
     updates = unknown = False
-    say(style, section["label"], "section", icon)
+    say(style, section["label"], "section", icon, section["label"])
     if section.get("note"):
         say_kind(style, "note", section["note"], indent=2)
     elif not section["items"]:
@@ -1429,7 +1434,7 @@ def print_items(section, empty, style, icon):
             say_kind(style, "warn", f"{name}: {item['problem']}", 2, name, [item["problem"]])
             unknown = True
         if item["notice"]:
-            print_notice(item["notice"], style)
+            print_notice(item["notice"], style, name)
             updates = True
         elif item["problem"]:
             # 前回の結果は残しているが、確かめていない理由や ✓ まで出すと今回も確かめたように読める。
@@ -1437,7 +1442,7 @@ def print_items(section, empty, style, icon):
         elif item["skipped"]:
             say_kind(style, "note", f"{name}: {item['skipped']}", 2, name, [item["skipped"]])
         else:
-            say_kind(style, "ok", name, indent=2)
+            say_kind(style, "ok", name, 2, name)
         if item.get("remark"):
             say_kind(style, "note", f"{name}: {item['remark']}", 2, name, [item["remark"]])
     return updates, unknown
@@ -1447,7 +1452,6 @@ def print_items(section, empty, style, icon):
 # .zshrc の SPROMPT や補完のメッセージで使っている色とアイコンと同じものを使う。
 PL_BG = "\033[48;5;236m"
 PL_END = "\033[0m\033[38;5;236m\ue0b0\033[0m"
-PL_SEP = " \033[38;5;244m\ue0b1\033[38;5;007m "
 PL_DEFAULT = "\033[38;5;007m"
 PL_COLORS = {
     "warn": "\033[38;5;003m",
@@ -1483,8 +1487,9 @@ KINDS = {
     "note": ("-", "info", "info"),
     "bump": ("↑", "update", "update"),
 }
-NOTIFY_FOOTER = "Details: dotfiles check"
-UPDATE_FOOTER = "Details: dotfiles check / Update: dotfiles update"
+# (見出し, コマンド) の並び。powerline では見出しにだけ背景を敷く。
+NOTIFY_FOOTER = [("Details", "dotfiles check")]
+UPDATE_FOOTER = NOTIFY_FOOTER + [("Update", "dotfiles update")]
 
 
 def notify_rows(repo, dotfiles, tools):
@@ -1511,7 +1516,8 @@ def notify_rows(repo, dotfiles, tools):
 
 def render_plain(rows, footer=None):
     lines = []
-    for _, color, title, items in rows + ([("info", "info", footer, [])] if footer else []):
+    footer = [("info", "info", " / ".join(f"{key}: {value}" for key, value in footer), [])] if footer else []
+    for _, color, title, items in rows + footer:
         if color == "info":
             lines.append(f"  {title}")
             continue
@@ -1520,17 +1526,29 @@ def render_plain(rows, footer=None):
     return "\n".join(lines)
 
 
-def segment(color, icon, title, items=()):
-    """Nerd Font（fonts ロールが入れる MesloLGS NF）の記号と 256 色で、1 つのセグメントを描く。"""
-    body = "".join(PL_SEP + str(item).replace(" → ", " \uf061 ") for item in items)
+def segment(color, icon, title=None, items=()):
+    """Nerd Font（fonts ロールが入れる MesloLGS NF）の記号と 256 色で 1 行を描く。
+
+    背景を敷くのはアイコンと title だけで、items は背景の外に続ける。title を省くとアイコンにだけ敷く。
+    """
     # info は控えめに見せるため、文字もアイコンと同じ色のままにする。
-    lead = "" if color == "info" else PL_DEFAULT
-    return f"{PL_BG}{PL_COLORS[color]} {PL_ICONS[icon]} {lead}{title}{body} {PL_END}"
+    lead = PL_COLORS["info"] if color == "info" else PL_DEFAULT
+    head = f"{PL_BG}{PL_COLORS[color]} {PL_ICONS[icon]} " + (f"{lead}{title} " if title else "") + PL_END
+    body = ", ".join(str(item).replace(" → ", " \uf061 ") for item in items)
+    if not body:
+        return head
+    return f"{head} {PL_COLORS['info']}{body}\033[0m" if color == "info" else f"{head} {body}"
 
 
 def render_powerline(rows, footer=None):
-    rows = rows + ([("info", "info", footer, [])] if footer else [])
-    return "\n".join(segment(color, icon, title, items) for icon, color, title, items in rows)
+    # 項目の無い行は title が文なので、見出しにせず背景の外に出す。
+    lines = [
+        segment(color, icon, title, items) if items else segment(color, icon, None, [title])
+        for icon, color, title, items in rows
+    ]
+    if footer:
+        lines.append(" ".join(segment("info", "info", key, [value]) for key, value in footer))
+    return "\n".join(lines)
 
 
 def render(rows, style, footer=None):
@@ -1553,16 +1571,18 @@ def resolve_style(explicit):
 
 
 def say(style, plain, color="info", icon=None, title=None, items=(), indent=0):
-    """stdout に 1 行出す。plain はそのまま、powerline は title（省くと plain）と items をセグメントに描く。"""
+    """stdout に 1 行出す。plain はそのまま出す。powerline は title を見出しにして items を続け、
+    title を省くと plain の文をアイコンの後ろに続ける。
+    """
     if style == "powerline":
-        plain = " " * indent + segment(color, icon or color, plain if title is None else title, items)
+        plain = " " * indent + segment(color, icon or color, title, items if title is not None or items else [plain])
     print(plain, flush=True)
 
 
 def say_kind(style, kind, text, indent=0, title=None, items=()):
-    """KINDS の印を付けて 1 行出す。title を省くと、powerline でも text をそのまま描く。"""
+    """KINDS の印を付けて 1 行出す。title を省くと、powerline では text を見出しにせず続ける。"""
     mark, color, icon = KINDS[kind]
-    say(style, f"{' ' * indent}{mark} {text}", color, icon, text if title is None else title, items, indent)
+    say(style, f"{' ' * indent}{mark} {text}", color, icon, title, items if title is not None else [text], indent)
 
 
 def run_notify(fmt, style="plain"):
@@ -1684,8 +1704,8 @@ def ask(groups, style, startup):
         choices.append(("a", "all"))
     choices += [("n", "none"), ("Enter", "later")]
     if style == "powerline":
-        body = "".join(f"{PL_SEP}{PL_COLORS['update']}{letter}{PL_DEFAULT} {title}" for letter, title in choices)
-        prompt = f"{PL_BG}{PL_COLORS['update']} {PL_ICONS['question']} {PL_DEFAULT}Update?{body} {PL_END} "
+        body = ", ".join(f"{PL_COLORS['update']}{letter}\033[0m {title}" for letter, title in choices)
+        prompt = f"{segment('update', 'question', 'Update?')} {body} "
     else:
         prompt = "? Update? " + ", ".join(f"{letter} = {title}" for letter, title in choices) + ": "
     letters = "".join(g["letter"] for g in groups)
@@ -1962,7 +1982,7 @@ def run_steps(steps, live=None, log=None, style="plain"):
             if live is not None:
                 live.erase()
                 live.dirty = True
-            say(style, f"$ {display}", "info", "command", display)
+            say(style, f"$ {display}", "info", "command", items=[display])
         # Ctrl-C の後始末は子に任せる。既定のままだと subprocess が 0.25 秒で子を SIGKILL する。
         # SIG_IGN は exec 後も引き継がれて子が止まれなくなるので、何もしないハンドラにする（exec で既定に戻る）。
         previous = signal.signal(signal.SIGINT, lambda *_: interrupted.append(True))
@@ -2276,7 +2296,7 @@ def parse_steps(value):
 
 def step(argv, repo, style, capture=False):
     """コマンドを表示してから流す。0 以外で終わったら BumpError を投げる。capture なら stdout を返す。"""
-    say(style, "$ " + shlex.join(argv), "info", "command", shlex.join(argv))
+    say(style, "$ " + shlex.join(argv), "info", "command", items=[shlex.join(argv)])
     try:
         p = subprocess.run(argv, cwd=repo, stdout=subprocess.PIPE if capture else None, text=True, check=False)
     except OSError as e:
