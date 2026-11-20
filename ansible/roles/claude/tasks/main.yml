@@ -19,7 +19,7 @@
 
 - name: Debug Claude CLI already installed
   ansible.builtin.debug:
-    msg: "{{ ansible_facts['env'].HOME }}/.local/bin/claude already exists, skipping Claude CLI installation."
+    msg: "Claude CLI is already installed at {{ ansible_facts['env'].HOME }}/.local/bin/claude"
   when: claude_cli_bin.stat.exists
 
 - name: Ensure .claude directory exists

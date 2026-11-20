@@ -22,5 +22,5 @@
 
 - name: Debug nvm already installed
   ansible.builtin.debug:
-    msg: "{{ node_nvm_dir }}/nvm.sh already exists, skipping nvm installation."
+    msg: "nvm is already installed at {{ node_nvm_dir }}"
   when: node_nvm_sh.stat.exists

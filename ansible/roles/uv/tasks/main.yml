@@ -24,7 +24,7 @@
 
 - name: Debug uv already installed
   ansible.builtin.debug:
-    msg: "{{ ansible_facts['env'].HOME }}/.local/bin/uv already exists, skipping uv installation."
+    msg: "uv is already installed at {{ ansible_facts['env'].HOME }}/.local/bin/uv"
   when: uv_bin.stat.exists
 
 - name: Ensure uv config directory exists
