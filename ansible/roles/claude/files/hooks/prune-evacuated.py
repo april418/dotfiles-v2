@@ -30,7 +30,7 @@ def expired(entry, now):
     try:
         # evacuate は名前の日付を手元のタイムゾーンで付ける。タイムゾーンを持たないまま timestamp() で読むと、
         # 夏時間の切り替えでその日の 00:00 が無くても、日の始まりの時刻になる（Python 3.9 の astimezone() は前日の時刻にする）。
-        dated = datetime.datetime.strptime(m.group(1), "%Y%m%d").timestamp()  # noqa: DTZ007
+        dated = datetime.datetime.strptime(m.group(1), "%Y%m%d").timestamp()
     except ValueError:
         return False
     cutoff = now - RETENTION_DAYS * 86400
