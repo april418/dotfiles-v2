@@ -10,13 +10,15 @@
 # ========================================
 #   dotfiles の更新の確認
 # ========================================
+# dotfiles コマンドの見た目。文字だけにするなら ~/.zshenv.local で plain にする。~/.zshrc.local は下の確認より後に読む。
+export DOTFILES_STYLE=${DOTFILES_STYLE:-powerline}
 # 入力を受けるので instant prompt より前に置く。instant prompt の間は stdin が端末につながらない。
 # 起動を遅らせないよう、dotfiles コマンドが聞くことを書き残したときだけ起動する。
 typeset -g _dotfiles_update_asked=
 # 端末から zsh -ic で 1 つのコマンドを流すときは、プロンプトを出さないので聞かない。
 if [[ -t 0 && -t 1 && -z ${ZSH_EXECUTION_STRING:-} && -s ${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/update-pending \
     && ${DOTFILES_UPDATE_ASK:-} != never && -z ${DOTFILES_UPDATING:-} ]] && (( $+commands[dotfiles] )); then
-  dotfiles update --startup --style powerline && _dotfiles_update_asked=1
+  dotfiles update --startup && _dotfiles_update_asked=1
 fi
 
 
@@ -304,8 +306,11 @@ function _dotfiles_update_notice() {
   add-zsh-hook -d precmd _dotfiles_update_notice
   # 起動時に更新を聞いたシェルでは、同じ内容をそこで出している。
   if [[ -z $_dotfiles_update_asked ]] && (( $+commands[dotfiles] )); then
-    # この時点の stdout は p10k の一時ファイルで端末ではないため、見た目は呼ぶ側で指定する。
-    dotfiles notify --style powerline
+    # この時点の stdout は p10k の一時ファイルで端末ではなく DOTFILES_STYLE が効かないので、dotfiles コマンドの
+    # resolve_style と同じ条件で見た目を決めて渡す。値をそのまま渡すと、書き間違えたときに使い方のエラーが出る。
+    local style=plain
+    [[ ${DOTFILES_STYLE:-} == powerline && ${TERM:-dumb} != dumb && -z ${NO_COLOR:-} ]] && style=powerline
+    dotfiles notify --style $style
   fi
   unset _dotfiles_update_asked
 }

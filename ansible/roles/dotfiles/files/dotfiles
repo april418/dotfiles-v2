@@ -1366,13 +1366,14 @@ def spawn_refresh():
 # ---------------------------------------------------------------- 表示
 
 
-def print_notice(found):
-    print(f"  ✗ {found['summary']}")
+def print_notice(found, style):
+    say_kind(style, "update", found["summary"], indent=2)
+    # 手順はコピーして流すので、powerline でもセグメントに入れない。
     for command in found["commands"]:
         print(f"      {command}")
 
 
-def run_check():
+def run_check(style):
     """結果を表示し、(更新があるか, 判定できなかったものがあるか) を返す。"""
     if sys.stderr.isatty():
         # brew outdated が brew update を走らせると数十秒かかり、その間は何も表示されない。
@@ -1382,57 +1383,63 @@ def run_check():
     tools = check_tools(remarks=True)
     updates = unknown = False
 
-    print(f"dotfiles ({shown(dotfiles['where']) if dotfiles['where'] else 'unknown'})")
+    where = shown(dotfiles["where"]) if dotfiles["where"] else "unknown"
+    say(style, f"dotfiles ({where})", "section", "dotfiles", "dotfiles", [where])
     if dotfiles["error"]:
-        print(f"  ✗ cannot check: {dotfiles['error']}")
+        say_kind(style, "error", f"cannot check: {dotfiles['error']}", indent=2)
         unknown = True
     else:
         if fetch_error:
-            print(f"  ! fetch failed, used the last result: {fetch_error}")
+            say_kind(style, "warn", f"fetch failed, used the last result: {fetch_error}", indent=2)
             unknown = True
         for warning in dotfiles["warnings"]:
-            print(f"  ! {warning}")
+            say_kind(style, "warn", warning, indent=2)
             unknown = True
         for found in dotfiles["notices"]:
-            print_notice(found)
+            print_notice(found, style)
             updates = True
         if not dotfiles["notices"]:
-            print("  ? up to date as far as known locally" if unknown else "  ✓ up to date")
+            if unknown:
+                say_kind(style, "unknown", "up to date as far as known locally", indent=2)
+            else:
+                say_kind(style, "ok", "up to date", indent=2)
 
     pins = check_pins(dotfiles["where"], dotfiles["remote"])
-    for section, empty in ((tools, "no tools installed"), (pins, "no pins")):
-        found_updates, found_unknown = print_items(section, empty)
+    for icon, section, empty in (("tools", tools, "no tools installed"), ("pins", pins, "no pins")):
+        found_updates, found_unknown = print_items(section, empty, style, icon)
         updates |= found_updates
         unknown |= found_unknown
     if update_groups(dotfiles, tools):
-        print("\nUpdate: dotfiles update")
+        print()
+        say(style, "Update: dotfiles update")
     return updates, unknown
 
 
-def print_items(section, empty):
-    """節を表示し、(更新があるか, 判定できなかったものがあるか) を返す。"""
+def print_items(section, empty, style, icon):
+    """節を表示し、(更新があるか, 判定できなかったものがあるか) を返す。icon は PL_ICONS のキー。"""
     updates = unknown = False
-    print(section["label"])
+    say(style, section["label"], "section", icon)
     if section.get("note"):
-        print(f"  - {section['note']}")
+        say_kind(style, "note", section["note"], indent=2)
     elif not section["items"]:
-        print(f"  - {empty}")
+        say_kind(style, "note", empty, indent=2)
     for item in section["items"]:
+        name = item["label"]
         if item["problem"]:
-            print(f"  ! {item['label']}: {item['problem']}")
+            say_kind(style, "warn", f"{name}: {item['problem']}", 2, name, [item["problem"]])
             unknown = True
         if item["notice"]:
-            print_notice(item["notice"])
+            print_notice(item["notice"], style)
             updates = True
         elif item["problem"]:
             # 前回の結果は残しているが、確かめていない理由や ✓ まで出すと今回も確かめたように読める。
             continue
         elif item["skipped"]:
-            print(f"  - {item['label']}: {item['skipped']}")
+            say_kind(style, "note", f"{name}: {item['skipped']}", 2, name, [item["skipped"]])
         else:
-            print(f"  ✓ {item['label']}")
+            say_kind(style, "ok", name, indent=2)
         if item.get("remark"):
-            print(f"  - {item['label']}: {item['remark']}")
+            say_kind(style, "note", f"{name}: {item['remark']}", 2, name, [item["remark"]])
     return updates, unknown
 
 
@@ -1449,7 +1456,10 @@ PL_COLORS = {
     "info": "\033[38;5;245m",
     "ok": "\033[38;5;002m",
     "progress": "\033[38;5;014m",
+    # .p10k.zsh の POWERLEVEL9K_DIR_FOREGROUND と同じ。
+    "section": "\033[38;5;031m",
 }
+# 足すときは、MesloLGS NF にそのコードポイントのグリフがあるかを確かめる。
 PL_ICONS = {
     "dotfiles": "\ue0a0",
     "tools": "\uf0ad",
@@ -1458,6 +1468,20 @@ PL_ICONS = {
     "info": "\uf05a",
     "ok": "\uf00c",
     "question": "\uf059",
+    "update": "\uf062",
+    "error": "\uf057",
+    "command": "\uf120",
+    "character": "\uf007",
+}
+# 行の種類ごとの、plain の印と powerline の (色, アイコン)。
+KINDS = {
+    "ok": ("✓", "ok", "ok"),
+    "update": ("✗", "update", "update"),
+    "error": ("✗", "error", "error"),
+    "warn": ("!", "warn", "warn"),
+    "unknown": ("?", "warn", "question"),
+    "note": ("-", "info", "info"),
+    "bump": ("↑", "update", "update"),
 }
 NOTIFY_FOOTER = "Details: dotfiles check"
 UPDATE_FOOTER = "Details: dotfiles check / Update: dotfiles update"
@@ -1496,20 +1520,49 @@ def render_plain(rows, footer=None):
     return "\n".join(lines)
 
 
+def segment(color, icon, title, items=()):
+    """Nerd Font（fonts ロールが入れる MesloLGS NF）の記号と 256 色で、1 つのセグメントを描く。"""
+    body = "".join(PL_SEP + str(item).replace(" → ", " \uf061 ") for item in items)
+    # info は控えめに見せるため、文字もアイコンと同じ色のままにする。
+    lead = "" if color == "info" else PL_DEFAULT
+    return f"{PL_BG}{PL_COLORS[color]} {PL_ICONS[icon]} {lead}{title}{body} {PL_END}"
+
+
 def render_powerline(rows, footer=None):
-    """Nerd Font（fonts ロールが入れる MesloLGS NF）の記号と 256 色で描く。"""
-    lines = []
-    for icon, color, title, items in rows + ([("info", "info", footer, [])] if footer else []):
-        if color == "info":
-            lines.append(f"{PL_BG}{PL_COLORS['info']} {PL_ICONS[icon]} {title} {PL_END}")
-            continue
-        body = "".join(PL_SEP + item.replace(" → ", " \uf061 ") for item in items)
-        lines.append(f"{PL_BG}{PL_COLORS[color]} {PL_ICONS[icon]} {PL_DEFAULT}{title}{body} {PL_END}")
-    return "\n".join(lines)
+    rows = rows + ([("info", "info", footer, [])] if footer else [])
+    return "\n".join(segment(color, icon, title, items) for icon, color, title, items in rows)
 
 
 def render(rows, style, footer=None):
     return render_powerline(rows, footer) if style == "powerline" else render_plain(rows, footer)
+
+
+def resolve_style(explicit):
+    """--style が無ければ DOTFILES_STYLE を既定にする。"""
+    if explicit:
+        return explicit
+    # 環境変数はパイプや Claude Code の Bash にも引き継がれる。端末に出すときだけ効かせ、ログにエスケープ列を混ぜない。
+    if (
+        os.environ.get("DOTFILES_STYLE") == "powerline"
+        and sys.stdout.isatty()
+        and os.environ.get("TERM", "dumb") != "dumb"
+        and not os.environ.get("NO_COLOR")
+    ):
+        return "powerline"
+    return "plain"
+
+
+def say(style, plain, color="info", icon=None, title=None, items=(), indent=0):
+    """stdout に 1 行出す。plain はそのまま、powerline は title（省くと plain）と items をセグメントに描く。"""
+    if style == "powerline":
+        plain = " " * indent + segment(color, icon or color, plain if title is None else title, items)
+    print(plain, flush=True)
+
+
+def say_kind(style, kind, text, indent=0, title=None, items=()):
+    """KINDS の印を付けて 1 行出す。title を省くと、powerline でも text をそのまま描く。"""
+    mark, color, icon = KINDS[kind]
+    say(style, f"{' ' * indent}{mark} {text}", color, icon, text if title is None else title, items, indent)
 
 
 def run_notify(fmt, style="plain"):
@@ -1653,7 +1706,7 @@ def ask(groups, style, startup):
         if set(answer) <= set(letters):
             return [g for g in groups if g["letter"] in answer]
         decline = "skip until it changes" if startup else "skip"
-        print(f"Type any of {', '.join(letters)} (e.g. {letters}); a = all, n = {decline}, Enter = later")
+        say(style, f"Type any of {', '.join(letters)} (e.g. {letters}); a = all, n = {decline}, Enter = later", "warn")
     return None
 
 
@@ -1887,7 +1940,7 @@ class Live:
         return code
 
 
-def run_steps(steps, live=None, log=None):
+def run_steps(steps, live=None, log=None, style="plain"):
     """手順を順に実行する。失敗したら残りを飛ばし、その説明を返す。Ctrl-C なら子が終わってから KeyboardInterrupt を投げる。
 
     live を渡すと、子の出力を末尾の数行だけ描く。渡さなければ端末にそのまま流す。log には全文を書く。
@@ -1909,7 +1962,7 @@ def run_steps(steps, live=None, log=None):
             if live is not None:
                 live.erase()
                 live.dirty = True
-            print(f"$ {display}", flush=True)
+            say(style, f"$ {display}", "info", "command", display)
         # Ctrl-C の後始末は子に任せる。既定のままだと subprocess が 0.25 秒で子を SIGKILL する。
         # SIG_IGN は exec 後も引き継がれて子が止まれなくなるので、何もしないハンドラにする（exec で既定に戻る）。
         previous = signal.signal(signal.SIGINT, lambda *_: interrupted.append(True))
@@ -1980,12 +2033,12 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
     if rows:
         print(render(rows, style))
     if not groups:
-        print("Nothing to update")
+        say(style, "Nothing to update", "ok")
         return 0
     if only is not None:
         chosen = [g for g in groups if "all" in only or g["id"] in only]
         if not chosen:
-            print("Nothing to update in the selected targets")
+            say(style, "Nothing to update in the selected targets", "ok")
             return 0
     elif not sys.stdin.isatty():
         print("run in a terminal or pass --only", file=sys.stderr)
@@ -2063,7 +2116,7 @@ def run_chosen(chosen, partial, startup, style):
             try:
                 fcntl.flock(fetching, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
-                print("Waiting for the background fetch…", flush=True)
+                say(style, "Waiting for the background fetch…", "progress", "info")
                 fcntl.flock(fetching, fcntl.LOCK_EX)
             for group in chosen:
                 show((group["icon"], "progress", group["title"], ["updating"]))
@@ -2071,7 +2124,7 @@ def run_chosen(chosen, partial, startup, style):
                 started += 1
                 live = Live(log) if live_output else None
                 # ツールは 1 つ失敗しても残りを上げる。
-                errors = [e for e in (run_steps(n["steps"], live, log) for n in group["notices"]) if e]
+                errors = [e for e in (run_steps(n["steps"], live, log, style) for n in group["notices"]) if e]
                 if errors:
                     row = ("warn", "error", group["title"], errors)
                 elif group["id"] in {g["id"] for g in update_groups(check_dotfiles(), check_tools())}:
@@ -2134,26 +2187,28 @@ def chosen_character():
     return m.group(1) if m else None
 
 
-def run_character_show():
+def run_character_show(style):
     repo, _ = locate()
     names = character_names(repo) if repo else []
     chosen = chosen_character()
+    color = "warn" if chosen is None or (repo and chosen not in names) else "section"
     if chosen is None:
         current = "not chosen yet (asked on the next playbook run)"
     elif repo and chosen not in names:
         current = f"{chosen} (file missing; asked again on the next playbook run)"
     else:
         current = chosen
-    print(f"current: {current}")
+    say(style, f"current: {current}", color, "character", "current", [current])
     if repo is None:
-        print("available: unknown (checkout not found; put it at $DOTPATH or ~/.dotfiles)")
+        unknown = "unknown (checkout not found; put it at $DOTPATH or ~/.dotfiles)"
+        say(style, f"available: {unknown}", "warn", "warn", "available", [unknown])
         return 2
-    print(f"available: {', '.join(names)}")
-    print("switch: dotfiles character set <name>")
+    say(style, f"available: {', '.join(names)}", "info", "info", "available", names)
+    say(style, "switch: dotfiles character set <name>", "info", "command", "switch", ["dotfiles character set <name>"])
     return 0
 
 
-def run_character_set(name):
+def run_character_set(name, style):
     repo, _ = locate()
     if repo is None:
         print("checkout not found (put it at $DOTPATH or ~/.dotfiles)", file=sys.stderr)
@@ -2182,7 +2237,10 @@ def run_character_set(name):
         signal.signal(signal.SIGINT, previous)
     after = chosen_character()
     if code == 0:
-        print("takes effect in new sessions" if after != before else f"unchanged ({after})")
+        if after != before:
+            say(style, "takes effect in new sessions", "ok", "character")
+        else:
+            say(style, f"unchanged ({after})", "info", "character")
     return code
 
 
@@ -2216,9 +2274,9 @@ def parse_steps(value):
     return set(BUMP_STEPS) if "all" in steps else steps
 
 
-def step(argv, repo, capture=False):
+def step(argv, repo, style, capture=False):
     """コマンドを表示してから流す。0 以外で終わったら BumpError を投げる。capture なら stdout を返す。"""
-    print("$ " + shlex.join(argv), flush=True)
+    say(style, "$ " + shlex.join(argv), "info", "command", shlex.join(argv))
     try:
         p = subprocess.run(argv, cwd=repo, stdout=subprocess.PIPE if capture else None, text=True, check=False)
     except OSError as e:
@@ -2245,7 +2303,7 @@ def require_base(repo, remote, what):
         raise BumpError(f"{base} is not at {remote}; run git pull --ff-only origin {base} first")
 
 
-def sync_base(repo, remote):
+def sync_base(repo, remote, style):
     """既定ブランチが remote より遅れているだけなら、早送りで取り込む。"""
     base = remote.split("/", 1)[1]
     if (
@@ -2253,14 +2311,14 @@ def sync_base(repo, remote):
         and git(repo, "rev-parse", "HEAD") != git(repo, "rev-parse", remote)
         and git(repo, "merge-base", "--is-ancestor", "HEAD", remote) is not None
     ):
-        step(["git", "pull", "--ff-only", "origin", base], repo)
+        step(["git", "pull", "--ff-only", "origin", base], repo, style)
 
 
 def bump_branch():
     return f"feature/pins-bump-{time.strftime('%Y%m%d')}"
 
 
-def pr_preflight(repo, remote):
+def pr_preflight(repo, remote, style):
     """pr を流せるかを、書き換えと push の前に確かめる。"""
     require_base(repo, remote, "pr ")
     # 前に write で書き換えた固定値は通し、ほかの変更があればここで止める。
@@ -2271,7 +2329,7 @@ def pr_preflight(repo, remote):
     ):
         raise BumpError(f"{branch} already exists; clean up the previous PR first")
     # gh が使えないと分かるのが push の後だと、ブランチだけがリモートに残る。
-    listed = step(["gh", "pr", "list", "--state", "open", "--json", "headRefName,url"], repo, capture=True)
+    listed = step(["gh", "pr", "list", "--state", "open", "--json", "headRefName,url"], repo, style, capture=True)
     try:
         prs = json.loads(listed or "[]")
     except ValueError:
@@ -2282,12 +2340,12 @@ def pr_preflight(repo, remote):
         raise BumpError(f"a pin bump PR is still open ({', '.join(opened)}); merge or close it first")
 
 
-def bump_write(repo, names, dry_run):
+def bump_write(repo, names, dry_run, style):
     """固定値を最新に書き換え、(書き換えた [(pin, 新しい値)], 取得に失敗した数) を返す。"""
     pins = find_pins(repo)
     for pin in pins:
         if isinstance(pin, BrokenPin):
-            print(f"! {pin.where}: {pin.problem}")
+            say_kind(style, "warn", f"{pin.where}: {pin.problem}", title=pin.where, items=[pin.problem])
     tag_pins = [p for p in pins if isinstance(p, TagPin)]
     unknown = sorted(set(names) - {p.name for p in tag_pins})
     if unknown:
@@ -2300,18 +2358,26 @@ def bump_write(repo, names, dry_run):
     for pin, (data, error) in zip(targets, results):
         if error:
             failures += 1
-            print(f"! {pin.name}: fetch failed ({error})")
+            failed = f"fetch failed ({error})"
+            say_kind(style, "warn", f"{pin.name}: {failed}", title=pin.name, items=[failed])
             continue
         latest = data.get("latest")
         if latest is None:
-            print(f"- {pin.name}: no version past the {PIN_COOLDOWN // (24 * 60 * 60)}-day cooldown")
+            waiting = f"no version past the {PIN_COOLDOWN // (24 * 60 * 60)}-day cooldown"
+            say_kind(style, "note", f"{pin.name}: {waiting}", title=pin.name, items=[waiting])
             continue
         if version_key(pin.current) >= version_key(latest):
-            print(f"✓ {pin.name} {pin.current}")
+            say_kind(style, "ok", f"{pin.name} {pin.current}", title=pin.name, items=[pin.current])
             continue
         new = pin_form(pin.current, latest)
         when = f" (released {data['published'][:10]})" if data.get("published") else ""
-        print(f"↑ {pin.name} {pin.current} → {new}{when}  {pin.where}")
+        say_kind(
+            style,
+            "bump",
+            f"{pin.name} {pin.current} → {new}{when}  {pin.where}",
+            title=pin.name,
+            items=[f"{pin.current} → {new}{when}", pin.where],
+        )
         changes.append((pin, new))
     if not dry_run:
         rewrite_pins(repo, changes)
@@ -2382,7 +2448,7 @@ def pin_changes(repo):
     return found
 
 
-def wait_checks(repo, url):
+def wait_checks(repo, url, style):
     deadline = time.time() + CHECKS_APPEAR_TIMEOUT
     while True:
         # 実行中のチェックがあると 8 で終わるが、JSON は出る。
@@ -2402,17 +2468,17 @@ def wait_checks(repo, url):
             raise BumpError(f"not merged: no CI checks appeared within {CHECKS_APPEAR_TIMEOUT}s")
         time.sleep(5)
     try:
-        step(["gh", "pr", "checks", url, "--watch", "--fail-fast"], repo)
+        step(["gh", "pr", "checks", url, "--watch", "--fail-fast"], repo, style)
     except BumpError:
         raise BumpError("not merged: CI failed")
 
 
-def bump_pr(repo, remote, merge):
+def bump_pr(repo, remote, merge, style):
     """書き換えた固定値をブランチにコミットして PR を作る。merge ならマージして既定ブランチを取り込む。"""
-    pr_preflight(repo, remote)
+    pr_preflight(repo, remote, style)
     changes = pin_changes(repo)
     if not changes:
-        print("No pin changes to commit")
+        say(style, "No pin changes to commit")
         return
     base = remote.split("/", 1)[1]
     branch = bump_branch()
@@ -2427,26 +2493,28 @@ def bump_pr(repo, remote, merge):
     )
     done = []
     try:
-        step(["git", "switch", "-c", branch, remote, "--no-track"], repo)
+        step(["git", "switch", "-c", branch, remote, "--no-track"], repo, style)
         done.append(f"created {branch}")
         # パスを渡すと、index にほかの変更があってもこのファイルだけをコミットする。
-        step(["git", "commit", "-m", subject, "-m", listed, "--", *sorted({rel for *_, rel in changes})], repo)
+        step(["git", "commit", "-m", subject, "-m", listed, "--", *sorted({rel for *_, rel in changes})], repo, style)
         done.append("committed")
-        step(["git", "push", "-u", "origin", branch], repo)
+        step(["git", "push", "-u", "origin", branch], repo, style)
         done.append("pushed")
         url = step(
             ["gh", "pr", "create", "--base", base, "--head", branch, "--title", subject, "--body", body],
             repo,
+            style,
             capture=True,
         ).strip()
+        # URL は開いたりコピーしたりするので、powerline でもセグメントに入れない。
         print(url)
         done.append(f"opened {url}")
         if merge:
-            wait_checks(repo, url)
+            wait_checks(repo, url, style)
             # --delete-branch は手元のブランチの切り替えと削除も gh に任せるので使わず、下で git に流させる。
-            step(["gh", "pr", "merge", url, "--merge"], repo)
+            step(["gh", "pr", "merge", url, "--merge"], repo, style)
             done.append("merged")
-        step(["git", "switch", base], repo)
+        step(["git", "switch", base], repo, style)
     except BumpError as e:
         # 再実行は require_base で止まるので、続けるか戻すかは手で決める。
         raise BumpError(
@@ -2455,20 +2523,20 @@ def bump_pr(repo, remote, merge):
             f"and if pushed, close the PR and run git push origin --delete {branch}"
         )
     if not merge:
-        print(f"After merging, run dotfiles bump --steps apply ({branch} is kept locally)")
+        say(style, f"After merging, run dotfiles bump --steps apply ({branch} is kept locally)")
         return
-    step(["git", "pull", "--rebase", "origin", base], repo)
-    step(["git", "branch", "-d", branch], repo)
+    step(["git", "pull", "--rebase", "origin", base], repo, style)
+    step(["git", "branch", "-d", branch], repo, style)
     # リポジトリの設定でマージと一緒に消えていることがある。
     if git(repo, "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}") is not None:
-        step(["git", "push", "origin", "--delete", branch], repo)
+        step(["git", "push", "origin", "--delete", branch], repo, style)
 
 
-def bump_apply(repo, remote):
+def bump_apply(repo, remote, style):
     """プレイブックを流し、プレイブックだけでは入れ替わらないものの手順（AFTER_APPLY）も流す。"""
     # マージしていない固定値を入れると、このマシンだけほかのマシンとずれる。マージした後にほかのマシンで流すときは
     # 遅れているので、先に取り込む。
-    sync_base(repo, remote)
+    sync_base(repo, remote, style)
     require_base(repo, remote, "apply ")
     if git(repo, "diff", "--name-only", "HEAD", "--", DEPLOYED_PATH):
         raise BumpError(f"{DEPLOYED_PATH}/ has uncommitted changes; merge them through a PR first")
@@ -2478,8 +2546,8 @@ def bump_apply(repo, remote):
         raise BumpError(f"ansible-playbook does not start ({problem}); rerun {shown(os.path.join(repo, 'install'))}")
     if os.uname().sysname != "Darwin" and os.geteuid() != 0 and find_tool("sudo"):
         # check_dotfiles の手順と同じく、認証が残っていないと ansible は聞かずに "Missing sudo password" で失敗する。
-        step(["sudo", "-v"], repo)
-    step([playbook_bin, os.path.join(repo, "ansible", "playbook.yml"), "--connection=local"], repo)
+        step(["sudo", "-v"], repo, style)
+    step([playbook_bin, os.path.join(repo, "ansible", "playbook.yml"), "--connection=local"], repo, style)
     for pin in find_pins(repo):
         if not isinstance(pin, TagPin) or pin.name not in AFTER_APPLY:
             continue
@@ -2490,10 +2558,10 @@ def bump_apply(repo, remote):
         if installed is None or version_key(installed) == version_key(pin.current):
             continue
         for command in AFTER_APPLY[pin.name](pin.current):
-            step(shlex.split(command), repo)
+            step(shlex.split(command), repo, style)
 
 
-def run_bump(names, steps, merge, dry_run):
+def run_bump(names, steps, merge, dry_run, style):
     repo, _ = locate()
     if repo is None:
         print("checkout not found (put it at $DOTPATH or ~/.dotfiles)", file=sys.stderr)
@@ -2517,31 +2585,31 @@ def run_bump(names, steps, merge, dry_run):
         print("dotfiles bump: origin's default branch is unknown", file=sys.stderr)
         return 2
     try:
-        step(["git", "fetch", "origin"], repo)
+        step(["git", "fetch", "origin"], repo, style)
         if {"write", "pr"} <= steps:
             # 書き換えた後に流せないと分かるより、先に止まるほうが手戻りが無い。
-            pr_preflight(repo, remote)
+            pr_preflight(repo, remote, style)
         if "write" in steps:
             if count(repo, f"HEAD..{remote}", DEPLOYED_PATH):
                 raise BumpError(f"checkout is behind {remote}; pull first to avoid conflicts with upstream bumps")
-            changes, failures = bump_write(repo, names, dry_run)
+            changes, failures = bump_write(repo, names, dry_run, style)
             if dry_run or steps == {"write"}:
                 if changes and not dry_run:
-                    print("Commit and open a PR: dotfiles bump --steps pr")
+                    say(style, "Commit and open a PR: dotfiles bump --steps pr")
                 return 1 if failures else 0
             if failures:
-                print("some fetches failed, so pr and later steps did not run; continue with --steps pr")
+                say(style, "some fetches failed, so pr and later steps did not run; continue with --steps pr", "warn")
                 return 1
             if not changes and not pin_changes(repo):
-                print("No pins to bump")
+                say(style, "No pins to bump", "ok")
                 # マージ済みの固定値をまだ入れていないマシンもあるので、apply は流す。
                 if "apply" not in steps:
                     return 0
                 steps = steps - {"pr"}
         if "pr" in steps:
-            bump_pr(repo, remote, merge)
+            bump_pr(repo, remote, merge, style)
         if "apply" in steps:
-            bump_apply(repo, remote)
+            bump_apply(repo, remote, style)
     except (BumpError, FetchError) as e:
         print(f"dotfiles bump: {e}", file=sys.stderr)
         print(
@@ -2559,23 +2627,26 @@ def main():
         description="Check and apply updates to dotfiles, its tools and pins. Also switches the Claude Code character.",
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
+    # character と character set の両方に付ける。既定を置くと、省いた側の既定が他方で指定した値を上書きする。
+    style_option = argparse.ArgumentParser(add_help=False)
+    style_option.add_argument(
+        "--style",
+        choices=["plain", "powerline"],
+        default=argparse.SUPPRESS,
+        help="powerline: Nerd Font glyphs and 256 colors (default: $DOTFILES_STYLE on a terminal, otherwise plain)",
+    )
     check_help = "Fetch and show updates. Exit: 0 = up to date, 1 = updates (even if some are unknown), 2 = unknown"
-    sub.add_parser("check", help=check_help, description=check_help)
+    sub.add_parser("check", help=check_help, description=check_help, parents=[style_option])
     notify = sub.add_parser(
         "notify",
         help="Notify from the last fetch; refetch in the background when stale",
+        parents=[style_option],
     )
     notify.add_argument(
         "--format",
         choices=["text", "claude"],
         default="text",
-        help="claude: JSON for the Claude Code SessionStart hook",
-    )
-    notify.add_argument(
-        "--style",
-        choices=["plain", "powerline"],
-        default="plain",
-        help="powerline: Nerd Font glyphs and 256 colors (text format only)",
+        help="claude: JSON for the Claude Code SessionStart hook (always plain)",
     )
     update = sub.add_parser(
         "update",
@@ -2583,6 +2654,7 @@ def main():
             "Fetch, list updates (dotfiles, tools, Homebrew) and apply the chosen ones. "
             "Exit: 0 = done or nothing to do, 1 = something failed, 2 = nothing chosen"
         ),
+        parents=[style_option],
     )
     update.add_argument(
         "--only", type=parse_only, help="update without asking: comma-separated dotfiles, tools, brew, all"
@@ -2596,9 +2668,6 @@ def main():
             "DOTFILES_UPDATE_ASK=always asks every time, never disables asking"
         ),
     )
-    update.add_argument(
-        "--style", choices=["plain", "powerline"], default="plain", help="powerline: Nerd Font glyphs and 256 colors"
-    )
     bump = sub.add_parser(
         "bump",
         help=(
@@ -2606,6 +2675,7 @@ def main():
             "write edits the checkout, pr commits and opens a PR, apply runs the playbook. "
             "Exit: 0 = done or nothing to bump, 1 = a step failed or did not run, 2 = bad arguments"
         ),
+        parents=[style_option],
     )
     bump.add_argument(
         "names", nargs="*", metavar="NAME", help="pins to bump (e.g. awscli_version); all marked pins if omitted"
@@ -2619,29 +2689,34 @@ def main():
     bump.add_argument("--merge", action="store_true", help="with pr: wait for CI, merge, and pull the default branch")
     bump.add_argument("--dry-run", action="store_true", help="with write: show bumps without editing")
     sub.add_parser("refresh", help="Fetch (notify runs this in the background)")
-    character = sub.add_parser("character", help="Show the Claude Code character; switch with set")
+    character = sub.add_parser(
+        "character", help="Show the Claude Code character; switch with set", parents=[style_option]
+    )
     character_sub = character.add_subparsers(dest="character_command", metavar="<command>")
     character_set = character_sub.add_parser(
-        "set", help="Switch the character (asks without a name; Enter keeps it). Takes effect in new sessions"
+        "set",
+        help="Switch the character (asks without a name; Enter keeps it). Takes effect in new sessions",
+        parents=[style_option],
     )
     character_set.add_argument("name", nargs="?", help="<name> in ansible/roles/claude/files/characters/<name>.md")
     args = parser.parse_args()
+    style = resolve_style(getattr(args, "style", None))
 
     if args.command is None:
         parser.print_help(sys.stderr)
         return 2
     if args.command == "character":
-        return run_character_set(args.name) if args.character_command == "set" else run_character_show()
+        return run_character_set(args.name, style) if args.character_command == "set" else run_character_show(style)
     if args.command == "notify":
-        return run_notify(args.format, args.style)
+        return run_notify(args.format, style)
     if args.command == "refresh":
         refresh(wait=False)
         return 0
     if args.command == "bump":
-        return run_bump(args.names, args.steps, args.merge, args.dry_run)
+        return run_bump(args.names, args.steps, args.merge, args.dry_run, style)
     if args.command == "update":
         try:
-            return run_update(args.startup, args.only, args.style)
+            return run_update(args.startup, args.only, style)
         except KeyboardInterrupt:
             # 質問の前に止められたときは何も出ていないので、notify にいつもの通知を出させる。
             print()
@@ -2649,12 +2724,12 @@ def main():
         except Exception as e:  # noqa: BLE001
             if args.startup:
                 # シェルを開くたびにトレースバックを出さない。1 を返して、続く notify にいつもの通知を出させる。
-                print(f"dotfiles update failed ({type(e).__name__}: {e})")
+                say(style, f"dotfiles update failed ({type(e).__name__}: {e})", "error", "error")
                 return 1
             traceback.print_exc()
             return 2
     try:
-        updates, unknown = run_check()
+        updates, unknown = run_check(style)
     except Exception:  # noqa: BLE001
         # 1 は「更新あり」の意味なので、想定外の失敗をそれと区別する。
         traceback.print_exc()
