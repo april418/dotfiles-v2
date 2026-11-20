@@ -36,7 +36,7 @@ def absolute(path):
     """symlink を解決しない絶対パスを返す。末尾の / は外す。空、または .. を含むなら Refused。"""
     # 空文字列は os.path.join で cwd そのものになり、cwd を丸ごと移してしまう。
     if path == "":
-        raise Refused("空のパスは扱わない")
+        raise Refused("empty path")
     if not os.path.isabs(path):
         # 表示と戻し先を、利用者が見ている symlink を含んだ形にするため $PWD を優先する。
         cwd = os.environ.get("PWD", "")
@@ -49,7 +49,7 @@ def absolute(path):
     # リンク先を指すので外す。.. は symlink を挟むと字面と行き先が食い違うので受け付けない。
     parts = [p for p in path.split("/") if p not in ("", ".")]
     if ".." in parts:
-        raise Refused(f"{path}: .. を含むパスは扱わない（.. を含まない絶対パスで渡す）")
+        raise Refused(f"{path}: paths with .. are not accepted (pass an absolute path without ..)")
     return "/" + "/".join(parts)
 
 
@@ -78,13 +78,13 @@ def check_source(src):
     # 字面で比べると、symlink を経由した綴りや、大文字小文字を区別しないファイルシステムでの
     # 綴りの違いをすり抜けるので、inode で比べる。
     if any(is_same(src, a) for a in ancestors(ROOT)):
-        raise Refused(f"{src}: 退避先そのものか、その親は退避しない")
+        raise Refused(f"{src}: is the evacuation root or its parent")
     if any(is_same(p, ROOT, follow=True) for p in ancestors(src)[1:]):
-        raise Refused(f"{src}: 退避先の中のものは退避しない。戻すなら --restore を使う")
+        raise Refused(f"{src}: already evacuated (use --restore to restore it)")
     if any(is_same(src, a) for a in ancestors(os.getcwd())):
-        raise Refused(f"{src}: 作業中のディレクトリか、その親は退避しない")
+        raise Refused(f"{src}: is the current directory or its parent")
     if not os.path.lexists(src):
-        raise Refused(f"{src}: 見つからない")
+        raise Refused(f"{src}: not found")
 
 
 def usable(workdir, dest):
@@ -130,23 +130,23 @@ def move(src, dest):
     # 入れるので、終了コードではなく移動元と移動先の有無で確かめる。
     if os.path.lexists(dest) and not os.path.lexists(src):
         return None, False
-    detail = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else f"mv が exit {proc.returncode}"
+    detail = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else f"mv exited with {proc.returncode}"
     check = f"ls -ld {shlex.quote(src)} {shlex.quote(dest)}"
     if os.path.lexists(src) and os.path.lexists(dest):
         # 別のファイルシステムへの mv は、写したあと移動元を消せずに止まることがある。
-        return f"移動先に写したが、移動元が残っている（{detail}）。両方を確かめる: {check}", False
+        return f"copied, but the source remains ({detail}); check both: {check}", False
     if not os.path.lexists(src):
-        return f"移動元も移動先も見つからない（{detail}）", False
+        return f"neither the source nor the destination exists ({detail})", False
     denied = not os.access(os.path.dirname(src), os.W_OK) or any(
         os.strerror(e) in proc.stderr for e in (errno.EACCES, errno.EPERM)
     )
     if not denied:
-        return f"移せなかった（{detail}）", False
+        return f"move failed ({detail})", False
     # sudo は権限設定で拒否されているので、ユーザーに mv の 1 行だけを打ってもらう。
     return (
-        f"権限が足りず移せなかった（{detail}）。ユーザーに次の 1 行を実行してもらう: "
+        f"permission denied ({detail}); ask the user to run: "
         f"sudo mv -n -- {shlex.quote(src)} {shlex.quote(dest)}\n"
-        f"  実行したら、移動元が消えて移動先にあることを確かめる: {check}"
+        f"  then check that the source is gone and the destination exists: {check}"
     ), True
 
 
@@ -161,7 +161,7 @@ def evacuate(name, paths):
             src = absolute(raw)
             check_source(src)
         except Refused as e:
-            print(f"退避しなかった: {e}", file=sys.stderr)
+            print(f"not evacuated: {e}", file=sys.stderr)
             failed = True
             continue
         # 同じ呼び出しの中で写し先がぶつかったら、上書きも合流もせず、次の作業ディレクトリへ置く。
@@ -176,16 +176,16 @@ def evacuate(name, paths):
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         error, denied = move(src, dest)
         if error:
-            print(f"退避しなかった: {src}: {error}", file=sys.stderr)
+            print(f"not evacuated: {src}: {error}", file=sys.stderr)
             failed = True
             if denied:
                 pending.append(dest)
             continue
-        print(f"退避した: {src}\n  → {dest}")
+        print(f"evacuated: {src}\n  → {dest}")
         moved.append(dest)
-    for label, dests in (("", moved), ("ユーザーが sudo mv で移したものを", pending)):
+    for label, dests in (("", moved), (" after the user runs sudo mv", pending)):
         if dests:
-            print(f"\n{RETENTION_DAYS} 日を過ぎると SessionStart フックが消す。{label}戻すには:")
+            print(f"\nThe SessionStart hook deletes these after {RETENTION_DAYS} days. To restore them{label}:")
             print("  evacuate --restore " + " ".join(shlex.quote(d) for d in dests))
     return not failed
 
@@ -197,48 +197,48 @@ def restore(paths):
             src = absolute(raw)
             rel = os.path.relpath(src, ROOT).split("/") if inside(src, ROOT) else []
             if len(rel) < 2 or not WORKDIR.match(rel[0]):
-                raise Refused(f"{src}: {ROOT}/<YYYYMMDD>-<作業名>/ の下の、退避したもののパスを渡す")
+                raise Refused(f"{src}: pass a path under {ROOT}/<YYYYMMDD>-<name>/")
             if not os.path.lexists(src):
-                raise Refused(f"{src}: 見つからない")
+                raise Refused(f"{src}: not found")
             dest = "/" + "/".join(rel[1:])
             if os.path.lexists(dest):
-                raise Refused(f"{dest}: 戻し先に既に何かある。上書きしない")
+                raise Refused(f"{dest}: already exists (not overwriting)")
             parent = os.path.dirname(dest)
             if not os.path.isdir(parent):
-                raise Refused(f"{parent}: 戻し先の親ディレクトリが無い。先に作るか確かめる")
+                raise Refused(f"{parent}: parent directory missing (create it first)")
         except Refused as e:
-            print(f"戻さなかった: {e}", file=sys.stderr)
+            print(f"not restored: {e}", file=sys.stderr)
             failed = True
             continue
         error, _ = move(src, dest)
         if error:
-            print(f"戻さなかった: {src}: {error}", file=sys.stderr)
+            print(f"not restored: {src}: {error}", file=sys.stderr)
             failed = True
             continue
-        print(f"戻した: {src}\n  → {dest}")
+        print(f"restored: {src}\n  → {dest}")
     return not failed
 
 
 def main():
     parser = argparse.ArgumentParser(
         prog="evacuate",
-        description=f"取り除くものを {ROOT} へ移す。{RETENTION_DAYS} 日を過ぎたものは SessionStart フックが消す。",
+        description=f"Move files to {ROOT} instead of deleting them. The SessionStart hook deletes them after {RETENTION_DAYS} days.",
     )
     parser.add_argument(
-        "-n", "--name", metavar="作業名", help="英数字と . _ - で書く。退避先の <YYYYMMDD>-<作業名> になる"
+        "-n", "--name", metavar="NAME", help="letters, digits, . _ -; becomes <YYYYMMDD>-<NAME> in the destination"
     )
-    parser.add_argument("--restore", action="store_true", help="退避先のパスを受け取り、元の場所へ戻す")
-    parser.add_argument("paths", nargs="+", metavar="パス")
+    parser.add_argument("--restore", action="store_true", help="move evacuated paths back to where they came from")
+    parser.add_argument("paths", nargs="+", metavar="PATH")
     args = parser.parse_args()
     if args.restore:
         if args.name:
-            parser.error("--restore と -n は一緒に使わない")
+            parser.error("--restore and -n cannot be combined")
         ok = restore(args.paths)
     else:
         if not args.name:
-            parser.error("退避するときは -n <作業名> を付ける")
+            parser.error("-n <name> is required")
         if not NAME.fullmatch(args.name):
-            parser.error(f"作業名は英数字で始め、英数字と . _ - だけで書く: {args.name!r}")
+            parser.error(f"name must start with a letter or digit and use only letters, digits, . _ -: {args.name!r}")
         ok = evacuate(args.name, args.paths)
     sys.exit(0 if ok else 1)
 
