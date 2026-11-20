@@ -1366,13 +1366,8 @@ def spawn_refresh():
 # ---------------------------------------------------------------- 表示
 
 
-def print_notice(found, style, name=None):
-    """name は項目の名前。summary がその名前で始まれば、powerline で名前を見出しにする。"""
-    summary = found["summary"]
-    if name and summary.startswith(name + " "):
-        say_kind(style, "update", summary, 2, name, [summary[len(name) + 1 :]])
-    else:
-        say_kind(style, "update", summary, indent=2)
+def print_notice(found, style):
+    say_kind(style, "update", found["summary"], indent=2)
     # 手順はコピーして流すので、powerline でもセグメントに入れない。
     for command in found["commands"]:
         print(f"      {command}")
@@ -1431,20 +1426,20 @@ def print_items(section, empty, style, icon):
     for item in section["items"]:
         name = item["label"]
         if item["problem"]:
-            say_kind(style, "warn", f"{name}: {item['problem']}", 2, name, [item["problem"]])
+            say_kind(style, "warn", f"{name}: {item['problem']}", indent=2)
             unknown = True
         if item["notice"]:
-            print_notice(item["notice"], style, name)
+            print_notice(item["notice"], style)
             updates = True
         elif item["problem"]:
             # 前回の結果は残しているが、確かめていない理由や ✓ まで出すと今回も確かめたように読める。
             continue
         elif item["skipped"]:
-            say_kind(style, "note", f"{name}: {item['skipped']}", 2, name, [item["skipped"]])
+            say_kind(style, "note", f"{name}: {item['skipped']}", indent=2)
         else:
-            say_kind(style, "ok", name, 2, name)
+            say_kind(style, "ok", name, indent=2)
         if item.get("remark"):
-            say_kind(style, "note", f"{name}: {item['remark']}", 2, name, [item["remark"]])
+            say_kind(style, "note", f"{name}: {item['remark']}", indent=2)
     return updates, unknown
 
 
@@ -1579,10 +1574,11 @@ def say(style, plain, color="info", icon=None, title=None, items=(), indent=0):
     print(plain, flush=True)
 
 
-def say_kind(style, kind, text, indent=0, title=None, items=()):
-    """KINDS の印を付けて 1 行出す。title を省くと、powerline では text を見出しにせず続ける。"""
+def say_kind(style, kind, text, indent=0):
+    """KINDS の印を付けて 1 行出す。powerline ではアイコンにだけ背景を敷き、text を続ける。"""
+    # text の頭のツールや固定バージョンの名前まで背景を敷くと、節の見出しと見分けにくい。
     mark, color, icon = KINDS[kind]
-    say(style, f"{' ' * indent}{mark} {text}", color, icon, title, items if title is not None else [text], indent)
+    say(style, f"{' ' * indent}{mark} {text}", color, icon, items=[text], indent=indent)
 
 
 def run_notify(fmt, style="plain"):
@@ -2365,7 +2361,7 @@ def bump_write(repo, names, dry_run, style):
     pins = find_pins(repo)
     for pin in pins:
         if isinstance(pin, BrokenPin):
-            say_kind(style, "warn", f"{pin.where}: {pin.problem}", title=pin.where, items=[pin.problem])
+            say_kind(style, "warn", f"{pin.where}: {pin.problem}")
     tag_pins = [p for p in pins if isinstance(p, TagPin)]
     unknown = sorted(set(names) - {p.name for p in tag_pins})
     if unknown:
@@ -2379,25 +2375,19 @@ def bump_write(repo, names, dry_run, style):
         if error:
             failures += 1
             failed = f"fetch failed ({error})"
-            say_kind(style, "warn", f"{pin.name}: {failed}", title=pin.name, items=[failed])
+            say_kind(style, "warn", f"{pin.name}: {failed}")
             continue
         latest = data.get("latest")
         if latest is None:
             waiting = f"no version past the {PIN_COOLDOWN // (24 * 60 * 60)}-day cooldown"
-            say_kind(style, "note", f"{pin.name}: {waiting}", title=pin.name, items=[waiting])
+            say_kind(style, "note", f"{pin.name}: {waiting}")
             continue
         if version_key(pin.current) >= version_key(latest):
-            say_kind(style, "ok", f"{pin.name} {pin.current}", title=pin.name, items=[pin.current])
+            say_kind(style, "ok", f"{pin.name} {pin.current}")
             continue
         new = pin_form(pin.current, latest)
         when = f" (released {data['published'][:10]})" if data.get("published") else ""
-        say_kind(
-            style,
-            "bump",
-            f"{pin.name} {pin.current} → {new}{when}  {pin.where}",
-            title=pin.name,
-            items=[f"{pin.current} → {new}{when}", pin.where],
-        )
+        say_kind(style, "bump", f"{pin.name} {pin.current} → {new}{when}  {pin.where}")
         changes.append((pin, new))
     if not dry_run:
         rewrite_pins(repo, changes)
