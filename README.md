@@ -6,6 +6,33 @@
 bash -c "$(curl -L g.oftn.lv/dtfls)"
 ```
 
+## 固定バージョン
+
+ロールが入れるツールの多くは、ロールの `vars/main.yml` に書いたバージョンで固定する。プレイブックはどのマシンでも
+固定したバージョンを入れるので、固定値を上げてマージしない限り、マシンごとにバージョンがずれない。
+`dotfiles update` が上げる uv・nvm・Homebrew などは固定せず、マシンごとに上がる。
+
+固定値の前の行に `# dotfiles: tags <URL> [接頭辞]` の目印を付けると、`dotfiles check` はこのマシンに入っている
+バージョンを公開から 7 日経った最新と比べて知らせる。固定値は `dotfiles bump` で上げる。流すステップは `--steps` で選ぶ。
+
+| ステップ | すること                                                                                                                                      |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `write`  | 目印のある固定値を、公開から 7 日経った最新に書き換える。このマシンに入っていないものも上げる。変数名を並べると、それだけを上げる             |
+| `pr`     | 書き換えた固定値を `feature/pins-bump-<日付>` にコミットし、push して PR を作る。`--merge` を付けると、CI を待ってマージし、master を取り込む |
+| `apply`  | プレイブックを流す。yomiyasu のようにプレイブックだけでは入れ替わらないものは、続けてその手順も流す                                           |
+
+```sh
+dotfiles bump --dry-run            # 上がるものを表示するだけ
+dotfiles bump                      # write だけ
+dotfiles bump --steps pr           # 書き換えた分を PR にする
+dotfiles bump --steps all --merge  # 書き換えから、PR、マージ、プレイブックまで通しで流す
+dotfiles bump --steps apply        # PR をマージした後に、ほかのマシンで流す
+```
+
+`pr` と `apply` は master の上で origin/master と揃っているときだけ流れる。`pr` は固定値の行のほかに変更があると
+止まる。`apply` は、マージしていない固定値をこのマシンだけに入れないよう、`ansible/` にコミットしていない変更があると
+止まる。同じ理由で、`pr` の後に続けて `apply` を流すには `--merge` が要る。
+
 ## Codex / ChatGPT のグローバル指示
 
 `codex` ロールは `~/.codex/AGENTS.md` にグローバル指示を配置する。
@@ -212,6 +239,8 @@ check は原稿の写しと記録を git の最上位の `.yomiyasu/`（環境�
 claude plugin marketplace add 'nanaism/yomiyasu#<claude_yomiyasu_version の値>'
 claude plugin update yomiyasu@yomiyasu
 ```
+
+`dotfiles bump --steps apply` は、入っているバージョンが固定値と違えば、プレイブックの後にこの 2 行も流す。
 
 Codex の側は手で揃えなくてよい。プレイブックが clone を新しいタグへ checkout し直し、リンクはそのまま新しいバージョンを指す。
 

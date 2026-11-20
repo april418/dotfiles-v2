@@ -301,6 +301,17 @@ def interpreter_problem(path):
     return None if os.path.exists(interpreter) else f"{shown(interpreter)} が無い"
 
 
+def default_remote(repo):
+    """origin の既定ブランチの remote-tracking ref（origin/master など）。見つからなければ None。"""
+    remote = git(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    if remote is not None:
+        return remote
+    return next(
+        (r for r in ("origin/main", "origin/master") if git(repo, "rev-parse", "--verify", "--quiet", r)),
+        None,
+    )
+
+
 def apply_command(repo):
     """プレイブックを流すコマンドの表示。"""
     return f"ansible-playbook {shown(os.path.join(repo, 'ansible', 'playbook.yml'))} --connection=local"
@@ -330,12 +341,7 @@ def check_dotfiles():
         )
         # 流しても失敗するので、update の手順にしない。pull だけを済ませても配置はされない。
         apply_steps = []
-    remote = git(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
-    if remote is None:
-        remote = next(
-            (r for r in ("origin/main", "origin/master") if git(repo, "rev-parse", "--verify", "--quiet", r)),
-            None,
-        )
+    remote = default_remote(repo)
     result["remote"] = remote
     behind = count(repo, f"HEAD..{remote}", DEPLOYED_PATH) if remote else None
     if behind is None:
@@ -1033,6 +1039,8 @@ class Pin(Tool):
     def __init__(self, key, label, rel, line):
         self.key = key
         self.label = label
+        self.rel = rel
+        self.line = line
         self.where = f"{rel}:{line}"
 
 
@@ -1072,6 +1080,10 @@ class TagPin(Pin):
         # 入っていないものの取得に失敗しても、このマシンには関係が無い。取得しなければ失敗の通知も出ない。
         if self.problem or self.name in CHECKED_AS_TOOL or self.installed() is None:
             return {}
+        return self.latest()
+
+    def latest(self):
+        """公開から PIN_COOLDOWN を過ぎた最新を {"latest", "published"} で返す。入っているかに依らず取りに行く。"""
         out = run(["git", "ls-remote", "--tags", "--refs", self.url], FETCH_TIMEOUT)[0]
         tags = set(re.findall(rf"refs/tags/({re.escape(self.prefix)}v?\d+(?:\.\d+)+)$", out, re.MULTILINE))
         if not tags:
@@ -2181,6 +2193,294 @@ def parse_only(value):
     return targets
 
 
+# ---------------------------------------------------------------- 固定値の更新
+#
+# bump は固定値を上げる手順を 3 つのステップに分け、どれかだけでも通しでも流せる。write は checkout の固定値を最新に
+# 書き換え、pr はそれをブランチにコミットして PR を作り（--merge ならマージして既定ブランチを取り込む）、
+# apply はプレイブックを流す。
+
+BUMP_STEPS = ("write", "pr", "apply")
+# PR を作った直後は CI のチェックがまだ登録されておらず、gh pr checks --watch は待たずに失敗する。
+CHECKS_APPEAR_TIMEOUT = 120
+
+
+class BumpError(Exception):
+    """そのステップを流せない、または流したステップが失敗した。"""
+
+
+def parse_steps(value):
+    steps = {s.strip() for s in value.split(",") if s.strip()}
+    if not steps or steps - {*BUMP_STEPS, "all"}:
+        raise argparse.ArgumentTypeError("write・pr・apply・all をカンマで並べる")
+    return set(BUMP_STEPS) if "all" in steps else steps
+
+
+def step(argv, repo, capture=False):
+    """コマンドを表示してから流す。0 以外で終わったら BumpError を投げる。capture なら stdout を返す。"""
+    print("$ " + shlex.join(argv), flush=True)
+    p = subprocess.run(argv, cwd=repo, stdout=subprocess.PIPE if capture else None, text=True, check=False)
+    if p.returncode != 0:
+        raise BumpError(f"{os.path.basename(argv[0])} が {p.returncode} で終了した")
+    return p.stdout if capture else None
+
+
+def pin_form(current, latest):
+    """latest を、今の固定値と同じ書き方（先頭の v の有無）にする。ロールは書いた文字列のままタグや URL に使う。"""
+    bare = latest.removeprefix("v")
+    return "v" + bare if current.startswith("v") else bare
+
+
+def require_base(repo, remote, what):
+    """既定ブランチの上で、remote と同じコミットにいなければ BumpError を投げる。"""
+    base = remote.split("/", 1)[1]
+    branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+    if branch != base:
+        raise BumpError(f"{what}は {base} の上で流す（今は {branch or 'detach した HEAD'}）")
+    if git(repo, "rev-parse", "HEAD") != git(repo, "rev-parse", remote):
+        raise BumpError(f"{base} が {remote} と揃っていない（git pull --rebase origin {base} で揃えてから流す）")
+
+
+def bump_write(repo, names, dry_run):
+    """固定値を最新に書き換え、(書き換えた [(pin, 新しい値)], 取得に失敗した数) を返す。"""
+    pins = find_pins(repo)
+    for pin in pins:
+        if isinstance(pin, BrokenPin):
+            print(f"! {pin.where}: {pin.problem}")
+    tag_pins = [p for p in pins if isinstance(p, TagPin)]
+    unknown = sorted(set(names) - {p.name for p in tag_pins})
+    if unknown:
+        raise BumpError(f"目印の付いた固定値に無い（{', '.join(unknown)}）")
+    targets = [p for p in tag_pins if not names or p.name in names]
+    # 固定値はマシンに依らないので、check と違って入っていないものも取りに行く。
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda p: attempt(p.latest), targets))
+    changes, failures = [], 0
+    for pin, (data, error) in zip(targets, results):
+        if error:
+            failures += 1
+            print(f"! {pin.name}: 最新版を取得できなかった（{error}）")
+            continue
+        latest = data.get("latest")
+        if latest is None:
+            print(f"- {pin.name}: 公開から {PIN_COOLDOWN // (24 * 60 * 60)} 日経ったバージョンが無い")
+            continue
+        if version_key(pin.current) >= version_key(latest):
+            print(f"✓ {pin.name} {pin.current}")
+            continue
+        new = pin_form(pin.current, latest)
+        when = f"（{data['published'][:10]} 公開）" if data.get("published") else ""
+        print(f"↑ {pin.name} {pin.current} → {new}{when}  {pin.where}")
+        changes.append((pin, new))
+    if not dry_run:
+        rewrite_pins(repo, changes)
+    return changes, failures
+
+
+def rewrite_pins(repo, changes):
+    by_file = {}
+    for pin, new in changes:
+        by_file.setdefault(pin.rel, []).append((pin, new))
+    for rel, items in by_file.items():
+        path = os.path.join(repo, rel)
+        with open(path, encoding="utf-8", newline="") as f:
+            lines = f.read().splitlines(keepends=True)
+        for pin, new in items:
+            m = KEY_VALUE.match(lines[pin.line - 1])
+            if not m or m.groups() != (pin.name, pin.current):
+                raise BumpError(f"{pin.where} が読んだときから変わった")
+            start, end = m.span(2)
+            lines[pin.line - 1] = lines[pin.line - 1][:start] + new + lines[pin.line - 1][end:]
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write("".join(lines))
+
+
+def pin_changes(repo):
+    """HEAD から書き換えた固定値を [(変数名, 前の値, 新しい値, ファイル)] で返す。
+
+    固定値の行のほかに変更があれば BumpError を投げる。PR に説明していない変更を混ぜないため。
+    """
+    changed = git(repo, "diff", "--name-only", "HEAD")
+    if changed is None:
+        raise BumpError("git diff を読めない")
+    pin_lines = {}
+    for pin in find_pins(repo):
+        if isinstance(pin, TagPin):
+            pin_lines.setdefault(pin.rel, set()).add(pin.line - 1)
+    found = []
+    for rel in changed.splitlines():
+        old = git(repo, "show", f"HEAD:{rel}")
+        try:
+            with open(os.path.join(repo, rel), encoding="utf-8") as f:
+                new = f.read()
+        except (OSError, UnicodeDecodeError):
+            new = None
+        old_lines, new_lines = (old or "").splitlines(), (new or "").splitlines()
+        differ = [i for i, (a, b) in enumerate(zip(old_lines, new_lines)) if a != b]
+        if (
+            old is None
+            or new is None
+            or len(old_lines) != len(new_lines)
+            or not set(differ) <= pin_lines.get(rel, set())
+        ):
+            raise BumpError(f"固定値の行のほかにも変更がある（{rel}）。コミットするか退避してから流す")
+        for i in differ:
+            before, after = KEY_VALUE.match(old_lines[i]), KEY_VALUE.match(new_lines[i])
+            if not before or before.group(1) != after.group(1):
+                raise BumpError(f"固定値の行のほかにも変更がある（{rel}:{i + 1}）")
+            found.append((after.group(1), before.group(2), after.group(2), rel))
+    return found
+
+
+def wait_checks(repo, url):
+    deadline = time.time() + CHECKS_APPEAR_TIMEOUT
+    while True:
+        # 実行中のチェックがあると 8 で終わるが、JSON は出る。
+        p = subprocess.run(
+            ["gh", "pr", "checks", url, "--json", "name"], cwd=repo, capture_output=True, text=True, check=False
+        )
+        try:
+            if p.returncode in (0, 8) and json.loads(p.stdout or "[]"):
+                break
+        except ValueError:
+            pass
+        if time.time() >= deadline:
+            raise BumpError(f"{CHECKS_APPEAR_TIMEOUT} 秒待っても CI のチェックが出てこないので、マージしていない")
+        time.sleep(5)
+    try:
+        step(["gh", "pr", "checks", url, "--watch", "--fail-fast"], repo)
+    except BumpError:
+        raise BumpError("CI が通らなかったので、マージしていない")
+
+
+def bump_pr(repo, remote, merge):
+    """書き換えた固定値をブランチにコミットして PR を作る。merge ならマージして既定ブランチを取り込む。"""
+    require_base(repo, remote, "pr ")
+    changes = pin_changes(repo)
+    if not changes:
+        print("コミットする固定値の変更が無い")
+        return
+    base = remote.split("/", 1)[1]
+    branch = f"feature/pins-bump-{time.strftime('%Y%m%d')}"
+    if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None or (
+        git(repo, "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}") is not None
+    ):
+        raise BumpError(f"{branch} がもうある。前の PR を片付けてから流す")
+    listed = "\n".join(f"- {name}: {old} → {new}" for name, old, new, _ in changes)
+    subject = "chore(ansible): 固定バージョンを上げる"
+    after = [command for name, _, new, _ in changes if name in AFTER_APPLY for command in AFTER_APPLY[name](new)]
+    body = (
+        f"公開から {PIN_COOLDOWN // (24 * 60 * 60)} 日経った最新に、固定バージョンを上げる。`dotfiles bump` が作った。\n\n"
+        f"{listed}\n\n"
+        "マージした後、各マシンで `dotfiles bump --steps apply` を流す（プレイブックを流し、"
+        + ("続けて " + "、".join(f"`{c}`" for c in after) + " を流す）。" if after else "その後の手順は無い）。")
+    )
+    step(["git", "switch", "-c", branch, remote, "--no-track"], repo)
+    step(["git", "add", "--", *sorted({rel for *_, rel in changes})], repo)
+    step(["git", "commit", "-m", subject, "-m", listed], repo)
+    step(["git", "push", "-u", "origin", branch], repo)
+    url = step(
+        ["gh", "pr", "create", "--base", base, "--head", branch, "--title", subject, "--body", body], repo, capture=True
+    ).strip()
+    print(url)
+    if merge:
+        wait_checks(repo, url)
+        # --delete-branch は手元のブランチの切り替えと削除も gh に任せるので使わず、下で git に流させる。
+        step(["gh", "pr", "merge", url, "--merge"], repo)
+    step(["git", "switch", base], repo)
+    if not merge:
+        print(f"PR をマージした後に dotfiles bump --steps apply を流す。{branch} は手元に残している")
+        return
+    step(["git", "pull", "--rebase", "origin", base], repo)
+    step(["git", "branch", "-d", branch], repo)
+    # リポジトリの設定でマージと一緒に消えていることがある。
+    if git(repo, "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}") is not None:
+        step(["git", "push", "origin", "--delete", branch], repo)
+
+
+def bump_apply(repo, remote):
+    """プレイブックを流し、プレイブックだけでは入れ替わらないものの手順（AFTER_APPLY）も流す。"""
+    # マージしていない固定値を入れると、このマシンだけほかのマシンとずれる。
+    require_base(repo, remote, "apply ")
+    if git(repo, "diff", "--name-only", "HEAD", "--", DEPLOYED_PATH):
+        raise BumpError(f"{DEPLOYED_PATH}/ にコミットしていない変更がある（PR にしてマージしてから流す）")
+    playbook_bin = ansible_playbook()
+    problem = "見つからない" if playbook_bin is None else interpreter_problem(playbook_bin)
+    if problem:
+        raise BumpError(
+            f"ansible-playbook が起動しない（{problem}）。{shown(os.path.join(repo, 'install'))} を流し直す"
+        )
+    step([playbook_bin, os.path.join(repo, "ansible", "playbook.yml"), "--connection=local"], repo)
+    for pin in find_pins(repo):
+        if not isinstance(pin, TagPin) or pin.name not in AFTER_APPLY:
+            continue
+        installed, error = attempt(pin.installed)
+        if error:
+            raise BumpError(f"{pin.name}: 入っているバージョンを読めない（{error}）")
+        # 入れていないマシンでは、update が入れていないプラグインを探して失敗する。
+        if installed is None or version_key(installed) == version_key(pin.current):
+            continue
+        for command in AFTER_APPLY[pin.name](pin.current):
+            step(shlex.split(command), repo)
+
+
+def run_bump(names, steps, merge, dry_run):
+    repo, _ = locate()
+    if repo is None:
+        print("checkout が見つからない（DOTPATH か ~/.dotfiles に置く）", file=sys.stderr)
+        return 2
+    usage = None
+    if dry_run and steps != {"write"}:
+        usage = "--dry-run は write だけと使う"
+    elif names and "write" not in steps:
+        usage = "変数名は write と使う"
+    elif merge and "pr" not in steps:
+        usage = "--merge は pr と使う"
+    elif {"pr", "apply"} <= steps and not merge:
+        usage = "pr の後に apply を流すには --merge を付ける（マージ前に流すと、このマシンだけ上げた値が入る）"
+    if usage:
+        print(f"dotfiles bump: {usage}", file=sys.stderr)
+        return 2
+    remote = default_remote(repo)
+    if remote is None:
+        print("dotfiles bump: origin の既定ブランチを特定できない", file=sys.stderr)
+        return 2
+    try:
+        step(["git", "fetch", "origin"], repo)
+        if "pr" in steps:
+            # 書き換えた後に流せないと分かるより、先に止まるほうが手戻りが無い。
+            require_base(repo, remote, "pr ")
+        if "write" in steps:
+            if count(repo, f"HEAD..{remote}", DEPLOYED_PATH):
+                raise BumpError(
+                    f"checkout が {remote} より遅れている（上流で上げた値とぶつかるので、取り込んでから流す）"
+                )
+            changes, failures = bump_write(repo, names, dry_run)
+            if dry_run or steps == {"write"}:
+                if changes and not dry_run:
+                    print("コミットと PR は dotfiles bump --steps pr で作れる")
+                return 1 if failures else 0
+            if failures:
+                print(
+                    "最新版を取得できなかったものがあるので、pr 以降は流していない。書き換えた分は --steps pr で続けられる"
+                )
+                return 1
+            if not changes and not pin_changes(repo):
+                print("上げる固定値は無い")
+                return 0
+        if "pr" in steps:
+            bump_pr(repo, remote, merge)
+        if "apply" in steps:
+            bump_apply(repo, remote)
+    except (BumpError, FetchError) as e:
+        print(f"dotfiles bump: {e}", file=sys.stderr)
+        print(
+            f"今のブランチは {git(repo, 'symbolic-ref', '--quiet', '--short', 'HEAD') or 'detach した HEAD'}",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def main():
     # サブコマンドやオプションを変えたら、zsh の補完（files/_dotfiles）も合わせる。
     parser = argparse.ArgumentParser(
@@ -2231,6 +2531,27 @@ def main():
     update.add_argument(
         "--style", choices=["plain", "powerline"], default="plain", help="powerline は Nerd Font の記号と 256 色で描く"
     )
+    bump = sub.add_parser(
+        "bump",
+        help=(
+            "固定バージョンを公開から 7 日経った最新に上げる。write で checkout を書き換え、pr でブランチにコミットして PR を作り、"
+            "apply でプレイブックを流す。終了コードは 0 = 済んだ（上げるものが無いときも）、1 = 流せなかったステップか失敗したステップがある、"
+            "2 = 引数の誤り"
+        ),
+    )
+    bump.add_argument(
+        "names", nargs="*", metavar="変数名", help="上げる固定値（awscli_version など）。省くと目印のある全部"
+    )
+    bump.add_argument(
+        "--steps",
+        type=parse_steps,
+        default={"write"},
+        help="流すステップ。write・pr・apply・all をカンマで並べる。省くと write だけ",
+    )
+    bump.add_argument(
+        "--merge", action="store_true", help="pr で、CI を待って PR をマージし、既定ブランチを取り込むところまで流す"
+    )
+    bump.add_argument("--dry-run", action="store_true", help="write で、書き換えずに上がるものだけを表示する")
     sub.add_parser("refresh", help="リモートを取得する。notify がバックグラウンドで起動する")
     character = sub.add_parser("character", help="Claude Code のキャラクターと選べるものを表示する。set で切り替える")
     character_sub = character.add_subparsers(dest="character_command", metavar="<command>")
@@ -2250,6 +2571,8 @@ def main():
     if args.command == "refresh":
         refresh(wait=False)
         return 0
+    if args.command == "bump":
+        return run_bump(args.names, args.steps, args.merge, args.dry_run)
     if args.command == "update":
         try:
             return run_update(args.startup, args.only, args.style)
