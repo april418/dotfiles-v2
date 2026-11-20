@@ -24,7 +24,7 @@
 
 - name: Debug node is not available
   ansible.builtin.debug:
-    msg: "npm が見つからないため prettier {{ prettier_version }} を入れていない。nvm で node を入れてから流し直す。"
+    msg: "npm not found; prettier {{ prettier_version }} not installed. Install node with nvm and rerun"
   when: prettier_npm.rc is defined and prettier_npm.rc != 0
 
 # npm の bin は #!/usr/bin/env node で動くので、nvm.sh で node を PATH に載せたシェルから呼ぶ。

@@ -21,7 +21,7 @@
 # npx skills add -g などで入れた実体のフォルダは、置き換えずに知らせる。止めると後のロールと適用の記録まで飛ぶ。
 - name: Debug yomiyasu is installed another way
   ansible.builtin.debug:
-    msg: "{{ codex_skills_dir }}/yomiyasu がリンクではないため、yomiyasu {{ codex_yomiyasu_version }} を置いていない。退避してから流し直す。"
+    msg: "{{ codex_skills_dir }}/yomiyasu is not a symlink; yomiyasu {{ codex_yomiyasu_version }} not installed. Evacuate it and rerun"
   when: codex_yomiyasu_skill.stat.exists and not codex_yomiyasu_skill.stat.islnk
 
 - name: Link yomiyasu into user skills
@@ -65,7 +65,7 @@
 # 止めると後のロールと適用の記録まで飛ぶ。
 - name: Debug shared skill is not a link
   ansible.builtin.debug:
-    msg: "{{ codex_skills_dir }}/{{ item.item }} がリンクではないため、{{ item.item }} を置いていない。退避してから流し直す。"
+    msg: "{{ codex_skills_dir }}/{{ item.item }} is not a symlink; {{ item.item }} not installed. Evacuate it and rerun"
   loop: "{{ codex_shared_skill_target_stats.results }}"
   loop_control:
     label: "{{ item.item }}"
@@ -75,7 +75,7 @@
 # check mode では claude ロールもこのロールもリンク元を作らないので、無くても知らせない。
 - name: Debug shared skill source is missing
   ansible.builtin.debug:
-    msg: "{{ codex_shared_skill_paths[item.item] }} が無いため、{{ item.item }} を置いていない。codex_shared_skills を claude ロールの skill と揃える。"
+    msg: "{{ codex_shared_skill_paths[item.item] }} not found; {{ item.item }} not installed. Align codex_shared_skills with the claude role skills"
   loop: "{{ codex_shared_skill_source_stats.results }}"
   loop_control:
     label: "{{ item.item }}"

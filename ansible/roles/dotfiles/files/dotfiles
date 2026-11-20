@@ -115,7 +115,7 @@ def run(args, timeout):
         os.killpg(p.pid, signal.SIGKILL)
         p.communicate()
         if isinstance(e, subprocess.TimeoutExpired):
-            raise FetchError(f"{timeout} 秒でタイムアウトした")
+            raise FetchError(f"timed out after {timeout}s")
         raise
     if p.returncode != 0:
         lines = [line.strip() for line in stderr.splitlines() if line.strip()]
@@ -124,7 +124,7 @@ def run(args, timeout):
         reason = next(
             (line for line in lines if re.match(r"(fatal|error):", line, re.IGNORECASE)), lines[0] if lines else None
         )
-        raise FetchError(reason or f"{os.path.basename(args[0])} が {p.returncode} で終了した")
+        raise FetchError(reason or f"{os.path.basename(args[0])} exited with {p.returncode}")
     return stdout, stderr
 
 
@@ -171,7 +171,7 @@ def http_get(url, token=None):
     except urllib.error.HTTPError as e:
         return e.code, b""
     except OSError as e:
-        raise FetchError(f"{url} に接続できない（{e}）")
+        raise FetchError(f"cannot connect to {url} ({e})")
 
 
 def github_token():
@@ -289,7 +289,7 @@ def interpreter_problem(path):
         with open(path, "rb") as f:
             head = f.read(1024).decode("utf-8", "replace").splitlines()
     except OSError as e:
-        return f"{shown(path)} を読めない（{e.strerror}）"
+        return f"cannot read {shown(path)} ({e.strerror})"
     if not head or not head[0].startswith("#!"):
         return None
     interpreter = head[0][2:].strip().split(" ")[0]
@@ -298,7 +298,7 @@ def interpreter_problem(path):
         m = re.match(r"'{3}exec' \"([^\"]+)\"", head[1])
         if m:
             interpreter = m.group(1)
-    return None if os.path.exists(interpreter) else f"{shown(interpreter)} が無い"
+    return None if os.path.exists(interpreter) else f"{shown(interpreter)} not found"
 
 
 def default_remote(repo):
@@ -321,7 +321,7 @@ def check_dotfiles():
     repo, applied = locate()
     result = {"label": label(repo), "where": repo, "notices": [], "warnings": [], "error": None, "remote": None}
     if repo is None:
-        result["error"] = "checkout が見つからない（DOTPATH か ~/.dotfiles に置く）"
+        result["error"] = "checkout not found (put it at $DOTPATH or ~/.dotfiles)"
         return result
 
     playbook = os.path.join(repo, "ansible", "playbook.yml")
@@ -334,10 +334,10 @@ def check_dotfiles():
         apply_steps.insert(0, ("sudo -v", ["sudo", "-v"]))
     # venv の Python が消える（Homebrew の cleanup が使われなくなったバージョンを消すなど）と、コマンドはあっても起動しない。
     # 子プロセスを起動せずに分かる範囲で、シェルを開くたびに確かめる。
-    problem = "見つからない" if playbook_bin is None else interpreter_problem(playbook_bin)
+    problem = "not found" if playbook_bin is None else interpreter_problem(playbook_bin)
     if problem:
         result["warnings"].append(
-            f"ansible-playbook が起動しない（{problem}）。{shown(os.path.join(repo, 'install'))} を流し直す"
+            f"ansible-playbook does not start ({problem}); rerun {shown(os.path.join(repo, 'install'))}"
         )
         # 流しても失敗するので、update の手順にしない。pull だけを済ませても配置はされない。
         apply_steps = []
@@ -345,11 +345,11 @@ def check_dotfiles():
     result["remote"] = remote
     behind = count(repo, f"HEAD..{remote}", DEPLOYED_PATH) if remote else None
     if behind is None:
-        result["warnings"].append("origin の既定ブランチを特定できないため、リモートとは比べていない")
+        result["warnings"].append("origin's default branch is unknown; not compared with the remote")
 
     if behind:
         branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
-        summary = f"{remote} より {behind} コミット遅れている"
+        summary = f"{behind} commits behind {remote}"
         if branch == remote.split("/", 1)[1]:
             # 配置用の checkout にローカルのコミットがあれば、書き換えずに止める。
             pull = f"git -C {shown(repo)} pull --ff-only origin {branch}"
@@ -361,7 +361,7 @@ def check_dotfiles():
             )
         else:
             # 作業ブランチで取り込み方を決めつけると、rebase などを勧めることになるため手順は出さない。
-            summary += f"（{branch or 'detached HEAD'} を checkout 中）"
+            summary += f" (on {branch or 'detached HEAD'})"
             commands = steps = []
         result["notices"].append(
             notice(summary, summary, commands, steps=steps, keys=[f"dotfiles:pull:{git(repo, 'rev-parse', remote)}"])
@@ -378,21 +378,19 @@ def check_dotfiles():
         )
 
     if applied is None:
-        result["notices"].append(apply_notice("適用したコミットの記録が無い"))
+        result["notices"].append(apply_notice("no record of an applied commit"))
         return result
 
     # 配置先の中身とは比べない。Claude Code が ~/.claude/settings.json を書き換えるため、常にずれて見える。
     commit = applied["commit"]
     if git(repo, "cat-file", "-e", f"{commit}^{{commit}}") is None:
-        result["notices"].append(apply_notice("適用したコミットが checkout に無い"))
+        result["notices"].append(apply_notice("applied commit not in the checkout"))
         return result
     trees = git(repo, "rev-parse", f"{commit}:{DEPLOYED_PATH}", f"HEAD:{DEPLOYED_PATH}")
     if trees is None or len(set(trees.split())) > 1:
         unapplied = count(repo, f"{commit}..HEAD", DEPLOYED_PATH)
         result["notices"].append(
-            apply_notice(
-                f"取り込み済みの {unapplied} コミットが未適用" if unapplied else "checkout と適用済みの内容が違う"
-            )
+            apply_notice(f"{unapplied} commits not applied" if unapplied else "applied files differ from the checkout")
         )
     return result
 
@@ -443,8 +441,8 @@ def waiting_remark(installed, data):
     try:
         days = int((time.time() - parse_time(data["newest_published"])) // (24 * 60 * 60))
     except (TypeError, KeyError, ValueError):
-        return f"{newest.lstrip('v')} は公開から {PIN_COOLDOWN // (24 * 60 * 60)} 日経つまで待っている"
-    return f"{newest.lstrip('v')} は公開から {days} 日のため待っている（{PIN_COOLDOWN // (24 * 60 * 60)} 日待つ）"
+        return f"{newest.lstrip('v')} is in the {PIN_COOLDOWN // (24 * 60 * 60)}-day cooldown"
+    return f"{newest.lstrip('v')} released {days}d ago ({PIN_COOLDOWN // (24 * 60 * 60)}-day cooldown)"
 
 
 class Uv(Tool):
@@ -473,7 +471,7 @@ class Uv(Tool):
             if re.fullmatch(r"\d+\.\d+\.\d+", str(r.get("tag_name"))) and not r.get("draft") and not r.get("prerelease")
         ]
         if not tags:
-            raise FetchError("uv のリリースが見つからない")
+            raise FetchError("no uv release found")
         data = release_cooldown("astral-sh", "uv", tags, releases)
         settled, installed = data["settled"], self.installed()
         if settled and version_key(installed) and version_key(installed) < version_key(settled):
@@ -489,7 +487,7 @@ class Uv(Tool):
 
     def skipped(self, data):
         if data.get("unsupported"):
-            return "standalone のインストーラーで入れたものではないため確かめていない（入れたパッケージマネージャーで更新する）"
+            return "not installed by the standalone installer"
         return None
 
     def installed(self):
@@ -508,7 +506,7 @@ class Uv(Tool):
             return None
         # バージョンはコマンドの引数になるので、リリースのバージョンの形をしていなければ使わない。
         if not isinstance(settled, str) or not re.fullmatch(r"\d+\.\d+\.\d+", settled):
-            raise ValueError(f"バージョンとして読めない（{settled!r}）")
+            raise ValueError(f"not a version: {settled!r}")
         installed = self.installed()
         if version_key(installed) is None or version_key(installed) >= version_key(settled):
             return None
@@ -554,7 +552,7 @@ class Nvm(Tool):
         )
         tags = re.findall(r"refs/tags/(v\d+\.\d+\.\d+)$", run(args, FETCH_TIMEOUT)[0], re.MULTILINE)
         if not tags:
-            raise FetchError("リリースのタグが見つからない")
+            raise FetchError("no release tag found")
         # 固定バージョンの node_nvm_version と同じく、公開から日の浅いバージョンは勧めない。
         return release_cooldown("nvm-sh", "nvm", tags)
 
@@ -572,7 +570,7 @@ class Nvm(Tool):
         # update はこの値をコマンドに埋めて実行するので、タグの形をしていなければ使わない。
         # 黙って捨てると最新に見えるので、判定できなかったものとして出す。
         if not isinstance(latest, str) or not re.fullmatch(r"v\d+\.\d+\.\d+", latest):
-            raise ValueError(f"最新版をタグとして読めない（{latest!r}）")
+            raise ValueError(f"latest is not a tag: {latest!r}")
         if version_key(installed) is None or version_key(installed) >= version_key(latest):
             return None
         if self.is_git:
@@ -626,19 +624,19 @@ class ClaudeCode(Tool):
         channel = self.channel()
         status, body = http_get(f"{CLAUDE_RELEASES}/{channel}")
         if status != 200:
-            raise FetchError(f"{channel} チャンネルのバージョンを取得できない（HTTP {status}）")
+            raise FetchError(f"cannot fetch the {channel} channel version (HTTP {status})")
         version = body.decode("utf-8", "replace").strip()
         if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-            raise FetchError(f"{channel} チャンネルのバージョンを読めない（{version[:40]!r}）")
+            raise FetchError(f"cannot parse the {channel} channel version: {version[:40]!r}")
         return {"channel": channel, "version": version}
 
     def skipped(self, data):
         if self.installed() is None:
-            return "native インストーラーで入れたものではないため確かめていない（入れた方法で更新する）"
+            return "not installed by the native installer"
         if data.get("unsupported"):
-            return "取得の後に入れ方が変わったため、次の取得で確かめる"
+            return "install method changed; checked on next fetch"
         if data.get("channel") != self.channel():
-            return "取得の後にチャンネルが変わったため、次の取得で確かめる"
+            return "channel changed; checked on next fetch"
         return None
 
     def evaluate(self, data):
@@ -647,7 +645,7 @@ class ClaudeCode(Tool):
         if installed is None or latest is None or data.get("channel") != self.channel():
             return None
         if not isinstance(latest, str) or not re.fullmatch(r"\d+\.\d+\.\d+", latest):
-            raise ValueError(f"バージョンとして読めない（{latest!r}）")
+            raise ValueError(f"not a version: {latest!r}")
         if version_key(installed) >= version_key(latest):
             return None
         summary = f"Claude Code {installed} → {latest}"
@@ -657,7 +655,7 @@ class ClaudeCode(Tool):
     def remark(self, data):
         if self.evaluate(data) is None:
             return None
-        return "自動更新と同じく、待ち期間なしでチャンネルのバージョンへ上げる"
+        return "no cooldown (same as auto-update)"
 
 
 class GitTool(Tool):
@@ -693,7 +691,7 @@ class GitTool(Tool):
     def skipped(self, data):
         # ver ice などで固定していると追跡ブランチが無く、遅れを数えられない。
         if git(self.path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}") is None:
-            return "追跡ブランチが無いため確かめていない"
+            return "no upstream branch"
         return None
 
     def settled(self):
@@ -745,8 +743,8 @@ class GitTool(Tool):
             compile_display = f"zsh -fc {shlex.quote(script)} zsh {shown(self.path)}"
             steps.append((compile_display, ["zsh", "-fc", script, "zsh", self.path]))
         return notice(
-            f"{self.label} に {behind} コミットの更新がある",
-            f"{self.label}（{behind} コミット）",
+            f"{self.label}: {behind} new commits",
+            f"{self.label} ({behind} commits)",
             [display for display, _ in steps],
             steps=steps,
             keys=[f"{self.key}@{target}"],
@@ -762,7 +760,7 @@ class GitTool(Tool):
         ):
             return None
         # 枝のコミットは、取り込んだマージコミットが待ち期間を過ぎるまで待つ（追跡ブランチに入ったのはそのとき）。
-        return f"{young} コミットは {PIN_COOLDOWN // (24 * 60 * 60)} 日の待ち期間が過ぎるまで待っている"
+        return f"{young} commits in the {PIN_COOLDOWN // (24 * 60 * 60)}-day cooldown"
 
 
 class Brew(Tool):
@@ -778,7 +776,7 @@ class Brew(Tool):
             # 自動更新の経過は stderr に出るので、stdout だけを読む。
             outdated = json.loads(run([self.path, "outdated", "--json=v2"], BREW_TIMEOUT)[0])
         except ValueError:
-            raise FetchError("brew outdated の出力を JSON として読めない")
+            raise FetchError("cannot parse brew outdated output as JSON")
         packages = []
         for kind, items in (("Cellar", outdated.get("formulae", [])), ("Caskroom", outdated.get("casks", []))):
             for item in items:
@@ -800,7 +798,7 @@ class Brew(Tool):
     def remark(self, data):
         if not any(self.still_outdated(p) for p in data.get("packages", [])):
             return None
-        return "Homebrew はバージョンの公開日時を持たないので、待ち期間なしで上げる"
+        return "no cooldown (release dates unknown)"
 
     @staticmethod
     def still_outdated(package):
@@ -817,10 +815,10 @@ class Brew(Tool):
         if not remaining:
             return None
         names = [p["name"] for p in remaining]
-        listed = "、".join(names[:5]) + (f" ほか {len(names) - 5} 件" if len(names) > 5 else "")
+        listed = ", ".join(names[:5]) + (f" and {len(names) - 5} more" if len(names) > 5 else "")
         return notice(
-            f"Homebrew の {len(names)} パッケージに更新がある（{listed}）",
-            f"Homebrew（{len(names)} 件）",
+            f"Homebrew: {len(names)} outdated ({listed})",
+            f"Homebrew ({len(names)})",
             ["brew upgrade"],
             steps=[("brew upgrade", [self.path, "upgrade"])],
             # 要約は名前しか出さないので、同じパッケージの次のバージョンが出ても変わらない。
@@ -862,20 +860,20 @@ def evaluate_all(found, entries, remarks=False):
         data = entry.get("data") if isinstance(entry.get("data"), dict) else None
         item = {"key": obj.key, "label": obj.label, "notice": None, "skipped": None, "problem": None, "remark": None}
         if entry.get("error"):
-            item["problem"] = f"最新版を取得できなかった（{entry['error']}）"
+            item["problem"] = f"fetch failed: {entry['error']}"
         try:
             if data is not None:
                 item["notice"] = obj.evaluate(data)
                 item["skipped"] = obj.skipped(data)
         except Exception as e:  # noqa: BLE001
             # 1 つの判定の失敗で、ほかの項目や dotfiles 本体の通知まで消さない。
-            item["problem"] = f"判定できなかった（{type(e).__name__}: {e}）"
+            item["problem"] = f"check failed: {type(e).__name__}: {e}"
         if remarks and data is not None and not item["problem"]:
             try:
                 item["remark"] = obj.remark(data)
             except Exception as e:  # noqa: BLE001
                 # 補足が作れなくても、判定の結果はそのまま使える。
-                item["remark"] = f"補足を作れなかった（{type(e).__name__}: {e}）"
+                item["remark"] = f"remark failed: {type(e).__name__}: {e}"
         items.append(item)
         failure = long_failure(entry)
         if failure:
@@ -885,7 +883,7 @@ def evaluate_all(found, entries, remarks=False):
 
 def check_tools(remarks=False):
     items, failures = evaluate_all(find_tools(), (read_json(TOOLS_FILE) or {}).get("tools") or {}, remarks)
-    return {"label": "ツール", "items": items, "failures": failures}
+    return {"label": "tools", "items": items, "failures": failures}
 
 
 # ---------------------------------------------------------------- 固定バージョン
@@ -921,7 +919,7 @@ def command_version(name, pattern):
     out = run([path, "--version"], 10)[0].strip()
     m = re.match(pattern, out)
     if not m:
-        raise ValueError(f"{name} --version の出力からバージョンを読めない（{out[:40]!r}）")
+        raise ValueError(f"cannot parse the version from {name} --version: {out[:40]!r}")
     return m.group(1)
 
 
@@ -939,7 +937,7 @@ def awscli_version():
         installed = os.path.lexists(current)
     # 入っているのに読めないものを「入っていない」にすると、ロールの `aws --version` の判定と食い違ったまま黙る。
     if version is None and installed:
-        raise ValueError(f"{shown(directory)} の AWS CLI のバージョンを読めない")
+        raise ValueError(f"cannot read the AWS CLI version in {shown(directory)}")
     return version
 
 
@@ -983,7 +981,7 @@ def parse_time(text):
 def github_api(path):
     status, body = http_get(f"{GITHUB_API}{path}", token=github_token())
     if status != 200:
-        raise FetchError(f"GitHub API の {path.split('?')[0]} が HTTP {status} を返した")
+        raise FetchError(f"GitHub API {path.split('?')[0]} returned HTTP {status}")
     return json.loads(body)
 
 
@@ -1005,14 +1003,15 @@ def settled_tag(owner, name, tags, releases=None):
         kind = path.split("/")[4]
         if lookups[kind] >= TAG_LOOKUP_LIMIT:
             raise FetchError(
-                f"公開から日が経ったバージョンを見つけられない（公開日時を {TAG_LOOKUP_LIMIT} 回まで引いた）"
+                f"no version past the {PIN_COOLDOWN // (24 * 60 * 60)}-day cooldown"
+                f" (hit the limit of {TAG_LOOKUP_LIMIT} release date lookups)"
             )
         lookups[kind] += 1
         status, body = http_get(f"{GITHUB_API}{path}", token=github_token())
         if status == 404:
             return None
         if status != 200:
-            raise FetchError(f"GitHub API の {path} が HTTP {status} を返した")
+            raise FetchError(f"GitHub API {path} returned HTTP {status}")
         return json.loads(body)
 
     for tag in sorted(tags, key=version_key, reverse=True):
@@ -1027,7 +1026,7 @@ def settled_tag(owner, name, tags, releases=None):
             # リリースを作らないリポジトリもある。そのバージョンのコミットの日時で代える。
             commit = lookup(f"/repos/{owner}/{name}/commits/{tag}")
             if commit is None:
-                raise FetchError(f"GitHub API で {tag} のコミットが見つからない")
+                raise FetchError(f"GitHub API has no commit for {tag}")
             published = commit["commit"]["committer"]["date"]
         if published and time.time() - parse_time(published) >= PIN_COOLDOWN:
             return tag, published
@@ -1069,7 +1068,7 @@ class TagPin(Pin):
         self.apply = apply
         super().__init__(f"tag:{rel}:{self.name}:{url}", self.name, rel, line)
         if self.name not in INSTALLED_VERSIONS and self.name not in CHECKED_AS_TOOL:
-            self.problem = f"入っているバージョンの読み方が無い（dotfiles の INSTALLED_VERSIONS に {self.name} を足す）"
+            self.problem = f"no reader for the installed version (add {self.name} to INSTALLED_VERSIONS in dotfiles)"
 
     def installed(self):
         # 判定と確かめなかった理由で 2 回呼ぶ。シェルを開くたびに流れるので、読むのは 1 回にする。
@@ -1088,7 +1087,7 @@ class TagPin(Pin):
         out = run(["git", "ls-remote", "--tags", "--refs", self.url], FETCH_TIMEOUT)[0]
         tags = set(re.findall(rf"refs/tags/({re.escape(self.prefix)}v?\d+(?:\.\d+)+)$", out, re.MULTILINE))
         if not tags:
-            raise FetchError("バージョンのタグが見つからない")
+            raise FetchError("no version tag found")
         github = GITHUB_URL.match(self.url)
         if not github:
             latest, published = max(tags, key=version_key), None
@@ -1099,16 +1098,12 @@ class TagPin(Pin):
     def skipped(self, data):
         if self.name in CHECKED_AS_TOOL:
             # ツールの節は入っていないものを出さないので、ここで入っていないことを言う。
-            return (
-                "このマシンに入っていない"
-                if Nvm.locate() is None
-                else f"ツールの {CHECKED_AS_TOOL[self.name]} で確かめる"
-            )
+            return "not installed" if Nvm.locate() is None else f"checked as {CHECKED_AS_TOOL[self.name]} under tools"
         if self.installed() is None:
-            return "このマシンに入っていない"
+            return "not installed"
         # 入っていなかったときの取得の結果には最新が無い。そのまま ✓ にすると確かめたように読める。
         if "latest" not in data:
-            return "最新版をまだ取得していない（次の取得で確かめる）"
+            return "not fetched yet"
         return None
 
     def evaluate(self, data):
@@ -1117,14 +1112,14 @@ class TagPin(Pin):
             return None
         installed = self.installed()
         if installed is not None and version_key(installed) is None:
-            raise ValueError(f"入っているバージョンを読めない（{installed!r}）")
+            raise ValueError(f"cannot parse the installed version: {installed!r}")
         if installed is None or version_key(installed) >= version_key(latest):
             return None
         summary = f"{self.name} {installed} → {latest}"
-        when = f"（{data['published'][:10]} 公開）" if data.get("published") else "（公開日は確かめていない）"
+        when = f" (released {data['published'][:10]})" if data.get("published") else " (release date unknown)"
         # ロールは固定したバージョンを入れるので、固定が古ければ上げてから流す。
         if version_key(self.current) < version_key(latest):
-            pinned, commands = latest, [f"{self.where} の {self.name} を {latest} にする", self.apply]
+            pinned, commands = latest, [f"set {self.name} to {latest} in {self.where}", self.apply]
         else:
             pinned, commands = self.current, [self.apply]
         if self.name in AFTER_APPLY:
@@ -1154,19 +1149,21 @@ def find_pins(repo):
                 found.append(
                     TagPin(rel, i + 2, *marker.groups(), target, apply)
                     if target
-                    else BrokenPin(rel, i + 1, '目印の次の行からバージョンを読めない（key: "vX.Y.Z" の形で書く）')
+                    else BrokenPin(
+                        rel, i + 1, 'cannot read the version on the line after the marker (write it as key: "vX.Y.Z")'
+                    )
                 )
     return found
 
 
 def check_pins(repo, remote=None):
-    section = {"label": "固定バージョン", "items": [], "failures": [], "note": None}
+    section = {"label": "pins", "items": [], "failures": [], "note": None}
     if repo is None:
-        section["note"] = "checkout が見つからないため確かめていない"
+        section["note"] = "checkout not found"
         return section
     if remote and count(repo, f"HEAD..{remote}", DEPLOYED_PATH):
         # 古いファイルを見て直すよう勧めると、上流で直した変更とぶつかる。
-        section["note"] = "checkout が origin より遅れているため、取り込んでから確かめる"
+        section["note"] = "checkout is behind origin; pull first"
         return section
     cache = read_json(PINS_FILE) or {}
     # キーは checkout からの相対パスなので、別の checkout の結果でも当てはまってしまう。
@@ -1194,11 +1191,11 @@ def long_failure(state):
 def brief(error):
     """シェルを開くたびに出す通知に向けて、取得の失敗の理由を短くする。全文は dotfiles check で見られる。"""
     if "CERTIFICATE_VERIFY_FAILED" in error:
-        return "TLS の証明書を検証できない"
-    if "timed out" in error or "タイムアウト" in error:
-        return "タイムアウトした"
+        return "TLS certificate verification failed"
+    if "timed out" in error:
+        return "timed out"
     if "nodename nor servname" in error or "Name or service not known" in error:
-        return "ホスト名を解決できない"
+        return "cannot resolve the host"
     text = re.sub(r"\s*https?://\S+\s*", " ", error).strip()
     return text if len(text) <= 60 else text[:59] + "…"
 
@@ -1207,12 +1204,12 @@ def summarize_failures(failures):
     """長く続いている取得の失敗を 1 行にまとめる。"""
     if len(failures) == 1:
         f = failures[0]
-        return f"{f['label']} の最新版を {f['days']} 日確かめられていない（{brief(f['error'])}）"
+        return f"{f['label']}: fetch failing for {f['days']}d ({brief(f['error'])})"
     reasons = {brief(f["error"]) for f in failures}
-    reason = reasons.pop() if len(reasons) == 1 else "理由は dotfiles check で見る"
+    reason = reasons.pop() if len(reasons) == 1 else "see dotfiles check"
     return (
-        f"{failures[0]['label']} ほか {len(failures) - 1} 件の最新版を "
-        f"{min(f['days'] for f in failures)} 日以上確かめられていない（{reason}）"
+        f"{failures[0]['label']} and {len(failures) - 1} more: "
+        f"fetch failing for {min(f['days'] for f in failures)}d+ ({reason})"
     )
 
 
@@ -1288,7 +1285,7 @@ def refresh(wait):
             {
                 "repo": repo,
                 "at": started,
-                "error": "取得が完了しなかった",
+                "error": "fetch did not finish",
                 "failing_since": failing_since or started,
             },
         )
@@ -1350,7 +1347,7 @@ def fetch_failure(repo):
     if not state or state.get("repo") != repo:
         return None
     failure = long_failure(state)
-    return f"リモートを {failure[0]} 日確かめられていない（{brief(failure[1])}）" if failure else None
+    return f"remote fetch failing for {failure[0]}d ({brief(failure[1])})" if failure else None
 
 
 def spawn_refresh():
@@ -1379,19 +1376,19 @@ def run_check():
     """結果を表示し、(更新があるか, 判定できなかったものがあるか) を返す。"""
     if sys.stderr.isatty():
         # brew outdated が brew update を走らせると数十秒かかり、その間は何も表示されない。
-        print("リモートと各ツールの最新版を取得している…", file=sys.stderr)
+        print("Fetching…", file=sys.stderr)
     fetch_error = refresh(wait=True)
     dotfiles = check_dotfiles()
     tools = check_tools(remarks=True)
     updates = unknown = False
 
-    print(f"dotfiles ({shown(dotfiles['where']) if dotfiles['where'] else '不明'})")
+    print(f"dotfiles ({shown(dotfiles['where']) if dotfiles['where'] else 'unknown'})")
     if dotfiles["error"]:
-        print(f"  ✗ 判定できない: {dotfiles['error']}")
+        print(f"  ✗ cannot check: {dotfiles['error']}")
         unknown = True
     else:
         if fetch_error:
-            print(f"  ! リモートを取得できなかったため、前回取得した状態で判定した: {fetch_error}")
+            print(f"  ! fetch failed, used the last result: {fetch_error}")
             unknown = True
         for warning in dotfiles["warnings"]:
             print(f"  ! {warning}")
@@ -1400,15 +1397,15 @@ def run_check():
             print_notice(found)
             updates = True
         if not dotfiles["notices"]:
-            print("  ? ローカルで分かる範囲では差分が無い" if unknown else "  ✓ 最新")
+            print("  ? up to date as far as known locally" if unknown else "  ✓ up to date")
 
     pins = check_pins(dotfiles["where"], dotfiles["remote"])
-    for section, empty in ((tools, "確かめられるツールが入っていない"), (pins, "固定しているバージョンが無い")):
+    for section, empty in ((tools, "no tools installed"), (pins, "no pins")):
         found_updates, found_unknown = print_items(section, empty)
         updates |= found_updates
         unknown |= found_unknown
     if update_groups(dotfiles, tools):
-        print("\ndotfiles 本体とツールは dotfiles update でまとめて更新できる")
+        print("\nUpdate: dotfiles update")
     return updates, unknown
 
 
@@ -1462,8 +1459,8 @@ PL_ICONS = {
     "ok": "\uf00c",
     "question": "\uf059",
 }
-NOTIFY_FOOTER = "詳細と更新手順は dotfiles check で表示する"
-UPDATE_FOOTER = "詳細は dotfiles check、更新は dotfiles update で行う"
+NOTIFY_FOOTER = "Details: dotfiles check"
+UPDATE_FOOTER = "Details: dotfiles check / Update: dotfiles update"
 
 
 def notify_rows(repo, dotfiles, tools):
@@ -1475,11 +1472,14 @@ def notify_rows(repo, dotfiles, tools):
     failure = fetch_failure(repo)
     if failure:
         rows.append(("warn", "error", label, [failure]))
-    for icon, section in (("tools", tools), ("pins", check_pins(repo, dotfiles["remote"]))):
+    for icon, title, section in (
+        ("tools", "tool updates", tools),
+        ("pins", "pin updates", check_pins(repo, dotfiles["remote"])),
+    ):
         shorts = [item["notice"]["short"] for item in section["items"] if item["notice"]]
         if shorts:
             # シェルを開くたびに出るので、節ごとに 1 行にまとめる。
-            rows.append((icon, "update", f"{section['label']}の更新", shorts))
+            rows.append((icon, "update", title, shorts))
         if section["failures"]:
             rows.append(("warn", "error", section["label"], [summarize_failures(section["failures"])]))
     return rows
@@ -1492,7 +1492,7 @@ def render_plain(rows, footer=None):
             lines.append(f"  {title}")
             continue
         mark = {"ok": "✓", "progress": "▶"}.get(color, "⚠")
-        lines.append(f"{mark} {title}: {'、'.join(items)}" if items else f"{mark} {title}")
+        lines.append(f"{mark} {title}: {', '.join(items)}" if items else f"{mark} {title}")
     return "\n".join(lines)
 
 
@@ -1523,7 +1523,7 @@ def run_notify(fmt, style="plain"):
         sync_pending(groups)
     except Exception as e:  # noqa: BLE001
         # 黙ると利用者は dotfiles check を実行する理由が無く、壊れたまま気づけない。
-        rows, groups = [("warn", "error", "dotfiles notify", [f"失敗した（{type(e).__name__}）"])], []
+        rows, groups = [("warn", "error", "dotfiles notify", [f"failed ({type(e).__name__})"])], []
     if not rows:
         return 0
     footer = UPDATE_FOOTER if groups else NOTIFY_FOOTER
@@ -1544,12 +1544,12 @@ def run_notify(fmt, style="plain"):
 
 UPDATE_GROUPS = [
     ("dotfiles", "d", "dotfiles", "dotfiles"),
-    ("tools", "t", "ツール", "tools"),
+    ("tools", "t", "tools", "tools"),
     ("brew", "b", "Homebrew", "tools"),
 ]
 # 質問の選択肢に添える。Homebrew はバージョンの公開日時を持たず、待ち期間なしで上げる。Claude Code も待たないが、
 # 起動すれば自分で上がるバージョンへ上げるだけなので、ツールには添えない。
-UPDATE_NOTES = {"brew": "待ち期間なし"}
+UPDATE_NOTES = {"brew": "no cooldown"}
 
 
 def update_groups(dotfiles, tools):
@@ -1625,16 +1625,16 @@ def ask(groups, style, startup):
     import termios
 
     choices = [
-        (g["letter"], g["title"] + (f"（{UPDATE_NOTES[g['id']]}）" if g["id"] in UPDATE_NOTES else "")) for g in groups
+        (g["letter"], g["title"] + (f" ({UPDATE_NOTES[g['id']]})" if g["id"] in UPDATE_NOTES else "")) for g in groups
     ]
     if len(groups) > 1:
-        choices.append(("a", "すべて"))
-    choices += [("n", "しない"), ("Enter", "あとで")]
+        choices.append(("a", "all"))
+    choices += [("n", "none"), ("Enter", "later")]
     if style == "powerline":
         body = "".join(f"{PL_SEP}{PL_COLORS['update']}{letter}{PL_DEFAULT} {title}" for letter, title in choices)
-        prompt = f"{PL_BG}{PL_COLORS['update']} {PL_ICONS['question']} {PL_DEFAULT}更新する？{body} {PL_END} "
+        prompt = f"{PL_BG}{PL_COLORS['update']} {PL_ICONS['question']} {PL_DEFAULT}Update?{body} {PL_END} "
     else:
-        prompt = "? 更新する？ " + "、".join(f"{letter} = {title}" for letter, title in choices) + ": "
+        prompt = "? Update? " + ", ".join(f"{letter} = {title}" for letter, title in choices) + ": "
     letters = "".join(g["letter"] for g in groups)
     for _ in range(3):
         # 質問が出る前に打たれたキー（開いてすぐの Enter や、端末が起動時に送るコマンド）を答えにしない。
@@ -1652,8 +1652,8 @@ def ask(groups, style, startup):
             return groups
         if set(answer) <= set(letters):
             return [g for g in groups if g["letter"] in answer]
-        decline = "内容が変わるまで聞かない" if startup else "更新しない"
-        print(f"{'・'.join(letters)} を並べて選ぶ（例: {letters}）。a はすべて、n は{decline}、Enter はあとで")
+        decline = "skip until it changes" if startup else "skip"
+        print(f"Type any of {', '.join(letters)} (e.g. {letters}); a = all, n = {decline}, Enter = later")
     return None
 
 
@@ -1900,7 +1900,7 @@ def run_steps(steps, live=None, log=None):
     for display, argv in steps:
         windowed = live is not None and os.path.basename(argv[0]) not in UNWINDOWED
         if log:
-            log.write(f"$ {display}{'' if windowed or live is None else '（端末にそのまま出した）'}\n".encode())
+            log.write(f"$ {display}{'' if windowed or live is None else ' (sent to the terminal)'}\n".encode())
             log.flush()
         if windowed:
             live.feed(f"$ {display}\n")
@@ -1916,7 +1916,7 @@ def run_steps(steps, live=None, log=None):
         try:
             code = live.run(argv, env) if windowed else subprocess.Popen(argv, env=env).wait()
         except OSError as e:
-            return f"{display} を起動できない（{e}）"
+            return f"cannot start {display} ({e})"
         finally:
             signal.signal(signal.SIGINT, previous)
         if interrupted:
@@ -1924,7 +1924,7 @@ def run_steps(steps, live=None, log=None):
         if code != 0:
             if windowed:
                 live.keep()
-            return f"{display} が {code} で終了した"
+            return f"{display} exited with {code}"
     return None
 
 
@@ -1940,13 +1940,13 @@ def run_update(startup, only, style):
             # 更新の途中で判定すると、上げかけの状態を見て聞くことになる。
             if startup:
                 return 1
-            print("別のシェルで更新している", file=sys.stderr)
+            print("another shell is updating", file=sys.stderr)
             return 2
         repo, _ = locate()
         fetch_error = None
         if not startup:
             if sys.stderr.isatty():
-                print("リモートと各ツールの最新版を取得している…", file=sys.stderr)
+                print("Fetching…", file=sys.stderr)
             fetch_error = refresh(wait=True)
         dotfiles, tools = check_dotfiles(), check_tools()
         groups = update_groups(dotfiles, tools)
@@ -1974,27 +1974,27 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
                 "warn",
                 "error",
                 dotfiles["label"],
-                [f"リモートを取得できなかったため、前回取得した状態で判定した（{fetch_error}）"],
+                [f"fetch failed, used the last result ({fetch_error})"],
             ),
         )
     if rows:
         print(render(rows, style))
     if not groups:
-        print("dotfiles update で更新できるものは無い")
+        print("Nothing to update")
         return 0
     if only is not None:
         chosen = [g for g in groups if "all" in only or g["id"] in only]
         if not chosen:
-            print("指定した対象に更新は無い")
+            print("Nothing to update in the selected targets")
             return 0
     elif not sys.stdin.isatty():
-        print("端末から実行するか、--only で対象を選ぶ", file=sys.stderr)
+        print("run in a terminal or pass --only", file=sys.stderr)
         return 2
     else:
         chosen = ask(groups, style, startup)
     if chosen is None:
         if startup:
-            print(render([("info", "info", "次のシェルでまた聞く", [])], style))
+            print(render([("info", "info", "asking again in the next shell", [])], style))
         return 0 if startup else 2
     if startup:
         # 選ばなかったものも断ったものとして扱う。毎回聞くと、上げないと決めたものを聞き続ける。
@@ -2002,8 +2002,8 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
     if not chosen:
         sync_pending(groups)
         if startup:
-            message = "次のシェルでまた聞く" if ask_policy() == "always" else "内容が変わるまで聞かない"
-            print(render([("info", "info", f"{message}。dotfiles update でいつでも更新できる", [])], style))
+            message = "asking again in the next shell" if ask_policy() == "always" else "not asking until it changes"
+            print(render([("info", "info", f"{message}; update anytime with dotfiles update", [])], style))
         return 0
 
     # 答えを待つ間は握らない。握ると、答えずに置かれたシェルがある限り、ほかのシェルで更新できない。
@@ -2018,9 +2018,9 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
                 time.sleep(0.05)
         else:
             if startup:
-                print(render([("warn", "warn", "別のシェルで更新しているので、更新しなかった", [])], style))
+                print(render([("warn", "warn", "skipped: another shell is updating", [])], style))
                 return 0
-            print("別のシェルで更新している", file=sys.stderr)
+            print("another shell is updating", file=sys.stderr)
             return 2
         ids, asked_keys = {g["id"] for g in chosen}, {k for g in chosen for k in g["keys"]}
         current = update_groups(check_dotfiles(), check_tools())
@@ -2029,11 +2029,11 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
         for g in current:
             if g["id"] in ids:
                 (remaining if set(g["keys"]) <= asked_keys else changed).append(g)
-        rows = [("warn", "warn", g["title"], ["答えを待つ間に内容が変わったので更新しなかった"]) for g in changed]
+        rows = [("warn", "warn", g["title"], ["skipped: changed while waiting for the answer"]) for g in changed]
         if changed:
-            rows.append(("info", "info", "dotfiles update で聞き直せる", []))
+            rows.append(("info", "info", "retry with dotfiles update", []))
         if not remaining and not changed:
-            rows.append(("info", "info", "選んだものは更新が済んでいた", []))
+            rows.append(("info", "info", "already up to date", []))
         if rows:
             print(render(rows, style))
         if not remaining:
@@ -2063,10 +2063,10 @@ def run_chosen(chosen, partial, startup, style):
             try:
                 fcntl.flock(fetching, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
-                print("バックグラウンドの取得が終わるのを待っている…", flush=True)
+                print("Waiting for the background fetch…", flush=True)
                 fcntl.flock(fetching, fcntl.LOCK_EX)
             for group in chosen:
-                show((group["icon"], "progress", group["title"], ["更新する"]))
+                show((group["icon"], "progress", group["title"], ["updating"]))
                 log.write(f"== {group['title']}\n".encode())
                 started += 1
                 live = Live(log) if live_output else None
@@ -2076,10 +2076,10 @@ def run_chosen(chosen, partial, startup, style):
                     row = ("warn", "error", group["title"], errors)
                 elif group["id"] in {g["id"] for g in update_groups(check_dotfiles(), check_tools())}:
                     # 手順が 0 で終わっても、判定が変わらなければ上がっていない。
-                    row = ("warn", "warn", group["title"], ["手順は終わったが、まだ更新が残っている"])
+                    row = ("warn", "warn", group["title"], ["steps finished, but updates remain"])
                 else:
                     updated.add(group["id"])
-                    row = ("ok", "ok", group["title"], ["更新した"])
+                    row = ("ok", "ok", group["title"], ["updated"])
                 if live is not None:
                     live.erase()
                     if not live.dirty:
@@ -2098,19 +2098,19 @@ def run_chosen(chosen, partial, startup, style):
                         "warn",
                         "error",
                         group["title"],
-                        ["中断した" if done + i < started else "中断したため実行していない"],
+                        ["interrupted" if done + i < started else "not run (interrupted)"],
                     )
                 )
         sync_pending(update_groups(check_dotfiles(), check_tools()))
     hints = []
     if "dotfiles" in updated:
-        hints.append(("info", "info", "このシェルは更新前の設定のまま。exec zsh で読み込み直す", []))
+        hints.append(("info", "info", "reload this shell with exec zsh", []))
     if startup and partial and ask_policy() == "changed":
-        hints.append(("info", "info", "選ばなかったものは内容が変わるまで聞かない", []))
+        hints.append(("info", "info", "not asking about the rest until they change", []))
     failed = any(color not in ("ok", "progress") for _, color, _, _ in results)
     if live_output and failed:
         # 窓から消えた出力を、失敗や中断の原因を追うときに読めるようにする。
-        hints.append(("info", "info", f"出力の全文は {shown(UPDATE_LOG_FILE)} にある", []))
+        hints.append(("info", "info", f"full log: {shown(UPDATE_LOG_FILE)}", []))
     if hints:
         print(render(hints, style))
     return 0 if startup else 1 if failed else 0
@@ -2139,34 +2139,34 @@ def run_character_show():
     names = character_names(repo) if repo else []
     chosen = chosen_character()
     if chosen is None:
-        current = "まだ選んでいない（次にプレイブックを流すと聞く）"
+        current = "not chosen yet (asked on the next playbook run)"
     elif repo and chosen not in names:
-        current = f"{chosen}（ファイルが無いので、次にプレイブックを流すと聞き直す）"
+        current = f"{chosen} (file missing; asked again on the next playbook run)"
     else:
         current = chosen
-    print(f"今のキャラクター: {current}")
+    print(f"current: {current}")
     if repo is None:
-        print("選べるもの: checkout が見つからないので分からない（DOTPATH か ~/.dotfiles に置く）")
+        print("available: unknown (checkout not found; put it at $DOTPATH or ~/.dotfiles)")
         return 2
-    print(f"選べるもの: {', '.join(names)}")
-    print("切り替えは dotfiles character set <名前>。新しいセッションから効く")
+    print(f"available: {', '.join(names)}")
+    print("switch: dotfiles character set <name>")
     return 0
 
 
 def run_character_set(name):
     repo, _ = locate()
     if repo is None:
-        print("checkout が見つからない（DOTPATH か ~/.dotfiles に置く）", file=sys.stderr)
+        print("checkout not found (put it at $DOTPATH or ~/.dotfiles)", file=sys.stderr)
         return 2
     if not name and not sys.stdin.isatty():
         # 端末が無いと ansible の pause は聞かずに今のものを選び、まだ選んでいなければ既定を選んだことになる。
-        print(f"端末から実行するか、名前を渡す（{', '.join(character_names(repo))}）", file=sys.stderr)
+        print(f"run in a terminal or pass a name ({', '.join(character_names(repo))})", file=sys.stderr)
         return 2
     playbook_bin = ansible_playbook()
-    problem = "見つからない" if playbook_bin is None else interpreter_problem(playbook_bin)
+    problem = "not found" if playbook_bin is None else interpreter_problem(playbook_bin)
     if problem:
         print(
-            f"ansible-playbook が起動しない（{problem}）。{shown(os.path.join(repo, 'install'))} を流し直す",
+            f"ansible-playbook does not start ({problem}); rerun {shown(os.path.join(repo, 'install'))}",
             file=sys.stderr,
         )
         return 2
@@ -2182,7 +2182,7 @@ def run_character_set(name):
         signal.signal(signal.SIGINT, previous)
     after = chosen_character()
     if code == 0:
-        print("新しいセッションから効く" if after != before else f"{after} のまま変えていない")
+        print("takes effect in new sessions" if after != before else f"unchanged ({after})")
     return code
 
 
@@ -2190,7 +2190,7 @@ def parse_only(value):
     targets = {t.strip() for t in value.split(",") if t.strip()}
     unknown = targets - {"dotfiles", "tools", "brew", "all"}
     if not targets or unknown:
-        raise argparse.ArgumentTypeError("dotfiles・tools・brew・all をカンマで並べる")
+        raise argparse.ArgumentTypeError("use a comma-separated list of dotfiles, tools, brew, all")
     return targets
 
 
@@ -2212,7 +2212,7 @@ class BumpError(Exception):
 def parse_steps(value):
     steps = {s.strip() for s in value.split(",") if s.strip()}
     if not steps or steps - {*BUMP_STEPS, "all"}:
-        raise argparse.ArgumentTypeError("write・pr・apply・all をカンマで並べる")
+        raise argparse.ArgumentTypeError("use a comma-separated list of write, pr, apply, all")
     return set(BUMP_STEPS) if "all" in steps else steps
 
 
@@ -2222,9 +2222,9 @@ def step(argv, repo, capture=False):
     try:
         p = subprocess.run(argv, cwd=repo, stdout=subprocess.PIPE if capture else None, text=True, check=False)
     except OSError as e:
-        raise BumpError(f"{argv[0]} を起動できない（{e.strerror or e}）")
+        raise BumpError(f"cannot start {argv[0]} ({e.strerror or e})")
     if p.returncode != 0:
-        raise BumpError(f"{os.path.basename(argv[0])} が {p.returncode} で終了した")
+        raise BumpError(f"{os.path.basename(argv[0])} exited with {p.returncode}")
     return p.stdout if capture else None
 
 
@@ -2239,10 +2239,10 @@ def require_base(repo, remote, what):
     base = remote.split("/", 1)[1]
     branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     if branch != base:
-        raise BumpError(f"{what}は {base} の上で流す（今は {branch or 'detach した HEAD'}）")
+        raise BumpError(f"{what}must run on {base} (now on {branch or 'detached HEAD'})")
     if git(repo, "rev-parse", "HEAD") != git(repo, "rev-parse", remote):
         # 配置に使う checkout なので、check_dotfiles の取り込みと同じく、手元のコミットを書き換えない形で揃える。
-        raise BumpError(f"{base} が {remote} と揃っていない（git pull --ff-only origin {base} で揃えてから流す）")
+        raise BumpError(f"{base} is not at {remote}; run git pull --ff-only origin {base} first")
 
 
 def sync_base(repo, remote):
@@ -2269,17 +2269,17 @@ def pr_preflight(repo, remote):
     if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None or (
         git(repo, "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}") is not None
     ):
-        raise BumpError(f"{branch} がもうある。前の PR を片付けてから流す")
+        raise BumpError(f"{branch} already exists; clean up the previous PR first")
     # gh が使えないと分かるのが push の後だと、ブランチだけがリモートに残る。
     listed = step(["gh", "pr", "list", "--state", "open", "--json", "headRefName,url"], repo, capture=True)
     try:
         prs = json.loads(listed or "[]")
     except ValueError:
-        raise BumpError("gh pr list の出力を JSON として読めない")
+        raise BumpError("cannot parse gh pr list output as JSON")
     opened = [p.get("url") for p in prs if str(p.get("headRefName", "")).startswith("feature/pins-bump-")]
     if opened:
         # 同じ固定値を上げる PR が並ぶと、どちらをマージするかで食い違う。
-        raise BumpError(f"固定値を上げる PR がまだ開いている（{', '.join(opened)}）。マージするか閉じてから流す")
+        raise BumpError(f"a pin bump PR is still open ({', '.join(opened)}); merge or close it first")
 
 
 def bump_write(repo, names, dry_run):
@@ -2291,7 +2291,7 @@ def bump_write(repo, names, dry_run):
     tag_pins = [p for p in pins if isinstance(p, TagPin)]
     unknown = sorted(set(names) - {p.name for p in tag_pins})
     if unknown:
-        raise BumpError(f"目印の付いた固定値に無い（{', '.join(unknown)}）")
+        raise BumpError(f"not marked pins: {', '.join(unknown)}")
     targets = [p for p in tag_pins if not names or p.name in names]
     # 固定値はマシンに依らないので、check と違って入っていないものも取りに行く。
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
@@ -2300,17 +2300,17 @@ def bump_write(repo, names, dry_run):
     for pin, (data, error) in zip(targets, results):
         if error:
             failures += 1
-            print(f"! {pin.name}: 最新版を取得できなかった（{error}）")
+            print(f"! {pin.name}: fetch failed ({error})")
             continue
         latest = data.get("latest")
         if latest is None:
-            print(f"- {pin.name}: 公開から {PIN_COOLDOWN // (24 * 60 * 60)} 日経ったバージョンが無い")
+            print(f"- {pin.name}: no version past the {PIN_COOLDOWN // (24 * 60 * 60)}-day cooldown")
             continue
         if version_key(pin.current) >= version_key(latest):
             print(f"✓ {pin.name} {pin.current}")
             continue
         new = pin_form(pin.current, latest)
-        when = f"（{data['published'][:10]} 公開）" if data.get("published") else ""
+        when = f" (released {data['published'][:10]})" if data.get("published") else ""
         print(f"↑ {pin.name} {pin.current} → {new}{when}  {pin.where}")
         changes.append((pin, new))
     if not dry_run:
@@ -2329,7 +2329,7 @@ def rewrite_pins(repo, changes):
         for pin, new in items:
             m = KEY_VALUE.match(lines[pin.line - 1])
             if not m or m.groups() != (pin.name, pin.current):
-                raise BumpError(f"{pin.where} が読んだときから変わった")
+                raise BumpError(f"{pin.where} changed since it was read")
             start, end = m.span(2)
             lines[pin.line - 1] = lines[pin.line - 1][:start] + new + lines[pin.line - 1][end:]
         with open(path, "w", encoding="utf-8", newline="") as f:
@@ -2344,12 +2344,10 @@ def pin_changes(repo):
     # 作業ツリーと HEAD が同じでも、index にだけある変更はコミットに入る。
     staged = git(repo, "diff", "--cached", "--name-only")
     if staged:
-        raise BumpError(
-            f"ステージした変更がある（{staged.splitlines()[0]} など）。git restore --staged で外してから流す"
-        )
+        raise BumpError(f"staged changes ({staged.splitlines()[0]}, ...); unstage them with git restore --staged first")
     changed = git(repo, "diff", "--name-only", "HEAD")
     if staged is None or changed is None:
-        raise BumpError("git diff を読めない")
+        raise BumpError("cannot read git diff")
     pin_lines = {}
     for pin in find_pins(repo):
         if isinstance(pin, TagPin):
@@ -2374,12 +2372,12 @@ def pin_changes(repo):
             or len(old_lines) != len(new_lines)
             or not set(differ) <= pin_lines.get(rel, set())
         ):
-            raise BumpError(f"固定値の行のほかにも変更がある（{rel}）。コミットするか退避してから流す")
+            raise BumpError(f"{rel} has changes besides pin lines; commit or stash them first")
         for i in differ:
             before, after = KEY_VALUE.match(old_lines[i]), KEY_VALUE.match(new_lines[i])
             # クォートや行末のコメントだけを変えた行は、上げた固定値として PR に載せない。
             if not before or before.group(1) != after.group(1) or before.group(2) == after.group(2):
-                raise BumpError(f"固定値の行のほかにも変更がある（{rel}:{i + 1}）")
+                raise BumpError(f"changes besides pin lines at {rel}:{i + 1}")
             found.append((after.group(1), before.group(2), after.group(2), rel))
     return found
 
@@ -2399,14 +2397,14 @@ def wait_checks(repo, url):
         # チェックがまだ出ていないときのほかの失敗（認証、PR が無い）は、待っても変わらない。
         if p.returncode not in (0, 8) and "no checks reported" not in p.stderr:
             lines = [line for line in p.stderr.splitlines() if line.strip()]
-            raise BumpError(f"gh pr checks が失敗したので、マージしていない（{lines[-1] if lines else p.returncode}）")
+            raise BumpError(f"not merged: gh pr checks failed ({lines[-1] if lines else p.returncode})")
         if time.time() >= deadline:
-            raise BumpError(f"{CHECKS_APPEAR_TIMEOUT} 秒待っても CI のチェックが出てこないので、マージしていない")
+            raise BumpError(f"not merged: no CI checks appeared within {CHECKS_APPEAR_TIMEOUT}s")
         time.sleep(5)
     try:
         step(["gh", "pr", "checks", url, "--watch", "--fail-fast"], repo)
     except BumpError:
-        raise BumpError("CI が通らなかったので、マージしていない")
+        raise BumpError("not merged: CI failed")
 
 
 def bump_pr(repo, remote, merge):
@@ -2414,7 +2412,7 @@ def bump_pr(repo, remote, merge):
     pr_preflight(repo, remote)
     changes = pin_changes(repo)
     if not changes:
-        print("コミットする固定値の変更が無い")
+        print("No pin changes to commit")
         return
     base = remote.split("/", 1)[1]
     branch = bump_branch()
@@ -2430,34 +2428,34 @@ def bump_pr(repo, remote, merge):
     done = []
     try:
         step(["git", "switch", "-c", branch, remote, "--no-track"], repo)
-        done.append(f"{branch} を切った")
+        done.append(f"created {branch}")
         # パスを渡すと、index にほかの変更があってもこのファイルだけをコミットする。
         step(["git", "commit", "-m", subject, "-m", listed, "--", *sorted({rel for *_, rel in changes})], repo)
-        done.append("コミットした")
+        done.append("committed")
         step(["git", "push", "-u", "origin", branch], repo)
-        done.append("push した")
+        done.append("pushed")
         url = step(
             ["gh", "pr", "create", "--base", base, "--head", branch, "--title", subject, "--body", body],
             repo,
             capture=True,
         ).strip()
         print(url)
-        done.append(f"PR を作った（{url}）")
+        done.append(f"opened {url}")
         if merge:
             wait_checks(repo, url)
             # --delete-branch は手元のブランチの切り替えと削除も gh に任せるので使わず、下で git に流させる。
             step(["gh", "pr", "merge", url, "--merge"], repo)
-            done.append("マージした")
+            done.append("merged")
         step(["git", "switch", base], repo)
     except BumpError as e:
         # 再実行は require_base で止まるので、続けるか戻すかは手で決める。
         raise BumpError(
-            f"{e}。済んだこと: {'、'.join(done) or 'なし'}。"
-            f"続けるなら残りを手で流す。戻すなら git switch {base} のあと git branch -D {branch} を流し、"
-            f"push していれば PR を閉じて git push origin --delete {branch} も流す"
+            f"{e}. Done: {', '.join(done) or 'nothing'}. "
+            f"To continue, run the rest by hand. To undo, run git switch {base} and git branch -D {branch}, "
+            f"and if pushed, close the PR and run git push origin --delete {branch}"
         )
     if not merge:
-        print(f"PR をマージした後に dotfiles bump --steps apply を流す。{branch} は手元に残している")
+        print(f"After merging, run dotfiles bump --steps apply ({branch} is kept locally)")
         return
     step(["git", "pull", "--rebase", "origin", base], repo)
     step(["git", "branch", "-d", branch], repo)
@@ -2473,13 +2471,11 @@ def bump_apply(repo, remote):
     sync_base(repo, remote)
     require_base(repo, remote, "apply ")
     if git(repo, "diff", "--name-only", "HEAD", "--", DEPLOYED_PATH):
-        raise BumpError(f"{DEPLOYED_PATH}/ にコミットしていない変更がある（PR にしてマージしてから流す）")
+        raise BumpError(f"{DEPLOYED_PATH}/ has uncommitted changes; merge them through a PR first")
     playbook_bin = ansible_playbook()
-    problem = "見つからない" if playbook_bin is None else interpreter_problem(playbook_bin)
+    problem = "not found" if playbook_bin is None else interpreter_problem(playbook_bin)
     if problem:
-        raise BumpError(
-            f"ansible-playbook が起動しない（{problem}）。{shown(os.path.join(repo, 'install'))} を流し直す"
-        )
+        raise BumpError(f"ansible-playbook does not start ({problem}); rerun {shown(os.path.join(repo, 'install'))}")
     if os.uname().sysname != "Darwin" and os.geteuid() != 0 and find_tool("sudo"):
         # check_dotfiles の手順と同じく、認証が残っていないと ansible は聞かずに "Missing sudo password" で失敗する。
         step(["sudo", "-v"], repo)
@@ -2489,7 +2485,7 @@ def bump_apply(repo, remote):
             continue
         installed, error = attempt(pin.installed)
         if error:
-            raise BumpError(f"{pin.name}: 入っているバージョンを読めない（{error}）")
+            raise BumpError(f"{pin.name}: cannot read the installed version ({error})")
         # 入れていないマシンでは、update が入れていないプラグインを探して失敗する。
         if installed is None or version_key(installed) == version_key(pin.current):
             continue
@@ -2500,25 +2496,25 @@ def bump_apply(repo, remote):
 def run_bump(names, steps, merge, dry_run):
     repo, _ = locate()
     if repo is None:
-        print("checkout が見つからない（DOTPATH か ~/.dotfiles に置く）", file=sys.stderr)
+        print("checkout not found (put it at $DOTPATH or ~/.dotfiles)", file=sys.stderr)
         return 2
     usage = None
     if dry_run and steps != {"write"}:
-        usage = "--dry-run は write だけと使う"
+        usage = "--dry-run works only with --steps write"
     elif names and "write" not in steps:
-        usage = "変数名は write と使う"
+        usage = "variable names need write in --steps"
     elif merge and "pr" not in steps:
-        usage = "--merge は pr と使う"
+        usage = "--merge needs pr in --steps"
     elif {"pr", "apply"} <= steps and not merge:
-        usage = "pr の後に apply を流すには --merge を付ける（マージ前に流すと、このマシンだけ上げた値が入る）"
+        usage = "pr with apply needs --merge (otherwise this machine alone gets unmerged pins)"
     elif {"write", "apply"} <= steps and "pr" not in steps:
-        usage = "write の後に apply を流すには pr と --merge も付ける（書き換えた値はマージしてから入れる）"
+        usage = "write with apply needs pr and --merge (pins are applied only after merging)"
     if usage:
         print(f"dotfiles bump: {usage}", file=sys.stderr)
         return 2
     remote = default_remote(repo)
     if remote is None:
-        print("dotfiles bump: origin の既定ブランチを特定できない", file=sys.stderr)
+        print("dotfiles bump: origin's default branch is unknown", file=sys.stderr)
         return 2
     try:
         step(["git", "fetch", "origin"], repo)
@@ -2527,21 +2523,17 @@ def run_bump(names, steps, merge, dry_run):
             pr_preflight(repo, remote)
         if "write" in steps:
             if count(repo, f"HEAD..{remote}", DEPLOYED_PATH):
-                raise BumpError(
-                    f"checkout が {remote} より遅れている（上流で上げた値とぶつかるので、取り込んでから流す）"
-                )
+                raise BumpError(f"checkout is behind {remote}; pull first to avoid conflicts with upstream bumps")
             changes, failures = bump_write(repo, names, dry_run)
             if dry_run or steps == {"write"}:
                 if changes and not dry_run:
-                    print("コミットと PR は dotfiles bump --steps pr で作れる")
+                    print("Commit and open a PR: dotfiles bump --steps pr")
                 return 1 if failures else 0
             if failures:
-                print(
-                    "最新版を取得できなかったものがあるので、pr 以降は流していない。書き換えた分は --steps pr で続けられる"
-                )
+                print("some fetches failed, so pr and later steps did not run; continue with --steps pr")
                 return 1
             if not changes and not pin_changes(repo):
-                print("上げる固定値は無い")
+                print("No pins to bump")
                 # マージ済みの固定値をまだ入れていないマシンもあるので、apply は流す。
                 if "apply" not in steps:
                     return 0
@@ -2553,7 +2545,7 @@ def run_bump(names, steps, merge, dry_run):
     except (BumpError, FetchError) as e:
         print(f"dotfiles bump: {e}", file=sys.stderr)
         print(
-            f"今のブランチは {git(repo, 'symbolic-ref', '--quiet', '--short', 'HEAD') or 'detach した HEAD'}",
+            f"current branch: {git(repo, 'symbolic-ref', '--quiet', '--short', 'HEAD') or 'detached HEAD'}",
             file=sys.stderr,
         )
         return 1
@@ -2564,80 +2556,75 @@ def main():
     # サブコマンドやオプションを変えたら、zsh の補完（files/_dotfiles）も合わせる。
     parser = argparse.ArgumentParser(
         prog="dotfiles",
-        description="dotfiles と、それが入れたツール・固定しているバージョンの更新を確かめて上げる。Claude Code のキャラクターも切り替える。",
+        description="Check and apply updates to dotfiles, its tools and pins. Also switches the Claude Code character.",
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
-    check_help = (
-        "リモートを取得して、更新の有無と更新手順を表示する。終了コードは 0 = 更新なし、1 = 更新あり、"
-        "2 = 判定できないものがあった。更新ありと判定できないものが両方あれば 1 を返す。"
-        "standalone 以外の uv など、確かめなかったものは数えない"
-    )
+    check_help = "Fetch and show updates. Exit: 0 = up to date, 1 = updates (even if some are unknown), 2 = unknown"
     sub.add_parser("check", help=check_help, description=check_help)
     notify = sub.add_parser(
         "notify",
-        help="前回取得した状態から通知を出す。取得から時間が経っていればバックグラウンドで取得し直す",
+        help="Notify from the last fetch; refetch in the background when stale",
     )
     notify.add_argument(
         "--format",
         choices=["text", "claude"],
         default="text",
-        help="claude は Claude Code の SessionStart フック向けの JSON を出す",
+        help="claude: JSON for the Claude Code SessionStart hook",
     )
     notify.add_argument(
         "--style",
         choices=["plain", "powerline"],
         default="plain",
-        help="powerline は Nerd Font の記号と 256 色で描く（--format text のときだけ効く）",
+        help="powerline: Nerd Font glyphs and 256 colors (text format only)",
     )
     update = sub.add_parser(
         "update",
         help=(
-            "リモートを取得して更新できるもの（dotfiles 本体・ツール・Homebrew）を表示し、選んだものを更新する。"
-            "終了コードは 0 = 更新した（更新が無いときも）、1 = 失敗したものがある、2 = 対象を選べなかった"
+            "Fetch, list updates (dotfiles, tools, Homebrew) and apply the chosen ones. "
+            "Exit: 0 = done or nothing to do, 1 = something failed, 2 = nothing chosen"
         ),
     )
     update.add_argument(
-        "--only", type=parse_only, help="聞かずに更新する対象。dotfiles・tools・brew・all をカンマで並べる"
+        "--only", type=parse_only, help="update without asking: comma-separated dotfiles, tools, brew, all"
     )
     update.add_argument(
         "--startup",
         action="store_true",
         help=(
-            ".zshrc がシェルの起動時に呼ぶ。取得せず、聞いたら 0、聞くことが無ければ何も出さずに 1 を返す。"
-            "n で断った内容は変わるまで聞かない。~/.zshenv.local などで export DOTFILES_UPDATE_ASK=always にすると毎回、never にすると聞かない"
+            "for .zshrc at shell startup: no fetch; exit 0 if asked, 1 silently if nothing to ask. "
+            "Declined updates are not asked again until they change. "
+            "DOTFILES_UPDATE_ASK=always asks every time, never disables asking"
         ),
     )
     update.add_argument(
-        "--style", choices=["plain", "powerline"], default="plain", help="powerline は Nerd Font の記号と 256 色で描く"
+        "--style", choices=["plain", "powerline"], default="plain", help="powerline: Nerd Font glyphs and 256 colors"
     )
     bump = sub.add_parser(
         "bump",
         help=(
-            "固定バージョンを公開から 7 日経った最新に上げる。write で checkout を書き換え、pr でブランチにコミットして PR を作り、"
-            "apply でプレイブックを流す。終了コードは 0 = 済んだ（上げるものが無いときも）、1 = 流せなかったステップか失敗したステップがある、"
-            "2 = 引数の誤り"
+            "Bump pins to the latest release past the 7-day cooldown. "
+            "write edits the checkout, pr commits and opens a PR, apply runs the playbook. "
+            "Exit: 0 = done or nothing to bump, 1 = a step failed or did not run, 2 = bad arguments"
         ),
     )
     bump.add_argument(
-        "names", nargs="*", metavar="変数名", help="上げる固定値（awscli_version など）。省くと目印のある全部"
+        "names", nargs="*", metavar="NAME", help="pins to bump (e.g. awscli_version); all marked pins if omitted"
     )
     bump.add_argument(
         "--steps",
         type=parse_steps,
         default={"write"},
-        help="流すステップ。write・pr・apply・all をカンマで並べる。省くと write だけ",
+        help="comma-separated write, pr, apply, all (default: write)",
     )
-    bump.add_argument(
-        "--merge", action="store_true", help="pr で、CI を待って PR をマージし、既定ブランチを取り込むところまで流す"
-    )
-    bump.add_argument("--dry-run", action="store_true", help="write で、書き換えずに上がるものだけを表示する")
-    sub.add_parser("refresh", help="リモートを取得する。notify がバックグラウンドで起動する")
-    character = sub.add_parser("character", help="Claude Code のキャラクターと選べるものを表示する。set で切り替える")
+    bump.add_argument("--merge", action="store_true", help="with pr: wait for CI, merge, and pull the default branch")
+    bump.add_argument("--dry-run", action="store_true", help="with write: show bumps without editing")
+    sub.add_parser("refresh", help="Fetch (notify runs this in the background)")
+    character = sub.add_parser("character", help="Show the Claude Code character; switch with set")
     character_sub = character.add_subparsers(dest="character_command", metavar="<command>")
     character_set = character_sub.add_parser(
-        "set", help="キャラクターを切り替える。名前を省くと聞く（Enter で今のまま）。新しいセッションから効く"
+        "set", help="Switch the character (asks without a name; Enter keeps it). Takes effect in new sessions"
     )
-    character_set.add_argument("name", nargs="?", help="ansible/roles/claude/files/characters/<名前>.md の <名前>")
+    character_set.add_argument("name", nargs="?", help="<name> in ansible/roles/claude/files/characters/<name>.md")
     args = parser.parse_args()
 
     if args.command is None:
@@ -2662,7 +2649,7 @@ def main():
         except Exception as e:  # noqa: BLE001
             if args.startup:
                 # シェルを開くたびにトレースバックを出さない。1 を返して、続く notify にいつもの通知を出させる。
-                print(f"dotfiles update が失敗した（{type(e).__name__}: {e}）")
+                print(f"dotfiles update failed ({type(e).__name__}: {e})")
                 return 1
             traceback.print_exc()
             return 2

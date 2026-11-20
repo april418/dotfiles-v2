@@ -33,7 +33,7 @@ jobs:
             version="$(yq -r ".${tool}_version" "$vars")"
             # 空のまま進むと、npm はバージョンを付けずに最新を入れてしまう。
             if [[ ! "$version" =~ ^v?[0-9]+(\.[0-9]+)+$ ]]; then
-              echo "::error file=${vars}::${tool}_version をバージョンとして読めない（${version}）"
+              echo "::error file=${vars}::${tool}_version is not a version (${version})"
               exit 1
             fi
             echo "${tool}=${version}" >> "$GITHUB_OUTPUT"

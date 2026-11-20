@@ -27,13 +27,13 @@ claude_marketplace_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible
 # Write the dotfiles marketplace が marketplace.json に書く。
 claude_marketplace:
   name: dotfiles
-  description: dotfiles がコミットで固定して配るプラグイン
+  description: Plugins pinned to commits by dotfiles
   owner:
     name: dotfiles
   plugins:
     - name: frontend-design
       # git-subdir のプラグインは、入れるまで entry の欄しか /plugin に出ない。
-      description: UI を新しく作るときや作り直すときに、見た目の方向づけを示す skill
+      description: Visual direction for building or reshaping UI
       source: "{{ claude_frontend_design_source }}"
 
 # Merge settings.json が files/settings.json の後に重ねる。バージョンを変数で持つので、静的な settings.json には書かない。

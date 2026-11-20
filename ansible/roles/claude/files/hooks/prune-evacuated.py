@@ -68,7 +68,7 @@ def prune():
             failed.append((entry, type(e).__name__))
             continue
         if entry.exists():
-            failed.append((entry, "消せないものが残っている"))
+            failed.append((entry, "some entries could not be deleted"))
         else:
             removed.append(entry.name)
     return removed, failed
@@ -80,13 +80,13 @@ def main():
         removed, failed = prune()
     except Exception as e:  # noqa: BLE001
         # 黙ると、消す仕組みが壊れたまま退避物が溜まっていくことに気づけない。
-        lines.append(f"prune-evacuated が失敗した（{type(e).__name__}）")
+        lines.append(f"prune-evacuated failed ({type(e).__name__})")
         removed, failed = [], []
     if removed:
-        lines.append(f"退避して {RETENTION_DAYS} 日を過ぎたものを {ROOT} から消した: {', '.join(removed)}")
+        lines.append(f"deleted from {ROOT} after {RETENTION_DAYS} days: {', '.join(removed)}")
     for path, reason in failed:
         # sudo mv で置いた root 所有のものが残るのが、最もありうる場合である。
-        lines.append(f"{path} を消しきれなかった（{reason}）: sudo rm -rf -- {shlex.quote(str(path))}")
+        lines.append(f"could not delete {path} ({reason}): sudo rm -rf -- {shlex.quote(str(path))}")
     if lines:
         # systemMessage は利用者に見せる警告で、Claude のコンテキストには入れない。
         print(json.dumps({"systemMessage": "\n".join(lines)}, ensure_ascii=False))

@@ -122,7 +122,7 @@ print_question() {
 }
 
 print_complete() {
-  printf "\n${BG_GLAY}${CLEAR_LINE}\n ${CRACKER}${CRACKER}${CRACKER} Complete dotfiles installation! ${CRACKER}${CRACKER}${CRACKER} ${CLEAR_LINE}\n${CLEAR_LINE}${RESET}\n"
+  printf "\n${BG_GLAY}${CLEAR_LINE}\n ${CRACKER}${CRACKER}${CRACKER} dotfiles installation complete! ${CRACKER}${CRACKER}${CRACKER}${CLEAR_LINE}\n${CLEAR_LINE}${RESET}\n"
 }
 
 is_exists() {
@@ -150,40 +150,37 @@ confirm() {
 }
 
 check_sudo() {
-  print_step "Checking sudo availability..."
+  print_step "Checking sudo..."
 
   if [ "$(id -u)" -ne 0 ]; then
     if is_exists sudo; then
       SUDO="sudo"
-      print_info "Sudo is available"
       # Update sudo timestamp to prevent timeout
       sudo -v
       if [ $? -ne 0 ]; then
-        print_error "Sudo authentication failed."
+        print_error "sudo authentication failed"
         exit 1
       fi
+      print_success "sudo is available"
     else
-      print_error "This script requires superuser privileges. Please run as root or install sudo."
+      print_error "Superuser privileges are required. Run as root or install sudo."
       exit 1
     fi
   else
     SUDO=""
+    print_success "Running as root"
   fi
-
-  print_success "Sudo check completed successfully"
 }
 
 setup_bin_path() {
-  print_step "Setting up binary path..."
+  print_step "Setting up PATH..."
 
   if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     export PATH="$PATH:$HOME/.local/bin"
-    print_info "Added $HOME/.local/bin to PATH"
+    print_success "Added $HOME/.local/bin to PATH"
   else
-    print_info "$HOME/.local/bin is already in PATH"
+    print_success "$HOME/.local/bin is already in PATH"
   fi
-
-  print_success "Binary path setup completed successfully"
 }
 
 check_distribution() {
@@ -193,7 +190,7 @@ check_distribution() {
     . /etc/os-release
     DISTRO_ID="$ID"
   else
-    print_warning '`/etc/os-release` not found.'
+    print_warning "/etc/os-release not found"
   fi
 
   if is_exists sw_vers; then
@@ -201,7 +198,7 @@ check_distribution() {
   fi
 
   if [ -z "${DISTRO_ID:-}" ]; then
-    print_error "Could not determine the operating system distribution."
+    print_error "Could not determine the distribution"
     exit 1
   fi
 
@@ -230,42 +227,37 @@ check_distribution() {
       ;;
   esac
 
-  print_info "Distribution: $DISTRO_ID"
-  print_info "Package installation command: $INSTALL_CMD"
-  print_success "Distribution check completed successfully"
+  print_success "Distribution: $DISTRO_ID"
+  print_info "Package install command: $INSTALL_CMD"
 }
 
 setup_homebrew() {
-  print_step "Checking Homebrew installation..."
+  print_step "Checking Homebrew..."
 
   if is_exists brew; then
     local brew_version=$(brew --version | head -n 1)
-    print_info "Homebrew is installed. Version: $brew_version"
-    print_success "Homebrew installation check completed successfully"
+    print_success "$brew_version is installed"
   else
-    print_info "Homebrew is not installed."
     print_step "Installing Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     if [ $? -ne 0 ]; then
       print_error "Failed to install Homebrew"
       exit 1
     fi
-    print_success "Homebrew installed successfully"
+    print_success "Installed Homebrew"
   fi
 }
 
 setup_python() {
-  print_step "Checking python installation..."
+  print_step "Checking Python..."
 
   if is_exists python3; then
     local python_version=$(python3 --version | awk '{print $2}')
-    print_info "Python 3 is installed. Version: $python_version"
-    print_success "Python installation check completed successfully"
+    print_success "Python $python_version is installed"
   else
-    print_info "Python 3 is not installed."
     print_step "Installing Python 3..."
     if $INSTALL_CMD python3; then
-      print_success "Python 3 installed successfully"
+      print_success "Installed Python 3"
     else
       print_error "Failed to install Python 3"
       exit 1
@@ -283,23 +275,22 @@ uv_version() {
 }
 
 setup_uv() {
-  print_step "Checking uv installation..."
+  print_step "Checking uv..."
 
   # uv ロールと同じ場所を見る。ここで入れたものをプレイブックが入れ直さないため。
   if [ -x "$UV" ]; then
     local version
     version="$(uv_version)"
-    print_info "uv is installed. Version: $version"
     if ! version_lt "$version" "$UV_MIN_VERSION"; then
-      print_success "uv installation check completed successfully"
+      print_success "uv $version is installed"
       return 0
     fi
-    print_info "uv $UV_MIN_VERSION or later is required."
+    print_info "uv $version is installed, but $UV_MIN_VERSION or later is required"
     print_step "Updating uv..."
     # 古い uv は uv.toml を読めずにどのコマンドも止まるので、更新だけは設定を読ませない。
     # self update はインストーラを流し直すので、導入時と同じく rc ファイルを書き換えさせない。
     if UV_NO_MODIFY_PATH=1 "$UV" --no-config self update "$UV_MIN_VERSION" && ! version_lt "$(uv_version)" "$UV_MIN_VERSION"; then
-      print_success "uv updated successfully"
+      print_success "Updated uv to $(uv_version)"
     else
       print_error "Failed to update uv. Update it to $UV_MIN_VERSION or later with the tool that installed it, or move $UV away and rerun."
       exit 1
@@ -307,7 +298,6 @@ setup_uv() {
     return 0
   fi
 
-  print_info "uv is not installed."
   print_step "Installing uv..."
   if ! is_exists curl && ! $INSTALL_CMD curl; then
     print_error "Failed to install curl"
@@ -320,7 +310,7 @@ setup_uv() {
   if curl -LsSf -o "$script" https://astral.sh/uv/install.sh \
     && UV_NO_MODIFY_PATH=1 UV_INSTALL_DIR="$HOME/.local/bin" sh "$script" && [ -x "$UV" ]; then
     rm -f "$script"
-    print_success "uv installed successfully"
+    print_success "Installed uv"
   else
     rm -f "$script"
     print_error "Failed to install uv"
@@ -335,20 +325,19 @@ ansible_python() {
 }
 
 setup_ansible() {
-  print_step "Checking ansible installation..."
+  print_step "Checking Ansible..."
 
   local current
   current="$(ansible_python)"
   if [ "$current" = "$ANSIBLE_PYTHON" ] && "$UV" tool list 2>/dev/null | grep -q '^ansible '; then
-    print_info "Ansible is installed. Version: $("$ANSIBLE_PLAYBOOK" --version | head -n 1)"
-    print_success "Ansible installation check completed successfully"
+    print_success "$("$ANSIBLE_PLAYBOOK" --version | head -n 1) is installed"
     return 0
   fi
 
   if [ -z "$current" ]; then
-    print_info "Ansible is not installed or does not start."
+    print_info "Ansible is missing or does not start"
   else
-    print_info "Ansible runs on Python $current. Reinstalling it on Python $ANSIBLE_PYTHON with uv."
+    print_info "Ansible runs on Python $current; reinstalling it on Python $ANSIBLE_PYTHON"
   fi
   # 以前の install は pipx で入れていた。残すと、同じ名前のコマンドを pipx と uv が取り合う。
   if is_exists pipx && pipx list --short 2>/dev/null | grep -q '^ansible '; then
@@ -360,7 +349,7 @@ setup_ansible() {
   # XDG_BIN_HOME などで導入先が変わらないよう、ANSIBLE_PLAYBOOK と同じ ~/.local/bin に固定する。
   if UV_TOOL_BIN_DIR="$HOME/.local/bin" "$UV" tool install --force --managed-python --python "$ANSIBLE_PYTHON" --with-executables-from ansible-core ansible \
     && [ "$(ansible_python)" = "$ANSIBLE_PYTHON" ]; then
-    print_success "Ansible installed successfully"
+    print_success "Installed Ansible"
   else
     print_error "Failed to install Ansible"
     exit 1
@@ -368,17 +357,15 @@ setup_ansible() {
 }
 
 setup_git() {
-  print_step "Checking git installation..."
+  print_step "Checking git..."
 
   if is_exists git; then
     local git_version=$(git --version | awk '{print $3}')
-    print_info "git is installed. Version: $git_version"
-    print_success "git installation check completed successfully"
+    print_success "git $git_version is installed"
   else
-    print_info "git is not installed."
     print_step "Installing git..."
     if $INSTALL_CMD git; then
-      print_success "git installed successfully"
+      print_success "Installed git"
     else
       print_error "Failed to install git"
       exit 1
@@ -394,26 +381,25 @@ setup_dotfiles_path() {
     export DOTPATH
   fi
 
-  print_info "Dotfiles path: $DOTPATH"
-  print_success "Dotfiles path setup completed successfully"
+  print_success "Dotfiles path: $DOTPATH"
 }
 
 clone_repository() {
-  print_step "Cloning dotfiles repository..."
+  print_step "Cloning the dotfiles repository..."
 
   if [ -d "$DOTPATH" ]; then
     if [ "$(git -C "$DOTPATH" remote -v | sed -nr '1s/.*github.com\/(.+)\.git.*/\1/p')" = 'april418/dotfiles-v2' ]; then
-      print_info "Dotfiles directory already exists at $DOTPATH"
+      print_info "The repository already exists at $DOTPATH"
 
-      if confirm "Do you want to pull the latest changes?" "Skipping repository clone"; then
+      if confirm "Pull the latest changes?" "Using the existing repository as is"; then
         if git -C "$DOTPATH" pull; then
-          print_success "Dotfiles repository updated successfully"
+          print_success "Pulled the latest changes"
           return 0
         else
-          if confirm "Failed to pull latest changes. Do you want to re-clone the repository?" "Skipping repository clone"; then
+          if confirm "Pull failed. Remove it and clone again?" "Using the existing repository as is"; then
             rm -rf "$DOTPATH"
             if [ $? -ne 0 ]; then
-              print_error "Failed to remove existing dotfiles directory"
+              print_error "Failed to remove $DOTPATH"
               exit 1
             fi
           else
@@ -425,36 +411,36 @@ clone_repository() {
       fi
     else
       print_warning "A different repository already exists at $DOTPATH"
-      if confirm "Do you want to remove it and clone the dotfiles repository?" "Skipping repository clone"; then
+      if confirm "Remove it and clone the dotfiles repository?" "Kept $DOTPATH"; then
         rm -rf "$DOTPATH"
         if [ $? -ne 0 ]; then
-          print_error "Failed to remove existing dotfiles directory"
+          print_error "Failed to remove $DOTPATH"
           exit 1
         fi
       else
-        print_error "Cannot proceed without cloning the correct repository."
+        print_error "Cannot continue without the dotfiles repository at $DOTPATH"
         exit 1
       fi
     fi
   fi
 
   if git clone "$DOTFILES_GIT" "$DOTPATH"; then
-    print_success "Dotfiles repository downloaded successfully"
+    print_success "Cloned into $DOTPATH"
   else
-    print_error "Failed to download dotfiles repository"
+    print_error "Failed to clone the dotfiles repository"
     exit 1
   fi
 }
 
 run_ansible_playbook() {
-  print_step "Running ansible playbook..."
+  print_step "Running the playbook..."
 
   local ansible_path="$DOTPATH/ansible"
 
   if "$ANSIBLE_PLAYBOOK" "$ansible_path/playbook.yml" --connection=local; then
-    print_success "Ansible playbook executed successfully"
+    print_success "Playbook finished"
   else
-    print_error "Failed to execute ansible playbook"
+    print_error "Playbook failed"
     exit 1
   fi
 }

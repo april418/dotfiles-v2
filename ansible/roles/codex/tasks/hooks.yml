@@ -2,7 +2,7 @@
 # 一覧に claude ロールが登録しない名前があるときなど。止めると後のロールと適用の記録まで飛ぶ。
 - name: Debug shared hook is not registered for Claude Code
   ansible.builtin.debug:
-    msg: "{{ item }} が claude ロールの files/settings.json の hooks に無いため、Codex に登録していない。codex_shared_hooks を claude ロールの hook と揃える。"
+    msg: "{{ item }} is not in the hooks of the claude role files/settings.json; not registered in Codex. Align codex_shared_hooks with the claude role hooks"
   loop: "{{ codex_shared_hooks | difference(codex_claude_hook_names) }}"
 
 # codex_home は instructions.yml が先に作る。
@@ -19,5 +19,5 @@
 # Codex は登録の位置と内容で信頼を覚え、変わった hook は信頼し直すまで走らせない。
 - name: Debug hooks need trust again
   ansible.builtin.debug:
-    msg: "{{ codex_home }}/hooks.json を書き換えた。登録が変わった hook は、Codex で信頼し直すまで走らない。"
+    msg: "Updated {{ codex_home }}/hooks.json. Changed hooks will not run until trusted again in Codex"
   when: codex_hooks_file is changed
