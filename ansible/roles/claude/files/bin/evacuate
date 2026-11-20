@@ -49,7 +49,7 @@ def absolute(path):
     # リンク先を指すので外す。.. は symlink を挟むと字面と行き先が食い違うので受け付けない。
     parts = [p for p in path.split("/") if p not in ("", ".")]
     if ".." in parts:
-        raise Refused(f"{path}: .. を含むパスは扱わない。.. を含まない絶対パスで渡す")
+        raise Refused(f"{path}: .. を含むパスは扱わない（.. を含まない絶対パスで渡す）")
     return "/" + "/".join(parts)
 
 
@@ -185,7 +185,7 @@ def evacuate(name, paths):
         moved.append(dest)
     for label, dests in (("", moved), ("ユーザーが sudo mv で移したものを", pending)):
         if dests:
-            print(f"\n{RETENTION_DAYS} 日を過ぎると SessionStart フックが消す。{label}戻すときは:")
+            print(f"\n{RETENTION_DAYS} 日を過ぎると SessionStart フックが消す。{label}戻すには:")
             print("  evacuate --restore " + " ".join(shlex.quote(d) for d in dests))
     return not failed
 
