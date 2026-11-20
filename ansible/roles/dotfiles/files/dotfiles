@@ -890,9 +890,12 @@ def check_tools(remarks=False):
 # 公開から日が浅いバージョンは勧めない。pnpm の minimum-release-age と uv の exclude-newer（どちらも 1 週間）に
 # 揃える。リリースの無いタグはコミットの日時で測るので、日時を偽った上流の乗っ取りまでは防げない。
 PIN_COOLDOWN = 7 * 24 * 60 * 60
-# リリースの無いタグのコミットの日時を引く回数の上限。aws-cli は平日に毎日新しいバージョンを出すので、
-# PIN_COOLDOWN の中に 8 件並ぶことがある。足りないと最新版を確かめられず、取得の失敗になる。
+# 一覧に載らなかったタグの公開日時（リリースかコミットの日時）を引く回数の上限。aws-cli は平日に毎日新しい
+# バージョンを出すので、PIN_COOLDOWN の中に 8 件並ぶことがある。足りないと最新版を確かめられず、取得の失敗になる。
 TAG_LOOKUP_LIMIT = 15
+# リリースの一覧を 1 回に取る件数。openai/codex はリリース 1 件に 400 KB ほどのアセットの一覧が付き、100 件だと
+# GitHub API が 504 を返す。PIN_COOLDOWN の中に 20 件を超えるリリースを出すので、載らないタグは 1 件ずつ引く。
+RELEASES_PER_PAGE = 10
 
 TAG_MARKER = re.compile(r"#\s*dotfiles:\s*tags\s+(\S+)(?:\s+(\S+))?")
 KEY_VALUE = re.compile(r"\s*([\w-]+):\s*[\"']?(v?\d+(?:\.\d+)+)[\"']?\s*(?:#.*)?$")
@@ -981,26 +984,44 @@ def github_api(path):
 def settled_tag(owner, name, tags, releases=None):
     """tags のうち、公開から PIN_COOLDOWN を過ぎた最大のバージョンとその公開日時を返す。どれも日が浅ければ (None, None)。
 
-    releases は取得済みの GitHub のリリースの一覧。渡さなければ取りに行く。
+    releases は取得済みの GitHub のリリースの一覧で、載っていないタグはリリースが無いものとして扱う。
+    渡さなければ直近の RELEASES_PER_PAGE 件を取りに行き、それが埋まっていれば、載らなかったタグのリリースを 1 件ずつ引く。
     """
-    if releases is None:
-        releases = github_api(f"/repos/{owner}/{name}/releases?per_page=100")
+    paged = releases is None
+    if paged:
+        releases = github_api(f"/repos/{owner}/{name}/releases?per_page={RELEASES_PER_PAGE}")
+        paged = len(releases) >= RELEASES_PER_PAGE
     releases = {r["tag_name"]: r for r in releases}
     lookups = 0
+
+    def lookup(path):
+        nonlocal lookups
+        if lookups >= TAG_LOOKUP_LIMIT:
+            raise FetchError(
+                f"公開から日が経ったバージョンを見つけられない（公開日時を {TAG_LOOKUP_LIMIT} 回まで引いた）"
+            )
+        lookups += 1
+        status, body = http_get(f"{GITHUB_API}{path}", token=github_token())
+        if status == 404:
+            return None
+        if status != 200:
+            raise FetchError(f"GitHub API の {path} が HTTP {status} を返した")
+        return json.loads(body)
+
     for tag in sorted(tags, key=version_key, reverse=True):
         release = releases.get(tag)
+        if release is None and paged:
+            release = lookup(f"/repos/{owner}/{name}/releases/tags/{tag}")
         if release is not None:
             if release.get("draft") or release.get("prerelease"):
                 continue
             published = release.get("published_at")
         else:
-            # リリースを作らないリポジトリもある。そのバージョンのコミットの日時で代えるが、呼ぶ回数に上限を置く。
-            if lookups >= TAG_LOOKUP_LIMIT:
-                raise FetchError(
-                    f"公開から日が経ったバージョンを見つけられない（リリースの無いバージョンを {TAG_LOOKUP_LIMIT} 件まで調べた）"
-                )
-            lookups += 1
-            published = github_api(f"/repos/{owner}/{name}/commits/{tag}")["commit"]["committer"]["date"]
+            # リリースを作らないリポジトリもある。そのバージョンのコミットの日時で代える。
+            commit = lookup(f"/repos/{owner}/{name}/commits/{tag}")
+            if commit is None:
+                raise FetchError(f"GitHub API で {tag} のコミットが見つからない")
+            published = commit["commit"]["committer"]["date"]
         if published and time.time() - parse_time(published) >= PIN_COOLDOWN:
             return tag, published
     return None, None
