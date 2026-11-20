@@ -1411,7 +1411,7 @@ def run_check(style):
         unknown |= found_unknown
     if update_groups(dotfiles, tools):
         print()
-        say(style, "Update: dotfiles update", title="Update", items=["dotfiles update"])
+        say(style, "Update: dotfiles update", "info", "command", "Update", ["dotfiles update"])
     return updates, unknown
 
 
@@ -1542,7 +1542,8 @@ def render_powerline(rows, footer=None):
         for icon, color, title, items in rows
     ]
     if footer:
-        lines.append(" ".join(segment("info", "info", key, [value]) for key, value in footer))
+        # コマンドを案内する行は、ほかの「見出し: コマンド」の行と同じく command のアイコンにそろえる。
+        lines.append(" ".join(segment("info", "command", key, [value]) for key, value in footer))
     return "\n".join(lines)
 
 
@@ -2605,7 +2606,14 @@ def run_bump(names, steps, merge, dry_run, style):
             changes, failures = bump_write(repo, names, dry_run, style)
             if dry_run or steps == {"write"}:
                 if changes and not dry_run:
-                    say(style, "Commit and open a PR: dotfiles bump --steps pr")
+                    say(
+                        style,
+                        "Commit and open a PR: dotfiles bump --steps pr",
+                        "info",
+                        "command",
+                        "Commit and open a PR",
+                        ["dotfiles bump --steps pr"],
+                    )
                 return 1 if failures else 0
             if failures:
                 say(style, "some fetches failed, so pr and later steps did not run; continue with --steps pr", "warn")
