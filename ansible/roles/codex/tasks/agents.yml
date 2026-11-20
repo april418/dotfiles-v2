@@ -8,7 +8,7 @@
 # frontmatter の無い md（README など）は agent にしない。止めると後のロールと適用の記録まで飛ぶ。
 - name: Debug subagent definition has no frontmatter
   ansible.builtin.debug:
-    msg: "{{ item | basename }} に name と description のある frontmatter が無いため、Codex の agent にしていない。"
+    msg: "{{ item | basename }} has no frontmatter with name and description; not added as a Codex agent"
   loop: "{{ codex_agent_files }}"
   loop_control:
     label: "{{ item | basename }}"

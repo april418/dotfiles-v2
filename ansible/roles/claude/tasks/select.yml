@@ -54,12 +54,12 @@
 - name: Check the character
   ansible.builtin.assert:
     that: claude_character_selected in claude_character_names
-    fail_msg: "claude_character は {{ claude_character_names | join(', ') }} のどれかにする（{{ claude_character_selected }}）"
+    fail_msg: "claude_character must be one of {{ claude_character_names | join(', ') }} (got {{ claude_character_selected }})"
     quiet: true
 
 - name: Report the replaced character
   ansible.builtin.debug:
-    msg: "{{ claude_character_chosen }}.md が無いため {{ claude_character_selected }} にした"
+    msg: "{{ claude_character_chosen }}.md not found; using {{ claude_character_selected }}"
   # 端末が無いと pause は警告だけ出して既定に倒れ、選んでいたキャラクターが黙って置き換わる。
   when:
     - claude_character is not defined
