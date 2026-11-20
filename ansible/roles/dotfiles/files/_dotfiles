@@ -1,23 +1,41 @@
 #compdef dotfiles
 # files/dotfiles の main() の argparse と同じサブコマンドとオプションを並べる。
 
-_dotfiles_characters() {
-  setopt localoptions extendedglob
-  local applied=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/applied.json repo top expl
-  local -a candidates names
-  # dotfiles コマンドの locate() と同じ checkout を選ぶ。
+# dotfiles コマンドの locate() と同じ checkout を REPLY に入れる。見つからなければ空にして 1 を返す。
+_dotfiles_checkout() {
+  local applied=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/applied.json repo top
+  local -a candidates
+  REPLY=
   # record.yml の to_nice_json は ASCII 以外を \uXXXX で書くので、(g:e:) で戻す。
   [[ -r $applied && $(<$applied) =~ '"repo": *"([^"]*)"' ]] && candidates+=("${(g:e:)match[1]}")
   [[ -n $DOTPATH ]] && candidates+=("$DOTPATH")
   candidates+=("$HOME/.dotfiles")
   for repo in $candidates; do
     [[ -d $repo ]] && top=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || continue
-    names=($top/ansible/roles/claude/files/characters/*.md(N:t:r))
+    REPLY=$top
+    return 0
+  done
+  return 1
+}
+
+_dotfiles_characters() {
+  setopt localoptions extendedglob
+  local expl REPLY
+  local -a names
+  if _dotfiles_checkout; then
+    names=($REPLY/ansible/roles/claude/files/characters/*.md(N:t:r))
     # dotfiles コマンドの CHARACTER_NAME と同じく、記録から読める文字種の名前に限る。
     names=(${(M)names:#[a-z0-9-]##})
-    break
-  done
+  fi
   _wanted characters expl character compadd -a names
+}
+
+_dotfiles_pins() {
+  local expl REPLY
+  local -a names
+  # dotfiles コマンドの find_pins() と同じく、`# dotfiles: tags` の目印の次の行の変数名を拾う。
+  _dotfiles_checkout && names=(${(f)"$(grep -rh -A1 --include='*.yml' --include='*.yaml' '# *dotfiles: *tags' $REPLY/ansible 2>/dev/null | sed -n 's/^ *\([A-Za-z0-9_-]*\):.*/\1/p')"})
+  _wanted pins expl 'pinned variable' compadd -a names
 }
 
 _dotfiles() {
@@ -35,6 +53,7 @@ _dotfiles() {
         'check:更新の有無と更新手順を表示する'
         'notify:前回取得した状態から通知を出す'
         'update:更新できるものを表示し、選んだものを更新する'
+        'bump:固定バージョンを最新に上げる'
         'refresh:リモートを取得する'
         'character:Claude Code のキャラクターを表示する。set で切り替える'
       )
@@ -56,6 +75,13 @@ _dotfiles() {
             '--only=[聞かずに更新する対象]:target:_sequence compadd - dotfiles tools brew all' \
             '--startup[シェルの起動時に呼ぶ]' \
             '--style=[見た目]:style:(plain powerline)' && ret=0
+          ;;
+        bump)
+          _arguments $help \
+            '--steps=[流すステップ]:step:_sequence compadd - write pr apply all' \
+            '--merge[CI を待って PR をマージする]' \
+            '--dry-run[書き換えずに上がるものだけを表示する]' \
+            '*:pinned variable:_dotfiles_pins' && ret=0
           ;;
         character)
           _arguments -C $help \
