@@ -5,7 +5,7 @@ claude_character_state_file: "{{ ansible_facts['env'].XDG_STATE_HOME | default(a
 
 # マーケットプレイスの github source は ref（ブランチかタグ）でしか固定できず、SHA を書けないのでタグで固定する。
 # dotfiles: tags https://github.com/nanaism/yomiyasu
-claude_yomiyasu_version: "v3.0.0"
+claude_yomiyasu_version: "v3.1.0"
 
 # anthropics/claude-plugins-official にはタグが無く、マーケットプレイスの ref では固定できない。プラグインの source は
 # sha を取れるので、手元に置くマーケットプレイス（claude_marketplace）に SHA で書く。固定は SKILL.md の URL の
