@@ -37,8 +37,9 @@
 # 判定は `e.length` すなわち文字数であってバイト数ではない。`wc -c` で
 # 見積もると日本語 1 文字が 3 バイトなので 3 倍過大になる。`wc -m` を使う。
 #
-# 上限を超えたら本文を捨ててパスだけ出す。黙って落とすと、全部載ったものとして
-# 扱われる。
+# 上限を超えたら古い側を行の単位で省き、新しい側を上限まで出す。状態ファイルは追記で
+# 育ち、最近の判断と、直前の PreCompact が書いた作業ツリーの状態は末尾にある。省いた
+# ことは本文の頭に書く。黙って落とすと、全部載ったものとして扱われる。
 set -uo pipefail
 
 INPUT="$(cat)"
@@ -100,10 +101,35 @@ lead = (
     f"\n\nグローバル指示の「判断ログ」節に挙げた場面で判断を下したら、その節の書き方で {STATE} の「判断ログ」節へ追記すること。"
 )
 heading = f"\n\n# この作業ディレクトリの状態 ({STATE})\n\n"
-if len(lead) + len(heading) + len(body) > MAX_TOTAL_CHARS:
+
+
+def u16(s):
+    # ハーネスの判定は JS の length で、UTF-16 のコード単位を数える。絵文字のような
+    # BMP の外の文字は len() では 1、length では 2 になる。
+    return len(s.encode("utf-16-le")) // 2
+
+
+if u16(lead + heading + body) > MAX_TOTAL_CHARS:
+    NOTE_BUDGET = 200  # 下の省略の注記を収める分
+    budget = MAX_TOTAL_CHARS - u16(lead + heading) - NOTE_BUDGET
+    # 判断は日付で始まる 1 行の箇条書きで、見出しを持たないものが多い。見出しで
+    # 切ると、末尾の作業ツリーの状態の節まで飛んで最近の判断を落とすので、行で切る。
+    lines = body.splitlines(keepends=True)
+    start, used = len(lines), 0
+    while start > 0 and used + u16(lines[start - 1]) <= budget:
+        start -= 1
+        used += u16(lines[start])
+    # 省いた側でコードブロックが開いたままなら、閉じのフェンスの次の行から始める。
+    # そのまま始めると、閉じのフェンスが開きとして読まれ、以降が全部コードに見える。
+    if sum(line.startswith("```") for line in lines[:start]) % 2:
+        while start < len(lines) and not lines[start].startswith("```"):
+            start += 1
+        start += 1
+    kept = "".join(lines[start:])
     body = (
-        f"（{len(body):,} 文字あり上限を超えるため本文を省いた。"
-        "作業を始める前に Read すること）"
+        f"（全 {len(body):,} 文字のうち、新しい側の {len(kept):,} 文字だけを載せた。"
+        "古い判断が要るときは、全文を grep するか offset を付けて Read すること）\n\n"
+        + kept
     )
 
 print(json.dumps({

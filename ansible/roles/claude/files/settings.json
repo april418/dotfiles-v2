@@ -7,6 +7,7 @@
     }
   },
   "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40",
     "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "10"
   },
   "permissions": {

@@ -257,6 +257,9 @@ rules・skill・agent の定義）の改訂を含むときは、`implementation-
 するので、こちらの結論は渡さず、確かめてほしい点（こちらの想定が正しいかを含む）として
 渡す。
 
+subagent として動いているときは advisor を呼ばない。advisor は呼ぶたびに会話全体を
+キャッシュ無しで読み直す。迷う点は報告に書けば、メインが advisor に相談できる。
+
 ## 手順を持つ skill
 
 - git 操作の前に git-workflow skill を Skill ツールで呼ぶ。その振り分け表にある
