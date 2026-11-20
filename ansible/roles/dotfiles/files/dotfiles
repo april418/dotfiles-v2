@@ -124,7 +124,7 @@ def run(args, timeout):
         reason = next(
             (line for line in lines if re.match(r"(fatal|error):", line, re.IGNORECASE)), lines[0] if lines else None
         )
-        raise FetchError(reason or f"{os.path.basename(args[0])} が {p.returncode} で終了した")
+        raise FetchError(reason or f"{os.path.basename(args[0])} が exit {p.returncode} で終わった")
     return stdout, stderr
 
 
@@ -345,7 +345,7 @@ def check_dotfiles():
     result["remote"] = remote
     behind = count(repo, f"HEAD..{remote}", DEPLOYED_PATH) if remote else None
     if behind is None:
-        result["warnings"].append("origin の既定ブランチを特定できないため、リモートとは比べていない")
+        result["warnings"].append("origin の既定ブランチが分からないので、リモートと比べていない")
 
     if behind:
         branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
@@ -361,7 +361,7 @@ def check_dotfiles():
             )
         else:
             # 作業ブランチで取り込み方を決めつけると、rebase などを勧めることになるため手順は出さない。
-            summary += f"（{branch or 'detached HEAD'} を checkout 中）"
+            summary += f"（{branch or 'detached HEAD'} にいる）"
             commands = steps = []
         result["notices"].append(
             notice(summary, summary, commands, steps=steps, keys=[f"dotfiles:pull:{git(repo, 'rev-parse', remote)}"])
@@ -391,7 +391,7 @@ def check_dotfiles():
         unapplied = count(repo, f"{commit}..HEAD", DEPLOYED_PATH)
         result["notices"].append(
             apply_notice(
-                f"取り込み済みの {unapplied} コミットが未適用" if unapplied else "checkout と適用済みの内容が違う"
+                f"適用していないコミットが {unapplied} 件ある" if unapplied else "適用した内容が checkout と違う"
             )
         )
     return result
@@ -444,7 +444,7 @@ def waiting_remark(installed, data):
         days = int((time.time() - parse_time(data["newest_published"])) // (24 * 60 * 60))
     except (TypeError, KeyError, ValueError):
         return f"{newest.lstrip('v')} は公開から {PIN_COOLDOWN // (24 * 60 * 60)} 日経つまで待っている"
-    return f"{newest.lstrip('v')} は公開から {days} 日のため待っている（{PIN_COOLDOWN // (24 * 60 * 60)} 日待つ）"
+    return f"{newest.lstrip('v')} は公開から {days} 日（{PIN_COOLDOWN // (24 * 60 * 60)} 日経つまで待っている）"
 
 
 class Uv(Tool):
@@ -489,7 +489,7 @@ class Uv(Tool):
 
     def skipped(self, data):
         if data.get("unsupported"):
-            return "standalone のインストーラーで入れたものではないため確かめていない（入れたパッケージマネージャーで更新する）"
+            return "standalone のインストーラー以外で入れたので確かめていない（入れたパッケージマネージャーで更新する）"
         return None
 
     def installed(self):
@@ -634,11 +634,11 @@ class ClaudeCode(Tool):
 
     def skipped(self, data):
         if self.installed() is None:
-            return "native インストーラーで入れたものではないため確かめていない（入れた方法で更新する）"
+            return "native インストーラー以外で入れたので確かめていない（入れた方法で更新する）"
         if data.get("unsupported"):
-            return "取得の後に入れ方が変わったため、次の取得で確かめる"
+            return "前回の取得の後に入れ方が変わった。次の取得で確かめる"
         if data.get("channel") != self.channel():
-            return "取得の後にチャンネルが変わったため、次の取得で確かめる"
+            return "前回の取得の後にチャンネルが変わった。次の取得で確かめる"
         return None
 
     def evaluate(self, data):
@@ -657,7 +657,7 @@ class ClaudeCode(Tool):
     def remark(self, data):
         if self.evaluate(data) is None:
             return None
-        return "自動更新と同じく、待ち期間なしでチャンネルのバージョンへ上げる"
+        return "自動更新と同じく、待ち期間なしで上げる"
 
 
 class GitTool(Tool):
@@ -800,7 +800,7 @@ class Brew(Tool):
     def remark(self, data):
         if not any(self.still_outdated(p) for p in data.get("packages", [])):
             return None
-        return "Homebrew はバージョンの公開日時を持たないので、待ち期間なしで上げる"
+        return "Homebrew は公開日時が分からないので、待ち期間なしで上げる"
 
     @staticmethod
     def still_outdated(package):
@@ -1005,7 +1005,8 @@ def settled_tag(owner, name, tags, releases=None):
         kind = path.split("/")[4]
         if lookups[kind] >= TAG_LOOKUP_LIMIT:
             raise FetchError(
-                f"公開から日が経ったバージョンを見つけられない（公開日時を {TAG_LOOKUP_LIMIT} 回まで引いた）"
+                f"公開から {PIN_COOLDOWN // (24 * 60 * 60)} 日経ったバージョンが見つからない"
+                f"（公開日時の照会が上限の {TAG_LOOKUP_LIMIT} 回に達した）"
             )
         lookups[kind] += 1
         status, body = http_get(f"{GITHUB_API}{path}", token=github_token())
@@ -1069,7 +1070,9 @@ class TagPin(Pin):
         self.apply = apply
         super().__init__(f"tag:{rel}:{self.name}:{url}", self.name, rel, line)
         if self.name not in INSTALLED_VERSIONS and self.name not in CHECKED_AS_TOOL:
-            self.problem = f"入っているバージョンの読み方が無い（dotfiles の INSTALLED_VERSIONS に {self.name} を足す）"
+            self.problem = (
+                f"入っているバージョンを読む関数が無い（dotfiles の INSTALLED_VERSIONS に {self.name} を足す）"
+            )
 
     def installed(self):
         # 判定と確かめなかった理由で 2 回呼ぶ。シェルを開くたびに流れるので、読むのは 1 回にする。
@@ -1102,7 +1105,7 @@ class TagPin(Pin):
             return (
                 "このマシンに入っていない"
                 if Nvm.locate() is None
-                else f"ツールの {CHECKED_AS_TOOL[self.name]} で確かめる"
+                else f"「ツール」の {CHECKED_AS_TOOL[self.name]} で確かめる"
             )
         if self.installed() is None:
             return "このマシンに入っていない"
@@ -1121,7 +1124,7 @@ class TagPin(Pin):
         if installed is None or version_key(installed) >= version_key(latest):
             return None
         summary = f"{self.name} {installed} → {latest}"
-        when = f"（{data['published'][:10]} 公開）" if data.get("published") else "（公開日は確かめていない）"
+        when = f"（{data['published'][:10]} 公開）" if data.get("published") else "（公開日は不明）"
         # ロールは固定したバージョンを入れるので、固定が古ければ上げてから流す。
         if version_key(self.current) < version_key(latest):
             pinned, commands = latest, [f"{self.where} の {self.name} を {latest} にする", self.apply]
@@ -1162,11 +1165,11 @@ def find_pins(repo):
 def check_pins(repo, remote=None):
     section = {"label": "固定バージョン", "items": [], "failures": [], "note": None}
     if repo is None:
-        section["note"] = "checkout が見つからないため確かめていない"
+        section["note"] = "checkout が見つからない"
         return section
     if remote and count(repo, f"HEAD..{remote}", DEPLOYED_PATH):
         # 古いファイルを見て直すよう勧めると、上流で直した変更とぶつかる。
-        section["note"] = "checkout が origin より遅れているため、取り込んでから確かめる"
+        section["note"] = "checkout が origin より遅れている。取り込んでから確かめる"
         return section
     cache = read_json(PINS_FILE) or {}
     # キーは checkout からの相対パスなので、別の checkout の結果でも当てはまってしまう。
@@ -1207,12 +1210,12 @@ def summarize_failures(failures):
     """長く続いている取得の失敗を 1 行にまとめる。"""
     if len(failures) == 1:
         f = failures[0]
-        return f"{f['label']} の最新版を {f['days']} 日確かめられていない（{brief(f['error'])}）"
+        return f"{f['label']} の最新版を {f['days']} 日取得できていない（{brief(f['error'])}）"
     reasons = {brief(f["error"]) for f in failures}
-    reason = reasons.pop() if len(reasons) == 1 else "理由は dotfiles check で見る"
+    reason = reasons.pop() if len(reasons) == 1 else "理由は dotfiles check で見られる"
     return (
         f"{failures[0]['label']} ほか {len(failures) - 1} 件の最新版を "
-        f"{min(f['days'] for f in failures)} 日以上確かめられていない（{reason}）"
+        f"{min(f['days'] for f in failures)} 日以上取得できていない（{reason}）"
     )
 
 
@@ -1350,7 +1353,7 @@ def fetch_failure(repo):
     if not state or state.get("repo") != repo:
         return None
     failure = long_failure(state)
-    return f"リモートを {failure[0]} 日確かめられていない（{brief(failure[1])}）" if failure else None
+    return f"リモートを {failure[0]} 日取得できていない（{brief(failure[1])}）" if failure else None
 
 
 def spawn_refresh():
@@ -1379,7 +1382,7 @@ def run_check():
     """結果を表示し、(更新があるか, 判定できなかったものがあるか) を返す。"""
     if sys.stderr.isatty():
         # brew outdated が brew update を走らせると数十秒かかり、その間は何も表示されない。
-        print("リモートと各ツールの最新版を取得している…", file=sys.stderr)
+        print("リモートと各ツールの最新版を取得中…", file=sys.stderr)
     fetch_error = refresh(wait=True)
     dotfiles = check_dotfiles()
     tools = check_tools(remarks=True)
@@ -1391,7 +1394,7 @@ def run_check():
         unknown = True
     else:
         if fetch_error:
-            print(f"  ! リモートを取得できなかったため、前回取得した状態で判定した: {fetch_error}")
+            print(f"  ! リモートを取得できず、前回の取得結果で判定した: {fetch_error}")
             unknown = True
         for warning in dotfiles["warnings"]:
             print(f"  ! {warning}")
@@ -1403,7 +1406,7 @@ def run_check():
             print("  ? ローカルで分かる範囲では差分が無い" if unknown else "  ✓ 最新")
 
     pins = check_pins(dotfiles["where"], dotfiles["remote"])
-    for section, empty in ((tools, "確かめられるツールが入っていない"), (pins, "固定しているバージョンが無い")):
+    for section, empty in ((tools, "対象のツールが入っていない"), (pins, "固定しているバージョンが無い")):
         found_updates, found_unknown = print_items(section, empty)
         updates |= found_updates
         unknown |= found_unknown
@@ -1462,8 +1465,8 @@ PL_ICONS = {
     "ok": "\uf00c",
     "question": "\uf059",
 }
-NOTIFY_FOOTER = "詳細と更新手順は dotfiles check で表示する"
-UPDATE_FOOTER = "詳細は dotfiles check、更新は dotfiles update で行う"
+NOTIFY_FOOTER = "詳細と更新手順は dotfiles check で見られる"
+UPDATE_FOOTER = "詳細は dotfiles check、更新は dotfiles update"
 
 
 def notify_rows(repo, dotfiles, tools):
@@ -1924,7 +1927,7 @@ def run_steps(steps, live=None, log=None):
         if code != 0:
             if windowed:
                 live.keep()
-            return f"{display} が {code} で終了した"
+            return f"{display} が exit {code} で終わった"
     return None
 
 
@@ -1940,13 +1943,13 @@ def run_update(startup, only, style):
             # 更新の途中で判定すると、上げかけの状態を見て聞くことになる。
             if startup:
                 return 1
-            print("別のシェルで更新している", file=sys.stderr)
+            print("別のシェルで更新中", file=sys.stderr)
             return 2
         repo, _ = locate()
         fetch_error = None
         if not startup:
             if sys.stderr.isatty():
-                print("リモートと各ツールの最新版を取得している…", file=sys.stderr)
+                print("リモートと各ツールの最新版を取得中…", file=sys.stderr)
             fetch_error = refresh(wait=True)
         dotfiles, tools = check_dotfiles(), check_tools()
         groups = update_groups(dotfiles, tools)
@@ -1974,7 +1977,7 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
                 "warn",
                 "error",
                 dotfiles["label"],
-                [f"リモートを取得できなかったため、前回取得した状態で判定した（{fetch_error}）"],
+                [f"リモートを取得できず、前回の取得結果で判定した（{fetch_error}）"],
             ),
         )
     if rows:
@@ -2018,9 +2021,9 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
                 time.sleep(0.05)
         else:
             if startup:
-                print(render([("warn", "warn", "別のシェルで更新しているので、更新しなかった", [])], style))
+                print(render([("warn", "warn", "別のシェルで更新中のため、更新しなかった", [])], style))
                 return 0
-            print("別のシェルで更新している", file=sys.stderr)
+            print("別のシェルで更新中", file=sys.stderr)
             return 2
         ids, asked_keys = {g["id"] for g in chosen}, {k for g in chosen for k in g["keys"]}
         current = update_groups(check_dotfiles(), check_tools())
@@ -2033,7 +2036,7 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
         if changed:
             rows.append(("info", "info", "dotfiles update で聞き直せる", []))
         if not remaining and not changed:
-            rows.append(("info", "info", "選んだものは更新が済んでいた", []))
+            rows.append(("info", "info", "選んだものは更新済みだった", []))
         if rows:
             print(render(rows, style))
         if not remaining:
@@ -2063,10 +2066,10 @@ def run_chosen(chosen, partial, startup, style):
             try:
                 fcntl.flock(fetching, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
-                print("バックグラウンドの取得が終わるのを待っている…", flush=True)
+                print("バックグラウンドの取得を待っている…", flush=True)
                 fcntl.flock(fetching, fcntl.LOCK_EX)
             for group in chosen:
-                show((group["icon"], "progress", group["title"], ["更新する"]))
+                show((group["icon"], "progress", group["title"], ["更新中"]))
                 log.write(f"== {group['title']}\n".encode())
                 started += 1
                 live = Live(log) if live_output else None
@@ -2098,7 +2101,7 @@ def run_chosen(chosen, partial, startup, style):
                         "warn",
                         "error",
                         group["title"],
-                        ["中断した" if done + i < started else "中断したため実行していない"],
+                        ["中断した" if done + i < started else "中断したので実行していない"],
                     )
                 )
         sync_pending(update_groups(check_dotfiles(), check_tools()))
@@ -2146,7 +2149,7 @@ def run_character_show():
         current = chosen
     print(f"今のキャラクター: {current}")
     if repo is None:
-        print("選べるもの: checkout が見つからないので分からない（DOTPATH か ~/.dotfiles に置く）")
+        print("選べるもの: 不明（checkout が見つからない。DOTPATH か ~/.dotfiles に置く）")
         return 2
     print(f"選べるもの: {', '.join(names)}")
     print("切り替えは dotfiles character set <名前>。新しいセッションから効く")
@@ -2182,7 +2185,7 @@ def run_character_set(name):
         signal.signal(signal.SIGINT, previous)
     after = chosen_character()
     if code == 0:
-        print("新しいセッションから効く" if after != before else f"{after} のまま変えていない")
+        print("新しいセッションから効く" if after != before else f"{after} のまま")
     return code
 
 
@@ -2224,7 +2227,7 @@ def step(argv, repo, capture=False):
     except OSError as e:
         raise BumpError(f"{argv[0]} を起動できない（{e.strerror or e}）")
     if p.returncode != 0:
-        raise BumpError(f"{os.path.basename(argv[0])} が {p.returncode} で終了した")
+        raise BumpError(f"{os.path.basename(argv[0])} が exit {p.returncode} で終わった")
     return p.stdout if capture else None
 
 
@@ -2239,7 +2242,7 @@ def require_base(repo, remote, what):
     base = remote.split("/", 1)[1]
     branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
     if branch != base:
-        raise BumpError(f"{what}は {base} の上で流す（今は {branch or 'detach した HEAD'}）")
+        raise BumpError(f"{what}は {base} の上で流す（今は {branch or 'detached HEAD'}）")
     if git(repo, "rev-parse", "HEAD") != git(repo, "rev-parse", remote):
         # 配置に使う checkout なので、check_dotfiles の取り込みと同じく、手元のコミットを書き換えない形で揃える。
         raise BumpError(f"{base} が {remote} と揃っていない（git pull --ff-only origin {base} で揃えてから流す）")
@@ -2269,7 +2272,7 @@ def pr_preflight(repo, remote):
     if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None or (
         git(repo, "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}") is not None
     ):
-        raise BumpError(f"{branch} がもうある。前の PR を片付けてから流す")
+        raise BumpError(f"{branch} が既にある。前の PR を片付けてから流す")
     # gh が使えないと分かるのが push の後だと、ブランチだけがリモートに残る。
     listed = step(["gh", "pr", "list", "--state", "open", "--json", "headRefName,url"], repo, capture=True)
     try:
@@ -2504,11 +2507,11 @@ def run_bump(names, steps, merge, dry_run):
         return 2
     usage = None
     if dry_run and steps != {"write"}:
-        usage = "--dry-run は write だけと使う"
+        usage = "--dry-run は --steps write のときだけ使える"
     elif names and "write" not in steps:
-        usage = "変数名は write と使う"
+        usage = "変数名は --steps に write があるときだけ使える"
     elif merge and "pr" not in steps:
-        usage = "--merge は pr と使う"
+        usage = "--merge は --steps に pr があるときだけ使える"
     elif {"pr", "apply"} <= steps and not merge:
         usage = "pr の後に apply を流すには --merge を付ける（マージ前に流すと、このマシンだけ上げた値が入る）"
     elif {"write", "apply"} <= steps and "pr" not in steps:
@@ -2518,7 +2521,7 @@ def run_bump(names, steps, merge, dry_run):
         return 2
     remote = default_remote(repo)
     if remote is None:
-        print("dotfiles bump: origin の既定ブランチを特定できない", file=sys.stderr)
+        print("dotfiles bump: origin の既定ブランチが分からない", file=sys.stderr)
         return 2
     try:
         step(["git", "fetch", "origin"], repo)
@@ -2553,7 +2556,7 @@ def run_bump(names, steps, merge, dry_run):
     except (BumpError, FetchError) as e:
         print(f"dotfiles bump: {e}", file=sys.stderr)
         print(
-            f"今のブランチは {git(repo, 'symbolic-ref', '--quiet', '--short', 'HEAD') or 'detach した HEAD'}",
+            f"今のブランチは {git(repo, 'symbolic-ref', '--quiet', '--short', 'HEAD') or 'detached HEAD'}",
             file=sys.stderr,
         )
         return 1
@@ -2568,9 +2571,9 @@ def main():
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     check_help = (
-        "リモートを取得して、更新の有無と更新手順を表示する。終了コードは 0 = 更新なし、1 = 更新あり、"
-        "2 = 判定できないものがあった。更新ありと判定できないものが両方あれば 1 を返す。"
-        "standalone 以外の uv など、確かめなかったものは数えない"
+        "リモートを取得し、更新の有無と更新手順を表示する。終了コードは 0 = 更新なし、"
+        "1 = 更新あり（判定できないものがあっても 1）、2 = 判定できないものがある。"
+        "確かめなかったもの（standalone 以外の uv など）は数えない"
     )
     sub.add_parser("check", help=check_help, description=check_help)
     notify = sub.add_parser(
@@ -2592,7 +2595,7 @@ def main():
     update = sub.add_parser(
         "update",
         help=(
-            "リモートを取得して更新できるもの（dotfiles 本体・ツール・Homebrew）を表示し、選んだものを更新する。"
+            "リモートを取得し、更新できるもの（dotfiles 本体・ツール・Homebrew）を表示して、選んだものを更新する。"
             "終了コードは 0 = 更新した（更新が無いときも）、1 = 失敗したものがある、2 = 対象を選べなかった"
         ),
     )
@@ -2614,8 +2617,8 @@ def main():
         "bump",
         help=(
             "固定バージョンを公開から 7 日経った最新に上げる。write で checkout を書き換え、pr でブランチにコミットして PR を作り、"
-            "apply でプレイブックを流す。終了コードは 0 = 済んだ（上げるものが無いときも）、1 = 流せなかったステップか失敗したステップがある、"
-            "2 = 引数の誤り"
+            "apply でプレイブックを流す。終了コードは 0 = 済んだ（上げるものが無いときも）、"
+            "1 = 流せなかったか失敗したステップがある、2 = 引数の誤り"
         ),
     )
     bump.add_argument(
