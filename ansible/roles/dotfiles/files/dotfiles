@@ -941,6 +941,18 @@ def awscli_version():
     return version
 
 
+def go_version():
+    """go ロールが入れた GOROOT の VERSION の先頭行（go1.27.4）から読む。入っていなければ None。"""
+    try:
+        with open(os.path.join(DATA_HOME, "go", "VERSION"), encoding="utf-8") as f:
+            first = f.readline().strip()
+    except FileNotFoundError:
+        return None
+    if not first.startswith("go"):
+        raise ValueError(f"cannot parse the Go version: {first[:40]!r}")
+    return first.removeprefix("go")
+
+
 def claude_plugin_version(name):
     config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
     plugins = (read_json(os.path.join(config, "plugins", "installed_plugins.json")) or {}).get("plugins")
@@ -957,6 +969,7 @@ INSTALLED_VERSIONS = {
     "awscli_version": awscli_version,
     "claude_yomiyasu_version": lambda: claude_plugin_version("yomiyasu@yomiyasu"),
     "codex_version": lambda: npm_package_version("codex", "@openai/codex"),
+    "go_version": go_version,
     "prettier_version": lambda: npm_package_version("prettier", "prettier"),
     "ruff_version": lambda: command_version("ruff", r"ruff (\S+)"),
     "shfmt_version": lambda: command_version("shfmt", r"(\S+)"),

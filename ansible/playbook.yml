@@ -108,6 +108,7 @@
     - dotfiles
     - fonts
     - git
+    - go
     - motd
     - node
     - npm
