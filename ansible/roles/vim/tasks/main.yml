@@ -10,3 +10,104 @@
     src: files/.vimrc
     dest: "{{ ansible_facts['env'].HOME }}/.vimrc"
     mode: "0644"
+
+# vimrc の undodir。無いと undofile を書けない。
+- name: Ensure vim undo directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.vim/undo"
+    state: directory
+    mode: "0700"
+
+- name: Ensure goda-pm config directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.vim/goda-pm"
+    state: directory
+    mode: "0755"
+
+- name: Copy goda-pm config
+  ansible.builtin.copy:
+    src: "files/.vim/goda-pm/{{ item }}"
+    dest: "{{ ansible_facts['env'].HOME }}/.vim/goda-pm/{{ item }}"
+    mode: "0644"
+  loop:
+    - go.mod
+    - go.sum
+    - main.go
+    - plugins.toml
+  register: vim_goda_pm_config
+
+- name: Clone goda-pm core plugins
+  ansible.builtin.git:
+    repo: "https://github.com/{{ item }}.git"
+    dest: "{{ vim_goda_pm_repos }}/{{ item }}"
+    update: false
+  loop: "{{ vim_goda_pm_core }}"
+
+# vimrc と同じ名前を、PATH で選ばれる vim に決めさせる。goda.vim は Vim 9.1 の job と channel で動く。
+- name: Read goda-pm state name
+  ansible.builtin.command:
+    argv:
+      - vim
+      - -N
+      - -u
+      - NONE
+      - -i
+      - NONE
+      - -n
+      - -es
+      - -c
+      - >-
+        call writefile([v:version >= 901 && has('job') && has('channel')
+        ? fnamemodify($VIMRUNTIME, ':t') : ''], '/dev/stdout')
+      - -c
+      - qall!
+  environment: "{{ vim_goda_pm_env }}"
+  register: vim_goda_pm_name
+  changed_when: false
+  check_mode: false
+  when: ansible_facts['os_family'] != 'Windows'
+
+- name: Make goda-pm state and install plugins
+  when: >-
+    ansible_facts['os_family'] != 'Windows'
+    and vim_goda_pm_name.stdout | trim != ''
+  environment: "{{ vim_goda_pm_env }}"
+  block:
+    - name: Check goda-pm state
+      ansible.builtin.stat:
+        path: "{{ vim_goda_pm_base }}/{{ vim_goda_pm_name.stdout | trim }}/state.vim"
+      register: vim_goda_pm_state
+
+    # make_state は失敗すると前の state を残したまま 1 を返すので、戻り値で落とす。
+    - name: Make goda-pm state
+      ansible.builtin.command:
+        argv: >-
+          {{ vim_goda_pm_argv + [
+            '-c',
+            'if goda_pm#make_state_sync(' ~ (vim_goda_pm_base | to_json) ~ ', '
+              ~ (vim_goda_pm_name.stdout | trim | to_json) ~ ') | ' ~ vim_goda_pm_fail ~ ' | endif',
+            '-c', 'qall!'] }}
+      # 初回はモジュールの取得とビルドが入る。goda-pm は結果が来るまで待ち続けるので、上限を付ける。
+      timeout: 600
+      changed_when: true
+      when: vim_goda_pm_config is changed or not vim_goda_pm_state.stat.exists
+
+    # 入っていないものだけを入れる。前の実行で入れ損ねたものも、ここで入れ直す。
+    # sync_ext_action は失敗すると一覧ではなく 0 を返すので、型も見る。
+    - name: Install goda-pm plugins
+      ansible.builtin.command:
+        argv: >-
+          {{ vim_goda_pm_argv + [
+            '-c',
+            'if goda_pm#min#load_state(' ~ (vim_goda_pm_base | to_json) ~ ', '
+              ~ (vim_goda_pm_name.stdout | trim | to_json) ~ ') | ' ~ vim_goda_pm_fail ~ ' | endif',
+            '-c', 'let g:missing = goda_pm#sync_ext_action("installer", "getNotInstalled")',
+            '-c', 'if type(g:missing) != v:t_list | ' ~ vim_goda_pm_fail ~ ' | endif',
+            '-c', 'if empty(g:missing) | call writefile(["up-to-date"], "/dev/stdout") | qall! | endif',
+            '-c', 'call goda_pm#sync_ext_action("installer", "install")',
+            '-c', 'let g:failed = goda_pm#sync_ext_action("installer", "getFailed")',
+            '-c', 'if type(g:failed) != v:t_list || !empty(g:failed) | ' ~ vim_goda_pm_fail ~ ' | endif',
+            '-c', 'qall!'] }}
+      timeout: 600
+      register: vim_goda_pm_install
+      changed_when: "'up-to-date' not in vim_goda_pm_install.stdout"

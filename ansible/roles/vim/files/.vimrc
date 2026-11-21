@@ -16,118 +16,67 @@ endfunction
 
 
 " ========================================
-"   NeoBundle設定
+"   goda-pm.vim設定
 " ========================================
-" Note: Skip initialization for vim-tiny or vim-small.
-if 0 | endif
-
 if &compatible
-  set nocompatible               " Be iMproved
+  set nocompatible
 endif
 
-" Required:
-set runtimepath+=~/.vim/bundle/neobundle.vim/
+" プラグインは vim ロールが clone し、state も作る。足りないものがあれば
+" プラグインを読まずに起動する。
+let s:goda_pm_base = expand('~/.cache/goda-pm')
+let s:goda_pm_repos = s:goda_pm_base . '/repos/github.com/'
+let s:goda_pm_config = expand('~/.vim/goda-pm/main.go')
+" state は runtimepath を $VIMRUNTIME ごと書き込むので、runtime ごとに分ける（vim91 など）。
+" 既定の v:progname だと、vimdiff や view で起動したときに別の state を探す。vim ロールも同じ名前で作る。
+let s:goda_pm_name = fnamemodify($VIMRUNTIME, ':t')
 
-" Required:
-call neobundle#begin(expand('~/.vim/bundle/'))
-  " Let NeoBundle manage NeoBundle
-  " Required:
-  NeoBundleFetch 'Shougo/neobundle.vim'
+" goda.vim は Vim 9.1 の job と channel で、設定のビルドは go で動く。
+function! s:goda_pm_can_make_state() abort
+  return v:version >= 901 && has('job') && has('channel')
+        \ && executable('go') && filereadable(s:goda_pm_config)
+        \ && isdirectory(s:goda_pm_repos . 'Shougo/goda.vim')
+endfunction
 
-  " My Bundles here:
-  " Refer to |:NeoBundle-examples|.
-  " Note: You don't set neobundle setting in .gvimrc!
-  NeoBundle 'Shougo/neocomplete'
-  NeoBundle 'Shougo/unite.vim'
-  NeoBundle 'Shougo/neomru.vim'
-  NeoBundle 'Shougo/neosnippet'
-  NeoBundle 'Shougo/neosnippet-snippets'
-  NeoBundle 'altercation/vim-colors-solarized'
-  NeoBundle 'powerline/powerline', {'rtp': 'powerline/bindings/vim/'}
-  NeoBundle 'tpope/vim-fugitive'
-  NeoBundle 'kmnk/vim-unite-giti'
-  NeoBundle 'gregsexton/gitv'
-  NeoBundle 'kana/vim-submode'
-  NeoBundle 'kchmck/vim-coffee-script'
-  NeoBundle 'ryym/vim-riot'
-  NeoBundle 'digitaltoad/vim-pug'
-  NeoBundle 'wavded/vim-stylus'
-  NeoBundle 'pangloss/vim-javascript'
-  NeoBundle 'jelera/vim-javascript-syntax'
-  NeoBundle 'mxw/vim-jsx'
-  NeoBundle 'mattn/emmet-vim'
-  NeoBundle 'editorconfig/editorconfig-vim'
-  NeoBundle 'lumiliet/vim-twig'
-  NeoBundle 'Glench/Vim-Jinja2-Syntax'
-  NeoBundle 'posva/vim-vue'
-call neobundle#end()
+if v:version >= 901 && isdirectory(s:goda_pm_repos . 'Shougo/goda-pm.vim')
+  execute 'set runtimepath^=' . fnameescape(s:goda_pm_repos . 'Shougo/goda-pm.vim')
 
-" Required:
+  if goda_pm#min#load_state(s:goda_pm_base, s:goda_pm_name)
+    " state が無いか古い。作れるときだけ作り、次の起動から効く。
+    " sudo の下では goda-pm が動かないので作らない。
+    if s:goda_pm_can_make_state() && !g:goda_pm._is_sudo
+      execute 'set runtimepath^=' . fnameescape(s:goda_pm_repos . 'Shougo/goda.vim')
+      augroup GodaPmMakeState
+        autocmd!
+        autocmd VimEnter * ++once
+              \ call goda_pm#make_state(s:goda_pm_base, s:goda_pm_name)
+        " 入っていないプラグインは state に入らない。
+        autocmd User GodaPm:makeStatePost
+              \ echomsg 'goda-pm: state を作りました。入っていないプラグインは'
+              \ . " :call goda_pm#async_ext_action('installer', 'install') で入れて、vim を開き直してください"
+      augroup END
+    endif
+  elseif s:goda_pm_can_make_state()
+    augroup GodaPmCheckFiles
+      autocmd!
+      autocmd BufWritePost plugins.toml,*.go,go.mod,go.sum
+            \ if !empty(goda_pm#check_files(s:goda_pm_base, s:goda_pm_name))
+            \ | call goda_pm#make_state(s:goda_pm_base, s:goda_pm_name)
+            \ | endif
+    augroup END
+  endif
+endif
+
 filetype plugin indent on
 
-" If there are uninstalled bundles found on startup,
-" this will conveniently prompt you to install them.
-NeoBundleCheck
-
 
 " ========================================
-"   NeoComplete設定
+"   補完設定
 " ========================================
-" Note: This option must be set in .vimrc(_vimrc).  NOT IN .gvimrc(_gvimrc)!
-" Disable AutoComplPop.
-let g:acp_enableAtStartup = 0
-" Use neocomplete.
-let g:neocomplete#enable_at_startup = 1
-" Use smartcase.
-let g:neocomplete#enable_smart_case = 1
-" Set minimum syntax keyword length.
-let g:neocomplete#sources#syntax#min_keyword_length = 3
-let g:neocomplete#lock_buffer_name_pattern = '\*ku\*'
-
-" Define dictionary.
-let g:neocomplete#sources#dictionary#dictionaries = {
-  \ 'default' : '',
-  \ 'vimshell' : $HOME.'/.vimshell_hist',
-  \ 'scheme' : $HOME.'/.gosh_completions'
-  \ }
-
-" Define keyword.
-if !exists('g:neocomplete#keyword_patterns')
-  let g:neocomplete#keyword_patterns = {}
-endif
-let g:neocomplete#keyword_patterns['default'] = '\h\w*'
-
-" Plugin key-mappings.
-inoremap <expr><C-g> neocomplete#undo_completion()
-inoremap <expr><C-l> neocomplete#complete_common_string()
-
-" Recommended key-mappings.
-" <CR>: close popup and save indent.
-inoremap <silent> <CR> <C-r>=<SID>my_cr_function()<CR>
-function! s:my_cr_function()
-  return (pumvisible() ? "\<C-y>" : "" ) . "\<CR>"
-  " For no inserting <CR> key.
-  "return pumvisible() ? "\<C-y>" : "\<CR>"
-endfunction
+" 補完候補が表示されている場合は確定。そうでない場合は改行
+inoremap <expr><CR>  pumvisible() ? "\<C-y>" : "\<CR>"
 " <TAB>: completion.
 inoremap <expr><TAB>  pumvisible() ? "\<C-n>" : "\<TAB>"
-" <C-h>, <BS>: close popup and delete backword char.
-inoremap <expr><C-h> neocomplete#smart_close_popup()."\<C-h>"
-inoremap <expr><BS> neocomplete#smart_close_popup()."\<C-h>"
-" Close popup by <Space>.
-"inoremap <expr><Space> pumvisible() ? "\<C-y>" : "\<Space>"
-
-" 補完候補が表示されている場合は確定。そうでない場合は改行
-inoremap <expr><CR>  pumvisible() ? neocomplete#close_popup() : "<CR>"
-
-" AutoComplPop like behavior.
-"let g:neocomplete#enable_auto_select = 1
-
-" Shell like behavior(not recommended).
-"set completeopt+=longest
-"let g:neocomplete#enable_auto_select = 1
-"let g:neocomplete#disable_auto_complete = 1
-"inoremap <expr><TAB>  pumvisible() ? "\<Down>" : "\<C-x>\<C-u>"
 
 " Enable omni completion.
 autocmd FileType css           setlocal omnifunc=csscomplete#CompleteCSS
@@ -135,18 +84,6 @@ autocmd FileType html,markdown setlocal omnifunc=htmlcomplete#CompleteTags
 autocmd FileType javascript    setlocal omnifunc=javascriptcomplete#CompleteJS
 autocmd FileType python        setlocal omnifunc=pythoncomplete#Complete
 autocmd FileType xml           setlocal omnifunc=xmlcomplete#CompleteTags
-
-" Enable heavy omni completion.
-if !exists('g:neocomplete#sources#omni#input_patterns')
-  let g:neocomplete#sources#omni#input_patterns = {}
-endif
-"let g:neocomplete#sources#omni#input_patterns.php = '[^. \t]->\h\w*\|\h\w*::'
-"let g:neocomplete#sources#omni#input_patterns.c = '[^.[:digit:] *\t]\%(\.\|->\)'
-"let g:neocomplete#sources#omni#input_patterns.cpp = '[^.[:digit:] *\t]\%(\.\|->\)\|\h\w*::'
-
-" For perlomni.vim setting.
-" https://github.com/c9s/perlomni.vim
-"let g:neocomplete#sources#omni#input_patterns.perl = '\h\w*->\h\w*\|\h\w*::'
 
 
 " ========================================
@@ -351,7 +288,11 @@ augroup END
 "   カラースキーム設定
 " ========================================
 set background=dark
-colorscheme solarized
+" solarized が入る前は既定の配色で起動する。
+try
+  colorscheme solarized
+catch /^Vim\%((\a\+)\)\=:E185:/
+endtry
 "let g:solarized_termcolors=256
 "let g:rehash256 = 1
 set t_Co=256
@@ -421,7 +362,7 @@ set undodir=$HOME/.vim/undo
 "   Statuslineの設定
 " ========================================
 set laststatus=2
-if !s:has_plugin('powerline') && s:has_plugin('fugitive')
+if s:has_plugin('fugitive')
   set statusline=%<%f\ %h%m%r%{fugitive#statusline()}%=%-14.(%l,%c%V%)\ \[ENC=%{&fileencoding}]%P
 endif
 

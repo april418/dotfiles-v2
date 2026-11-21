@@ -1,0 +1,56 @@
+---
+# vim ロールの goda-pm.vim は、設定の Go モジュールを go でビルドして動く。
+- name: Read installed Go version
+  ansible.builtin.command:
+    cmd: "{{ go_root }}/bin/go env GOVERSION"
+  register: go_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install Go
+  when: >-
+    ansible_facts['os_family'] != 'Windows'
+    and go_installed.stdout | default('') | trim != 'go' ~ go_version
+  block:
+    - name: Download Go archive
+      ansible.builtin.get_url:
+        url: "https://dl.google.com/go/{{ go_archive }}"
+        dest: "/tmp/{{ go_archive }}"
+        checksum: "sha256:https://dl.google.com/go/{{ go_archive }}.sha256"
+        mode: "0644"
+
+    # 古いバージョンの上に展開すると、新しいバージョンで消えたファイルが GOROOT に残る。
+    - name: Remove old Go
+      ansible.builtin.file:
+        path: "{{ go_root }}"
+        state: absent
+
+    - name: Ensure Go parent directory exists
+      ansible.builtin.file:
+        path: "{{ go_root | dirname }}"
+        state: directory
+        mode: "0755"
+
+    # アーカイブの中身は go/ の下にあるので、親ディレクトリへ展開すると go_root になる。
+    - name: Extract Go archive
+      ansible.builtin.command:
+        cmd: "tar -xzf /tmp/{{ go_archive }} -C {{ go_root | dirname }}"
+      changed_when: true
+
+- name: Ensure local bin directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+# go は自分の実体の場所から GOROOT を決めるので、リンク経由で呼んでよい。
+- name: Link Go commands into local bin
+  ansible.builtin.file:
+    src: "{{ go_root }}/bin/{{ item }}"
+    dest: "{{ ansible_facts['env'].HOME }}/.local/bin/{{ item }}"
+    state: link
+  loop:
+    - go
+    - gofmt
+  when: ansible_facts['os_family'] != 'Windows'
