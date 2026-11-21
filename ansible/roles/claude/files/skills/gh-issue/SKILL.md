@@ -185,7 +185,7 @@ Issue の優先度と難易度は、次のラベルで持つ。値はラベル�
 - 優先度で決まるのは `ready` の Issue（とユーザーが選んだ `external`）の順だけで、`doing`・`blocked`・
   `skip`・`closed` は優先度が高くても着手しない
 - 難易度のラベルが無い Issue は、作業の中身（触るファイルの数、変更の量、未確定の設計判断、再現の手間）から
-  難易度を推定する。推定はそのセッションの中でだけ使い、ユーザーに見せるときは推定と書く
+  難易度を推定する。既にある Issue の推定はそのセッションの中でだけ使い、ユーザーに見せるときは推定と書く
 - ラベルを付ける・変えるのに要る承認は「書き込みと承認」にある。既にある Issue では、推定した値は名指しされない限り
   ラベルにしない。立てる Issue は「Issue を立てる」のとおり、推定した値を付けて立てる
 - 難易度で何を変えるか（任せるモデルなど）は、この skill を使う側の手順が決める
@@ -290,27 +290,37 @@ Issue が GitHub Projects に入っていれば、着手・手放し・済ませ
 同じ状態が見えるようにするためである。Issue を Project に足すこと、選択肢やフィールドを作ることはしない。どちらも
 Project の設定を変える。
 
+Issue が入っている Project と、その owner・number・今の Status・Status の選択肢は、GraphQL で一度に読む。
+`gh issue view --json projectItems` は使わない。`read:project` のスコープが無いと exit 0 で空の一覧を返し、どの Project にも
+入っていない Issue と見分けられない（gh 2.105.0 で実測）。GraphQL ならスコープが無いと exit 1 の `INSUFFICIENT_SCOPES` で
+断られ、title で Project を引き直さずに owner と number が決まる。
+
 ```bash
-gh issue view <番号> --repo <OWNER/REPO> --json projectItems   # 項目の title と status.name
-gh project list --owner <OWNER> --format json                  # title から Project の number を引く。無ければ --owner @me
-gh project field-list <number> --owner <OWNER> --format json   # Status の選択肢の名前
-gh project item-edit <number> --owner <OWNER> --url <Issue の URL> --field Status --value '<選択肢の名前>'
+gh api graphql -F n=<番号> -f o=<OWNER> -f r=<REPO> -f query='
+query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issue(number:$n){projectItems(first:20){nodes{
+  project{number title owner{... on User{login} ... on Organization{login}}
+    field(name:"Status"){... on ProjectV2SingleSelectField{options{name}}}}
+  status:fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}'
+gh project item-edit <number> --owner <owner.login> --url <Issue の URL> --field Status --value '<options に出た名前のまま>'
 ```
 
-| 起きたこと                          | 選ぶ選択肢（名前で、大文字と小文字は区別しない）      |
-| ----------------------------------- | ----------------------------------------------------- |
-| 着手した、トラックを出した          | `In Progress`                                         |
-| 確認待ち・依存待ちで止めた          | `Blocked` か `On Hold` があればそれ。無ければ変えない |
-| PR を出した                         | `In Review` があればそれ。無ければ変えない            |
-| 手放した                            | `Todo`                                                |
-| 済んだ（PR がマージされた、閉じた） | `Done`。Project の自動化で既に `Done` なら変えない    |
+| 起きたこと                                                   | 選ぶ選択肢（大文字と小文字は区別せずに当て、`--value` には options の表記のまま渡す） |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| 着手した、トラックを出した                                   | `In Progress`                                                                         |
+| 確認待ち・依存待ちで止めた（PR を出す前）                    | `Blocked` か `On Hold` があればそれ。無ければ変えない                                 |
+| PR を出した（その後の確認待ちでも保つ）                      | `In Review` があればそれ。無ければ変えない                                            |
+| 手放した                                                     | 着手の前の Status。控えが無ければ `Todo`、それも無ければ変えない                      |
+| Issue が閉じたと `view` で確かめた（マージで閉じた後を含む） | `Done`。既に `Done` なら変えない。`Refs` で済ませた開いたままの Issue は変えない      |
 
-- 承認は、着手の確認（「書き込みと承認」の表）に含む。着手しない Issue（計画の親など）の Status は、状況のコメントと
-  同じく名指しした承認があるときだけ変える
+- Issue が複数の Project に入っていれば、Project ごとに表を当てる。読んだ number・owner・選択肢と、着手の前の Status は
+  手元に控えて使い回す（orchestrate なら台帳）。書き換えのたびに読み直すと、API の利用枠を使う
+- 承認は、着手の確認（「書き込みと承認」の表）に含む。確認に文面が無いとき（ユーザーの言葉や引数で得たとき）は、
+  最初の書き込みの前のメッセージで、どの Project の Status を変えるかを知らせる（非対話なら最終応答に書く）。
+  Project は repo とは別に見る人がいる。着手しない Issue（計画の親など）の Status は変えない。承認を取る問いが無い
 - 選択肢の名前が表に当たらなければ変えずに、その Project の選択肢を報告に書く。名前を推して近いものを選ぶと、
   Project ごとに意味の違う列へ動かしうる
-- `projectItems` が `read:project` か `project` のスコープが無いと断られたら、Projects には触らずに進め、最終応答に
-  一度だけ、ユーザーが流すコマンド `gh auth refresh -s project` を書く。認証の設定はユーザーが変える
+- GraphQL が `INSUFFICIENT_SCOPES` で断られたら、Projects には触らずに進め、Projects を確かめていないことと、ユーザーが
+  流すコマンド `gh auth refresh -s project` を最終応答に一度だけ書く。認証の設定はユーザーが変える
 
 ## 手放す・済ませる
 
