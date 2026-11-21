@@ -4,7 +4,9 @@
 見る崩れは 2 つある（グローバル指示の「言語」は files/AGENTS.md）。
 
 - 英語にずれた text。長い会話では、英語で返るツールの結果に続けて応答本文が英語になる
-- 英語の術語を漢字に置き換えた造語（version を「版」と書くなど）。yomiyasu プラグインの lint で拾う
+- 英語の術語を漢字に置き換えた造語（version を「版」と書くなど）。yomiyasu プラグインの lint で拾う。
+  応答本文のほか、Write と Edit で書いた文書（PROSE_SUFFIXES）の本文も見る。lint の辞書に無い語は、
+  このスクリプトの隣の yomiyasu-words/ に書き、プロジェクトの .yomiyasu-words/ に重ねて渡す
 
 登録するイベントは 2 つで、どちらもこのスクリプトを呼ぶ。
 
@@ -19,6 +21,7 @@ Claude Code では、合間の一文が会話記録でも画面でも thinking �
 """
 
 import hashlib
+import html.parser
 import importlib.util
 import json
 import os
@@ -68,9 +71,19 @@ ENGLISH_FINAL = (
     "書き直し、それを最終応答にする。"
 )
 CALQUE = (
-    "直近の応答本文の{words}は、英語の術語を漢字に置き換えた造語の候補（yomiyasu の lint）。その分野の人が"
+    "直近の応答本文か書いた文書の{words}は、英語の術語を漢字に置き換えた造語の候補（yomiyasu の lint）。その分野の人が"
     "書く呼び名（カタカナ語や原語を含む）があれば、以後はそれで書く。定着した言い方なら替えない。"
 )
+PROJECT_TERM = (
+    "直近の応答本文か書いた文書に、語の一覧で見直す語{words}がある（yomiyasu の lint。→ の後が使う語）。"
+    "一覧が想定した意味で使っていれば、使う語で書き直し、書いた文書なら直す。ふつうの日本語の意味なら替えない。"
+)
+# 造語を探す文書の拡張子。コードはコメントと識別子が混ざり、識別子の英語を造語と取り違えるので見ない。
+PROSE_SUFFIXES = (".md", ".markdown", ".txt", ".html")
+# 全プロジェクトで見直す語の一覧（flag.txt と flag-patterns.txt）。yomiyasu は 1 つのフォルダしか読まないので、
+# プロジェクトの一覧に重ねて渡す。
+SHARED_WORDS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yomiyasu-words")
+PROJECT_TERM_WORDS = re.compile(r"語の一覧（[^）]*）の語（([^）]+)）")
 
 
 def is_english(text):
@@ -97,9 +110,10 @@ def text_key(text):
 def recent_texts(path):
     """メインの会話の最後の RECENT_MESSAGES 件のメッセージから、画面に出た行を古い順に (記録の鍵, 種類, 本文) で返す。
 
-    種類は "text"（text の block）か "summary"（text が無いメッセージで、合間の一文が置き換わった thinking の
-    要約）。鍵はメッセージの id と block の位置で、同じ一文を後のメッセージで繰り返しても別の鍵になる。
-    記録が無ければ空。
+    種類は "text"（text の block）、"summary"（text が無いメッセージで、合間の一文が置き換わった thinking の
+    要約）か "file"（Write の content と Edit の new_string のうち、PROSE_SUFFIXES の文書に書いたもの）。
+    鍵は「メッセージの id:block の位置」（file は「メッセージの id:f tool_use の id」）で、同じ一文を後のメッセージで
+    繰り返しても別の鍵になる。メッセージの id は message_of で取り出せる。記録が無ければ空。
     """
     try:
         with open(path, "rb") as f:
@@ -113,11 +127,13 @@ def recent_texts(path):
     if size > TAIL_BYTES:
         # 途中から読んだので、最初の行は欠けている。
         lines = lines[1:]
-    # メッセージの id ごとに text と thinking を集める。1 つのメッセージの block は別々の行に書かれる。
+    # メッセージの id ごとに text・thinking・文書への書き込みを集める。1 つのメッセージの block は別々の行に書かれる。
     messages = {}
     for raw in reversed(lines):
-        # assistant の text か thinking を含まない行は、JSON として読まずに飛ばす。会話記録は空白なしの JSON で書かれる。
-        if b'"type":"assistant"' not in raw or (b'"text"' not in raw and b'"thinking"' not in raw):
+        # assistant の text・thinking・tool_use を含まない行は、JSON として読まずに飛ばす。会話記録は空白なしの JSON で書かれる。
+        if b'"type":"assistant"' not in raw or (
+            b'"text"' not in raw and b'"thinking"' not in raw and b'"tool_use"' not in raw
+        ):
             continue
         try:
             entry = json.loads(raw)
@@ -134,9 +150,13 @@ def recent_texts(path):
             # いちばん古いメッセージは、読み始めの位置で block が欠けていることがあるので 1 件多く集めて捨てる。
             if len(messages) > RECENT_MESSAGES:
                 break
-            messages[key] = {"text": [], "thinking": []}
+            messages[key] = {"text": [], "thinking": [], "file": []}
         for c in message.get("content") or []:
-            if isinstance(c, dict) and c.get("type") in ("text", "thinking"):
+            if isinstance(c, dict) and c.get("type") == "tool_use":
+                body = prose_written(c)
+                if body:
+                    messages[key]["file"].insert(0, (c.get("id") or "", body))
+            elif isinstance(c, dict) and c.get("type") in ("text", "thinking"):
                 body = (c.get(c["type"]) or "").strip()
                 # thinking は空のものも位置を数えるために残す。
                 if body or c["type"] == "thinking":
@@ -156,9 +176,74 @@ def recent_texts(path):
                 for i, t in enumerate(thinking)
                 if t and (i == last or (i > 0 and not thinking[i - 1]))
             ]
+        items += [(f"{key}:f{tool_id}", "file", body) for tool_id, body in blocks["file"]]
         found += reversed(items)
     found.reverse()
     return found
+
+
+def message_of(key):
+    """recent_texts の鍵のメッセージの id。"""
+    return key.rsplit(":", 1)[0]
+
+
+def prose_written(block):
+    """Write か Edit の tool_use が文書（PROSE_SUFFIXES）に書いた本文。それ以外は空。"""
+    data = block.get("input") or {}
+    if block.get("name") not in ("Write", "Edit") or not isinstance(data, dict):
+        return ""
+    path = str(data.get("file_path") or "")
+    if not path.lower().endswith(PROSE_SUFFIXES):
+        return ""
+    # 語の一覧のファイルは見直す語そのものを並べるので、自分の行に当たる。
+    if os.path.basename(os.path.dirname(path)) in ("yomiyasu-words", ".yomiyasu-words"):
+        return ""
+    body = data.get("content") if block.get("name") == "Write" else data.get("new_string")
+    if not isinstance(body, str):
+        return ""
+    # lint は Markdown として読み、タグで始まる行を HTML のブロックとして伏せるので、タグを外してから渡す。
+    if path.lower().endswith(".html"):
+        body = html_text(body)
+    return body.strip()
+
+
+class _TextOnly(html.parser.HTMLParser):
+    """HTML の見える文字だけを集める。ブロック要素の区切りで改行し、インライン要素では文をつなげたままにする。
+    script・style と、Markdown のバッククォートに当たる code・pre の中身は捨てる。"""
+
+    SKIP = ("script", "style", "code", "pre")
+    BLOCK = (
+        "p", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "br", "tr", "td", "th", "table",
+        "section", "article", "aside", "header", "footer", "blockquote", "dt", "dd", "figcaption", "hr",
+    )  # fmt: skip
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+        self.skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        self.skip += tag in self.SKIP
+        if tag in self.BLOCK:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in self.SKIP and self.skip > 0:
+            self.skip -= 1
+        if tag in self.BLOCK:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.parts.append(data)
+
+
+def html_text(body):
+    """HTML の見える文字を、ブロック要素ごとの行にしたもの。"""
+    parser = _TextOnly()
+    parser.feed(body)
+    parser.close()
+    return "\n".join(line.strip() for line in "".join(parser.parts).splitlines() if line.strip())
 
 
 def private_dir(path):
@@ -245,7 +330,8 @@ def phrase_names(lint):
 
 
 def calque_words(lint, words, text):
-    """text の中の、英語の術語を直訳した名詞の候補。lint の指摘の文面から語を取り出す。
+    """text の中の、英語の術語を直訳した名詞の候補と、語の一覧（flag.txt と flag-patterns.txt）に当たった語の組。
+    lint の指摘の文面から語を取り出す。一覧の語は、flag.txt に使う語があれば「語 → 使う語」にする。
 
     lint の出力形式が LINT_FORMAT_VERSION と違えば、文面から語を取り出せないので ValueError を出す。
     """
@@ -255,10 +341,20 @@ def calque_words(lint, words, text):
             f"yomiyasu lint の出力形式が {result.get('format_version')} で、{LINT_FORMAT_VERSION} ではない"
         )
     phrases = phrase_names(lint)
+    replacements = (words or {}).get("flag_replacements") or {}
     found = []
+    terms = []
     for finding in result.get("findings", []):
         message = finding.get("message") or ""
-        if finding.get("rule") == "translated_term":
+        if finding.get("rule") == "project_term":
+            hit = PROJECT_TERM_WORDS.search(message)
+            if hit:
+                terms += [
+                    f"{w} → {replacements[w]}" if w in replacements else w
+                    for w in (w.strip() for w in hit.group(1).split("、"))
+                    if w
+                ]
+        elif finding.get("rule") == "translated_term":
             found += re.findall(r"直訳「([^」]+)」", message)
         elif finding.get("rule") == "calque" and CALQUE_NOUN_TYPES & set(re.findall(r"型(\d)", message)):
             hit = re.search(r"当たった言い方: ([^）]+)）", message)
@@ -268,15 +364,34 @@ def calque_words(lint, words, text):
                     for w in hit.group(1).split("、")
                     if w.strip() not in phrases and not VERB_ENDING.search(w.strip())
                 ]
-    return list(dict.fromkeys(w.strip() for w in found if w.strip()))
+    return list(dict.fromkeys(w.strip() for w in found if w.strip())), list(dict.fromkeys(terms))
 
 
 def project_words(lint, cwd):
-    """作業ディレクトリから上にたどった git の最上位の .yomiyasu-words（allow.txt で外す語）。読めなければ None。"""
+    """作業ディレクトリから上にたどった git の最上位の .yomiyasu-words に、SHARED_WORDS の見直す語を重ねた一覧。
+    allow.txt はプロジェクトのものだけを使う。どちらも無ければ None。プロジェクトの一覧が読めなければ無いものとし、
+    SHARED_WORDS が読めなければ lint の WordsError をそのまま出す。"""
+    words_error = getattr(lint, "WordsError", OSError)
     try:
-        return lint.resolve_words(cwd)
-    except (OSError, getattr(lint, "WordsError", OSError)):
-        return None
+        project = lint.resolve_words(cwd)
+    except (OSError, words_error):
+        project = None
+    # SHARED_WORDS はこのリポジトリが配るので、書き損じは黙って外さず、呼び出し側の lint の失敗として知らせる。
+    shared = lint.resolve_words(None, SHARED_WORDS) if os.path.isdir(SHARED_WORDS) else None
+    if not shared or not project:
+        return project or shared
+    merged = dict(project)
+    merged["flag"] = tuple(dict.fromkeys(tuple(project.get("flag") or ()) + tuple(shared.get("flag") or ())))
+    merged["flag_lines"] = len(merged["flag"])
+    merged["flag_replacements"] = {
+        **(shared.get("flag_replacements") or {}),
+        **(project.get("flag_replacements") or {}),
+    }
+    patterns = tuple(project.get("flag_patterns") or ()) + tuple(shared.get("flag_patterns") or ())
+    if patterns:
+        merged["flag_patterns"] = patterns
+        merged["flag_patterns_lines"] = len(patterns)
+    return merged
 
 
 def snippet(text, limit=60):
@@ -296,7 +411,9 @@ def on_batch(payload, session_id):
     state = load_state(session_id)
     if not state["seeded"]:
         # 途中から入れたセッションや再開したセッションで、前からある text をまとめて指摘しない。
-        state["seen"] += [key for key, _, _ in found[:-1]]
+        # 最後のメッセージの項目は全部見る。1 つのメッセージに text と Write が並ぶと、最後の 1 件は file になる。
+        last = message_of(found[-1][0])
+        state["seen"] += [key for key, _, _ in found if message_of(key) != last]
         state["seeded"] = True
     # Stop が書き直させた最終応答は、ここで重ねて指摘しない。
     new = [(kind, t) for key, kind, t in found if key not in state["seen"] and stop_key(t) not in state["seen"]]
@@ -305,6 +422,7 @@ def on_batch(payload, session_id):
     summaries = [t for kind, t in new if kind == "summary" and is_english(t)]
     japanese = [t for _, t in new if not is_english(t) and KANA.search(t)]
     calques = []
+    terms = []
     lint_error = None
     if japanese:
         # lint はほかのプラグインのコードなので、失敗しても英語の検査と状態の保存は続ける。
@@ -313,7 +431,9 @@ def on_batch(payload, session_id):
             if lint:
                 words = project_words(lint, payload.get("cwd"))
                 for text in japanese:
-                    calques += calque_words(lint, words, text)
+                    found_calques, found_terms = calque_words(lint, words, text)
+                    calques += found_calques
+                    terms += found_terms
         except Exception as e:  # noqa: BLE001
             lint_error = f"reply-language-guard が yomiyasu の lint で失敗した（{type(e).__name__}: {str(e)[:200]}）"
     save_state(session_id, state)
@@ -324,6 +444,8 @@ def on_batch(payload, session_id):
         notes.append(ENGLISH_SUMMARY.format(snippets=quoted(summaries)))
     if calques:
         notes.append(CALQUE.format(words="".join(f"「{w}」" for w in dict.fromkeys(calques))))
+    if terms:
+        notes.append(PROJECT_TERM.format(words="".join(f"「{w}」" for w in dict.fromkeys(terms))))
     if lint_error and not first_time(session_id, "lint-error"):
         lint_error = None
     return "\n".join(notes) or None, lint_error
