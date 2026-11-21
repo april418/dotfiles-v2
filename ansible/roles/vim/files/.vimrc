@@ -27,6 +27,9 @@ endif
 let s:goda_pm_base = expand('~/.cache/goda-pm')
 let s:goda_pm_repos = s:goda_pm_base . '/repos/github.com/'
 let s:goda_pm_config = expand('~/.vim/goda-pm/main.go')
+" state は runtimepath を $VIMRUNTIME ごと書き込むので、runtime ごとに分ける（vim91 など）。
+" 既定の v:progname だと、vimdiff や view で起動したときに別の state を探す。vim ロールも同じ名前で作る。
+let s:goda_pm_name = fnamemodify($VIMRUNTIME, ':t')
 
 " goda.vim は Vim 9.1 の job と channel で、設定のビルドは go で動く。
 function! s:goda_pm_can_make_state() abort
@@ -35,26 +38,30 @@ function! s:goda_pm_can_make_state() abort
         \ && isdirectory(s:goda_pm_repos . 'Shougo/goda.vim')
 endfunction
 
-if isdirectory(s:goda_pm_repos . 'Shougo/goda-pm.vim')
+if v:version >= 901 && isdirectory(s:goda_pm_repos . 'Shougo/goda-pm.vim')
   execute 'set runtimepath^=' . fnameescape(s:goda_pm_repos . 'Shougo/goda-pm.vim')
 
-  if goda_pm#min#load_state(s:goda_pm_base)
+  if goda_pm#min#load_state(s:goda_pm_base, s:goda_pm_name)
     " state が無いか古い。作れるときだけ作り、次の起動から効く。
-    if s:goda_pm_can_make_state()
+    " sudo の下では goda-pm が動かないので作らない。
+    if s:goda_pm_can_make_state() && !g:goda_pm._is_sudo
       execute 'set runtimepath^=' . fnameescape(s:goda_pm_repos . 'Shougo/goda.vim')
       augroup GodaPmMakeState
         autocmd!
-        autocmd VimEnter * ++once call goda_pm#make_state(s:goda_pm_base)
+        autocmd VimEnter * ++once
+              \ call goda_pm#make_state(s:goda_pm_base, s:goda_pm_name)
+        " 入っていないプラグインは state に入らない。
         autocmd User GodaPm:makeStatePost
-              \ echomsg 'goda-pm: state を作りました。vim を開き直すとプラグインが読まれます'
+              \ echomsg 'goda-pm: state を作りました。入っていないプラグインは'
+              \ . " :call goda_pm#async_ext_action('installer', 'install') で入れて、vim を開き直してください"
       augroup END
     endif
   elseif s:goda_pm_can_make_state()
     augroup GodaPmCheckFiles
       autocmd!
-      autocmd BufWritePost plugins.toml,main.go,.vimrc
-            \ if !empty(goda_pm#check_files(s:goda_pm_base))
-            \ | call goda_pm#make_state(s:goda_pm_base)
+      autocmd BufWritePost plugins.toml,*.go,go.mod,go.sum
+            \ if !empty(goda_pm#check_files(s:goda_pm_base, s:goda_pm_name))
+            \ | call goda_pm#make_state(s:goda_pm_base, s:goda_pm_name)
             \ | endif
     augroup END
   endif
@@ -355,7 +362,7 @@ set undodir=$HOME/.vim/undo
 "   Statuslineの設定
 " ========================================
 set laststatus=2
-if !s:has_plugin('powerline') && s:has_plugin('fugitive')
+if s:has_plugin('fugitive')
   set statusline=%<%f\ %h%m%r%{fugitive#statusline()}%=%-14.(%l,%c%V%)\ \[ENC=%{&fileencoding}]%P
 endif
 

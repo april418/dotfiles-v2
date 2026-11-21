@@ -1,12 +1,31 @@
 ---
 vim_goda_pm_base: "{{ ansible_facts['env'].HOME }}/.cache/goda-pm"
-# vimrc が load_state の前に runtimepath に足す。後の更新は goda-pm の installer が行う。
-# 版は files/.vim/goda-pm/go.mod の require に揃える。
+vim_goda_pm_repos: "{{ vim_goda_pm_base }}/repos/github.com"
+# vimrc が load_state の前に runtimepath に足す。既定のブランチで clone し、後の更新は
+# plugins.toml に載せて goda-pm の installer に任せる（protocol git の pull --ff-only は、タグで
+# detach した HEAD を更新できない）。
 vim_goda_pm_core:
-  - repo: Shougo/goda-pm.vim
-    version: v0.4.2
-  - repo: Shougo/goda.vim
-    version: v0.9.0
+  - Shougo/goda-pm.vim
+  - Shougo/goda.vim
 # headless の vim から go を呼べるように、go ロールのリンクがある ~/.local/bin を PATH に入れる。
 vim_goda_pm_env:
   PATH: "{{ ansible_facts['env'].HOME }}/.local/bin:{{ ansible_facts['env'].PATH }}"
+# headless の vim の共通の引数。-u NONE で ~/.vimrc を読まず、runtimepath と workspace を自分で足す。
+# g:goda#workspace は、vim の中で再ビルドするときに state が設定するものと同じく clone したモジュールを
+# 指す。無いと go.mod の require のバージョンでビルドし、clone した Vim script とずれうる。
+vim_goda_pm_argv:
+  - vim
+  - -N
+  - -u
+  - NONE
+  - -i
+  - NONE
+  - -n
+  - -es
+  - --cmd
+  - "set runtimepath^={{ vim_goda_pm_repos }}/Shougo/goda-pm.vim,{{ vim_goda_pm_repos }}/Shougo/goda.vim"
+  - --cmd
+  - "let g:goda#workspace = ['{{ vim_goda_pm_repos }}/Shougo/goda-pm.vim', '{{ vim_goda_pm_repos }}/Shougo/goda.vim']"
+# goda-pm はエラーを echomsg で出すだけで、vim -es は exit 0 で終わる。失敗したら :messages を stderr に
+# 書いて cquit し、タスクを落とす。
+vim_goda_pm_fail: "call writefile(split(execute('messages'), \"\\n\"), '/dev/stderr') | cquit"

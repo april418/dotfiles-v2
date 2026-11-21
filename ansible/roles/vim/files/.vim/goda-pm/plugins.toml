@@ -1,15 +1,15 @@
 # goda-pm.vim が読むプラグインの一覧。足したらプレイブックを流し直すか、vim の中で
 # :call goda_pm#async_ext_action('installer', 'install') を流す。
 
-# goda-pm.vim 自身と、state を作りプラグインを入れる goda.vim。vim ロールが先に clone する。
-# goda-pm.vim が state を作るのに使うので、lazy にしない。
+# goda-pm.vim 自身と、state を作りプラグインを入れる goda.vim。vim ロールが既定のブランチで先に
+# clone し、後の更新はほかのプラグインと同じく installer が行う。state を作るのに使うので、lazy にしない。
 [[plugins]]
 repo = 'Shougo/goda-pm.vim'
 
 [[plugins]]
 repo = 'Shougo/goda.vim'
 
-# neocomplete は +lua、powerline は +python3 が要り、macOS の vim では動かないので入れない。
+# neocomplete は +lua、powerline は +python3 が要り、macOS の /usr/bin/vim では動かないので入れない。
 
 [[plugins]]
 repo = 'Shougo/unite.vim'
