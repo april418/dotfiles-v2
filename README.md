@@ -200,8 +200,12 @@ Claude Code はこのディレクトリを写さずにその場で読むので�
 応答本文の言語は、フック `files/hooks/reply-language-guard.py` が見る。ツールのバッチの後（`PostToolBatch`）に、
 まだ見ていない直近の応答本文（画面で要約に置き換わった合間の一文を含む）が英語ならそれを、英語の術語を漢字に置き換えた造語（version を「版」と書くなど）が
 あればその語を名指しして、日本語の書き方に戻す一文を差し込む。最終応答（`Stop`）は英語のときだけ日本語で書き直させる。
-造語はこのプラグインの lint（`installed_plugins.json` の `installPath` から読む）で拾い、作業ディレクトリから上にたどった git の
-最上位の `.yomiyasu-words/allow.txt` の語は名指ししない（`flag.txt` の語は拾わない）。プラグインが無いときは英語の検査だけをする。
+造語は応答本文に加えて、Write と Edit で書いた文書（`.md`・`.markdown`・`.txt`・`.html`）の本文からも拾う。
+拾うのはこのプラグインの lint（`installed_plugins.json` の `installPath` から読む）で、作業ディレクトリから上にたどった git の
+最上位の `.yomiyasu-words/` を使う。`allow.txt` の語は名指しせず、`flag.txt` と `flag-patterns.txt` に当たった語は使う語と一緒に名指しする。
+lint の辞書に無い語（LLM の context を指す「文脈」、区分を指す「帯」など）は、全プロジェクトで見るよう
+`files/hooks/yomiyasu-words/flag-patterns.txt` に書く。yomiyasu は 1 つのフォルダしか読まないので、フックがプロジェクトの一覧に重ねて渡す。
+この一覧はフックの中でだけ効き、`/yomiyasu` で推敲するときの lint には入らない。プラグインが無いときは英語の検査だけをする。
 
 プレイブックはプラグインを取得しない。宣言を読んだ Claude Code が、セッションの開始後にマーケットプレイスを
 登録して（github のものはクローンして）プラグインを取得する。宣言だけの状態では、マーケットプレイスがまだ登録されて
