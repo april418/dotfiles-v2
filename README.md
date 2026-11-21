@@ -202,7 +202,7 @@ Claude Code はこのディレクトリを写さずにその場で読むので�
 あればその語を名指しして、日本語の書き方に戻す一文を差し込む。最終応答（`Stop`）は英語のときだけ日本語で書き直させる。
 造語は応答本文に加えて、Write と Edit で書いた文書（`.md`・`.markdown`・`.txt`・`.html`）の本文からも拾う。
 拾うのはこのプラグインの lint（`installed_plugins.json` の `installPath` から読む）で、作業ディレクトリから上にたどった git の
-最上位の `.yomiyasu-words/` を使う。`allow.txt` の語は名指しせず、`flag.txt` と `flag-patterns.txt` に当たった語は使う語と一緒に名指しする。
+最上位の `.yomiyasu-words/` を使う。`allow.txt` の語は名指しせず、`flag.txt` と `flag-patterns.txt` に当たった語は名指しし、`flag.txt` に使う語があれば添える。
 lint の辞書に無い語（LLM の context を指す「文脈」、区分を指す「帯」など）は、全プロジェクトで見るよう
 `files/hooks/yomiyasu-words/flag-patterns.txt` に書く。yomiyasu は 1 つのフォルダしか読まないので、フックがプロジェクトの一覧に重ねて渡す。
 この一覧はフックの中でだけ効き、`/yomiyasu` で推敲するときの lint には入らない。プラグインが無いときは英語の検査だけをする。

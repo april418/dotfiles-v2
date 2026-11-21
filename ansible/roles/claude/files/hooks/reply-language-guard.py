@@ -112,8 +112,8 @@ def recent_texts(path):
 
     種類は "text"（text の block）、"summary"（text が無いメッセージで、合間の一文が置き換わった thinking の
     要約）か "file"（Write の content と Edit の new_string のうち、PROSE_SUFFIXES の文書に書いたもの）。
-    鍵はメッセージの id と block の位置で、同じ一文を後のメッセージで繰り返しても別の鍵になる。
-    記録が無ければ空。
+    鍵は「メッセージの id:block の位置」（file は「メッセージの id:f tool_use の id」）で、同じ一文を後のメッセージで
+    繰り返しても別の鍵になる。メッセージの id は message_of で取り出せる。記録が無ければ空。
     """
     try:
         with open(path, "rb") as f:
@@ -127,10 +127,10 @@ def recent_texts(path):
     if size > TAIL_BYTES:
         # 途中から読んだので、最初の行は欠けている。
         lines = lines[1:]
-    # メッセージの id ごとに text と thinking を集める。1 つのメッセージの block は別々の行に書かれる。
+    # メッセージの id ごとに text・thinking・文書への書き込みを集める。1 つのメッセージの block は別々の行に書かれる。
     messages = {}
     for raw in reversed(lines):
-        # assistant の text か thinking を含まない行は、JSON として読まずに飛ばす。会話記録は空白なしの JSON で書かれる。
+        # assistant の text・thinking・tool_use を含まない行は、JSON として読まずに飛ばす。会話記録は空白なしの JSON で書かれる。
         if b'"type":"assistant"' not in raw or (
             b'"text"' not in raw and b'"thinking"' not in raw and b'"tool_use"' not in raw
         ):
@@ -182,23 +182,40 @@ def recent_texts(path):
     return found
 
 
+def message_of(key):
+    """recent_texts の鍵のメッセージの id。"""
+    return key.rsplit(":", 1)[0]
+
+
 def prose_written(block):
     """Write か Edit の tool_use が文書（PROSE_SUFFIXES）に書いた本文。それ以外は空。"""
     data = block.get("input") or {}
     if block.get("name") not in ("Write", "Edit") or not isinstance(data, dict):
         return ""
-    if not str(data.get("file_path") or "").lower().endswith(PROSE_SUFFIXES):
+    path = str(data.get("file_path") or "")
+    if not path.lower().endswith(PROSE_SUFFIXES):
+        return ""
+    # 語の一覧のファイルは見直す語そのものを並べるので、自分の行に当たる。
+    if os.path.basename(os.path.dirname(path)) in ("yomiyasu-words", ".yomiyasu-words"):
         return ""
     body = data.get("content") if block.get("name") == "Write" else data.get("new_string")
     if not isinstance(body, str):
         return ""
-    if str(data.get("file_path")).lower().endswith(".html"):
+    # lint は Markdown として読み、タグで始まる行を HTML のブロックとして伏せるので、タグを外してから渡す。
+    if path.lower().endswith(".html"):
         body = html_text(body)
     return body.strip()
 
 
 class _TextOnly(html.parser.HTMLParser):
-    """HTML の見える文字だけを集める。タグの区切りごとに改行し、script と style の中身は捨てる。"""
+    """HTML の見える文字だけを集める。ブロック要素の区切りで改行し、インライン要素では文をつなげたままにする。
+    script・style と、Markdown のバッククォートに当たる code・pre の中身は捨てる。"""
+
+    SKIP = ("script", "style", "code", "pre")
+    BLOCK = (
+        "p", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "br", "tr", "td", "th", "table",
+        "section", "article", "aside", "header", "footer", "blockquote", "dt", "dd", "figcaption", "hr",
+    )  # fmt: skip
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -206,12 +223,15 @@ class _TextOnly(html.parser.HTMLParser):
         self.skip = 0
 
     def handle_starttag(self, tag, attrs):
-        self.skip += tag in ("script", "style")
-        self.parts.append("\n")
+        self.skip += tag in self.SKIP
+        if tag in self.BLOCK:
+            self.parts.append("\n")
 
     def handle_endtag(self, tag):
-        self.skip -= tag in ("script", "style") and self.skip > 0
-        self.parts.append("\n")
+        if tag in self.SKIP and self.skip > 0:
+            self.skip -= 1
+        if tag in self.BLOCK:
+            self.parts.append("\n")
 
     def handle_data(self, data):
         if not self.skip:
@@ -219,8 +239,7 @@ class _TextOnly(html.parser.HTMLParser):
 
 
 def html_text(body):
-    """HTML の見える文字。lint は Markdown として読み、タグで始まる行を HTML のブロックとして伏せるので、
-    タグを外してから渡す。"""
+    """HTML の見える文字を、ブロック要素ごとの行にしたもの。"""
     parser = _TextOnly()
     parser.feed(body)
     parser.close()
@@ -350,16 +369,15 @@ def calque_words(lint, words, text):
 
 def project_words(lint, cwd):
     """作業ディレクトリから上にたどった git の最上位の .yomiyasu-words に、SHARED_WORDS の見直す語を重ねた一覧。
-    allow.txt はプロジェクトのものだけを使う。どちらも無いか読めなければ None。"""
+    allow.txt はプロジェクトのものだけを使う。どちらも無ければ None。プロジェクトの一覧が読めなければ無いものとし、
+    SHARED_WORDS が読めなければ lint の WordsError をそのまま出す。"""
     words_error = getattr(lint, "WordsError", OSError)
     try:
         project = lint.resolve_words(cwd)
     except (OSError, words_error):
         project = None
-    try:
-        shared = lint.resolve_words(None, SHARED_WORDS) if os.path.isdir(SHARED_WORDS) else None
-    except (OSError, words_error):
-        shared = None
+    # SHARED_WORDS はこのリポジトリが配るので、書き損じは黙って外さず、呼び出し側の lint の失敗として知らせる。
+    shared = lint.resolve_words(None, SHARED_WORDS) if os.path.isdir(SHARED_WORDS) else None
     if not shared or not project:
         return project or shared
     merged = dict(project)
@@ -393,7 +411,9 @@ def on_batch(payload, session_id):
     state = load_state(session_id)
     if not state["seeded"]:
         # 途中から入れたセッションや再開したセッションで、前からある text をまとめて指摘しない。
-        state["seen"] += [key for key, _, _ in found[:-1]]
+        # 最後のメッセージの項目は全部見る。1 つのメッセージに text と Write が並ぶと、最後の 1 件は file になる。
+        last = message_of(found[-1][0])
+        state["seen"] += [key for key, _, _ in found if message_of(key) != last]
         state["seeded"] = True
     # Stop が書き直させた最終応答は、ここで重ねて指摘しない。
     new = [(kind, t) for key, kind, t in found if key not in state["seen"] and stop_key(t) not in state["seen"]]
