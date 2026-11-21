@@ -20,7 +20,7 @@
         checksum: "sha256:https://dl.google.com/go/{{ go_archive }}.sha256"
         mode: "0644"
 
-    # 古い版の上に展開すると、新しい版で消えたファイルが GOROOT に残る。
+    # 古いバージョンの上に展開すると、新しいバージョンで消えたファイルが GOROOT に残る。
     - name: Remove old Go
       ansible.builtin.file:
         path: "{{ go_root }}"

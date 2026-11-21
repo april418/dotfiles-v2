@@ -1,7 +1,8 @@
 ---
 # dotfiles: tags https://github.com/golang/go go
 go_version: "1.27.4"
-go_root: "{{ ansible_facts['env'].HOME }}/.local/share/go"
+# XDG_DATA_HOME が空文字のときも既定値に倒す。dotfiles の go_version() も同じ場所を読む。
+go_root: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/go"
 # 配布物の名前は amd64 / arm64 で、ansible の architecture が返す x86_64 / aarch64 とは名前が違う。
 go_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_facts['architecture'], ansible_facts['architecture']) }}"
 go_archive: "go{{ go_version }}.{{ ansible_facts['system'] | lower }}-{{ go_arch }}.tar.gz"
