@@ -330,23 +330,20 @@ stdout が端末でないと、gh はマージの成功もブランチの削除�
 `git stash push -u -m "<元のブランチ>: <退避した変更の内容>"` で退避してから切り替える。
 マージの前に stash していれば、ここでは何も出ない。
 
-切り替え方は `<base-ref>`（git-workflow の定義）で変わる。切り替えた後は、git-branch の
-ルール 3 (d) の「直前の操作」の表で確かめる。
+切り替えは自分の linked worktree で行い、main worktree では行わない（git-workflow の
+ルール 12）。`<base-ref>` によらず、`origin/<base>` に detach する。統合ブランチの上にいても
+detach する。切り替えた後は、git-branch のルール 3 (d) の「直前の操作」の表で確かめる。
 
 ```bash
-# <base-ref> が <base> の場合
-git switch <base>
-git pull --rebase origin <base>
-
-# <base-ref> が origin/<base> の場合（ベースがほかの worktree にあるか、リモートにしか無い）
 git fetch --prune origin
 git switch --detach origin/<base>
 ```
 
-この切り替えは自分の linked worktree で行い、main worktree では行わない（git-workflow の
-ルール 12）。linked worktree で作業していると、`<base>` は main worktree でチェックアウト
-されていることが多く、後者になる。そのときのローカルの `<base>` の更新は、下の
-「マージした後にローカルの `<base>` を早送りする」の表に従う。
+`git switch <base>` で切り替えないのは、linked worktree が `<base>` をチェックアウトすると、
+ユーザーが main worktree で `<base>` に切り替えられなくなるためである（`'<base>' is already used by
+worktree at '<path>'`）。ローカルの `<base>` は、下の「マージした後にローカルの `<base>` を
+早送りする」で更新する。追従から下の掃除までの `<base-ref>` は、`origin/<base>` として読む。
+早送りできなかったときも、ローカルの古い `<base>` と比べずに済む。
 
 gh が作業ブランチのローカル削除を飛ばしたとき（上の表の「警告を出して何もしない」行）は、
 警告が勧める手順（`git worktree remove`、ほかの worktree の切り替え、`git branch -D`）に
@@ -357,9 +354,8 @@ gh が作業ブランチのローカル削除を飛ばしたとき（上の表�
 している head は `+` の行として除かれるので、どちらも一括削除で消えない。扱いは下の
 「マージ済みのブランチを掃除する」の、一括削除の結果の項にある。
 
-stash した変更は `<base>` の上でも、detach した HEAD の上でも pop しない。どちらも次に
-切るブランチの起点で、そこにある未コミット変更は、次に切るブランチへ持ち込む前提で
-扱われる（git-branch のルール 7 の表の 1 行目）ので、別件が混ざりうる。次の作業で
+stash した変更は、detach した HEAD の上で pop しない。そこは次に切るブランチの起点で、
+そこにある未コミット変更は、次に切るブランチへ持ち込む前提で扱われる（git-branch のルール 7 の表の 1 行目）ので、別件が混ざりうる。次の作業で
 使うなら、そのブランチを切った後に git-branch のルール 3 (b) 例外 1 の戻すかの表で決める。
 使わないまま作業を終えるなら、最終応答に退避したときのメッセージと、戻し方（作業ブランチを
 切ってから `git stash list` でメッセージから番号を探し、`git stash pop stash@{N}` する）を書く。
@@ -374,12 +370,12 @@ stash した変更は `<base>` の上でも、detach した HEAD の上でも po
 `<base>` のチェックアウト先を `git for-each-ref --format='%(worktreepath)' refs/heads/<base>` で
 見て、次の表で決める。出力が空ならどこにも無い。
 
-| `<base>` のチェックアウト先 | すること                                                                                                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| どこにも無い                | `git fetch origin <base>:<base>`。ref だけを動かし、作業ツリーに触れない                                                                                     |
-| 今の worktree               | 上の追従で `git switch <base>` と `git pull --rebase` を流したなら済んでいる。`fetch` だけにして作業ブランチ（積んだ PR のベースなど）に留まったなら触らない |
-| main worktree               | 下の条件を満たすときだけ `git -C <main worktree のパス> pull --ff-only origin <base>`。満たさなければ触らず、このコマンドを最終応答に書く                    |
-| ほかの linked worktree      | 触らない。ほかのセッションの作業場所である。そのパスと、`<base>` が古いままであることを最終応答に書く                                                        |
+| `<base>` のチェックアウト先 | すること                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| どこにも無い                | `git fetch origin <base>:<base>`。ref だけを動かし、作業ツリーに触れない                                                                  |
+| 今の worktree               | 追従で detach しなかった（`fetch` だけにして作業ブランチに留まった）ときにだけ起きる。そのブランチ（積んだ PR のベースなど）は触らない    |
+| main worktree               | 下の条件を満たすときだけ `git -C <main worktree のパス> pull --ff-only origin <base>`。満たさなければ触らず、このコマンドを最終応答に書く |
+| ほかの linked worktree      | 触らない。ほかのセッションの作業場所である。そのパスと、`<base>` が古いままであることを最終応答に書く                                     |
 
 main worktree で流すのは、`git -C <main worktree のパス> status --porcelain --untracked-files=normal` の
 出力が空のときだけである。これが git-workflow のルール 12 の、main worktree に触れてよい例外に
@@ -499,14 +495,14 @@ git push origin --delete <branch>
       自分の worktree が head をチェックアウトしているなら未コミット変更が無い。
       head を base にしている積んだ PR があれば、先に base を付け替える）
 - [ ] gh の exit が 0 以外のとき、再実行せずに `gh pr view <number> --json state` を見たか？
-- [ ] マージした後、`<base-ref>` に合わせてベースへ戻したか？
+- [ ] マージした後、自分の linked worktree を `origin/<base>` に detach したか？
       （マージした head の上か、統合ブランチか detach した HEAD、または `<base-ref>..HEAD` が
       空の開始時のブランチ（`claude/<名前>` など）にいたときだけ。
       ほかの作業ブランチの上なら `fetch` だけにして留まる。
-      `<base>` なら `switch` と `pull --rebase`、`origin/<base>` なら `fetch` と `switch --detach`。
+      `<base-ref>` によらず `fetch --prune` と `switch --detach origin/<base>` にし、`switch <base>` はしない。
       作業ブランチに留まると手元が遅れ、次に切るブランチが古いベースを指す。
       ユーザーがマージした場合も同じ。未コミット変更は持ち込まない。
-      stash したなら `<base>` でも detach した HEAD でも pop しない）
+      stash したなら detach した HEAD の上で pop しない）
 - [ ] 追従の後に、ローカルの `<base>` を早送りしたか？
       （どこにも無ければ `fetch origin <base>:<base>`。main worktree にあれば、
       `status --porcelain --untracked-files=normal` が空のときだけ `git -C <main> pull --ff-only`。
