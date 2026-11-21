@@ -344,7 +344,7 @@ def main():
         payload = json.load(sys.stdin)
     except ValueError:
         return
-    # subagent の text はユーザーに見えず、メインの文脈にも結果としてしか戻らない。
+    # subagent の text はユーザーに見えず、メインのコンテキストにも結果としてしか戻らない。
     if payload.get("agent_id"):
         return
     session_id = payload.get("session_id")
