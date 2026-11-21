@@ -1,6 +1,6 @@
 ---
 name: git-pr
-description: PR の作成とマージに関するルール。gh pr create の前にベースとの差を両方向に見る手順（含まれるコミットを説明文と突き合わせる、ベースからの遅れと衝突を先に見る）、マージしてよいかの承認規律、merge commit 形式でのマージ、gh pr merge --delete-branch が worktree ごとにローカルで行うことと打つ前の確認（積んだ PR の base の付け替えを含む）、マージ直後のベース追従（linked worktree を含む）とマージ済みブランチの掃除。gh pr create / gh pr merge を実行する前と、PR がマージされた直後に参照する。共通ルールは git-workflow skill にある。
+description: PR の作成とマージに関するルール。gh pr create の前にベースとの差を両方向に見る手順（含まれるコミットを説明文と突き合わせる、ベースからの遅れと衝突を先に見る）、マージしてよいかの承認規律、merge commit 形式でのマージ、gh pr merge --delete-branch が worktree ごとにローカルで行うことと打つ前の確認（積んだ PR の base の付け替えを含む）、マージ直後のベース追従（linked worktree を含む）、ローカルの統合ブランチの早送り（main worktree にあるときを含む）とマージ済みブランチの掃除。gh pr create / gh pr merge を実行する前と、PR がマージされた直後に参照する。共通ルールは git-workflow skill にある。
 ---
 
 # 概要
@@ -239,6 +239,8 @@ main worktree である。ローカルに `<head>` が無ければ、gh はロ�
    拒否されてローカルの削除を飛ばすが、無ければ `.gitignore` で無視されたファイルごと消える。
    その worktree は、ほかのセッションの作業場所であることが多い。その worktree で打てば、
    gh はローカルに触れない。移るのはそのコマンドの間だけにする。
+   head が main worktree にあるときは、main worktree では打たない（git-workflow のルール 12）。
+   自分の linked worktree から打てば、gh は警告を出してローカルに触れない。
 
    ```bash
    (cd <head の worktree> && gh pr merge <number> --merge --delete-branch)
@@ -341,9 +343,10 @@ git fetch --prune origin
 git switch --detach origin/<base>
 ```
 
-linked worktree で作業していると、`<base>` は main worktree でチェックアウトされている
-ことが多く、後者になる。ほかの worktree の `<base>` を、その worktree で pull して更新
-しない。その worktree の作業ツリーを動かすことになる。
+この切り替えは自分の linked worktree で行い、main worktree では行わない（git-workflow の
+ルール 12）。linked worktree で作業していると、`<base>` は main worktree でチェックアウト
+されていることが多く、後者になる。そのときのローカルの `<base>` の更新は、下の
+「マージした後にローカルの `<base>` を早送りする」の表に従う。
 
 gh が作業ブランチのローカル削除を飛ばしたとき（上の表の「警告を出して何もしない」行）は、
 警告が勧める手順（`git worktree remove`、ほかの worktree の切り替え、`git branch -D`）に
@@ -351,8 +354,8 @@ gh が作業ブランチのローカル削除を飛ばしたとき（上の表�
 未マージのコミットも黙って消す（git-workflow のルール 6）。自分の worktree が head をチェックアウト
 していたなら、切り替えた後の一括削除（下の「マージ済みのローカルブランチは残さない」）で消える。
 ユーザーが squash / rebase でマージした head は `--merged` に出ず、ほかの worktree がチェックアウト
-している head は `+` の行として除かれるので、どちらも一括削除で消えない。扱いは同じ節の
-一括削除の結果の項にある。
+している head は `+` の行として除かれるので、どちらも一括削除で消えない。扱いは下の
+「マージ済みのブランチを掃除する」の、一括削除の結果の項にある。
 
 stash した変更は `<base>` の上でも、detach した HEAD の上でも pop しない。どちらも次に
 切るブランチの起点で、そこにある未コミット変更は、次に切るブランチへ持ち込む前提で
@@ -360,6 +363,51 @@ stash した変更は `<base>` の上でも、detach した HEAD の上でも po
 使うなら、そのブランチを切った後に git-branch のルール 3 (b) 例外 1 の戻すかの表で決める。
 使わないまま作業を終えるなら、最終応答に退避したときのメッセージと、戻し方（作業ブランチを
 切ってから `git stash list` でメッセージから番号を探し、`git stash pop stash@{N}` する）を書く。
+
+### マージした後にローカルの `<base>` を早送りする
+
+追従の後に、ローカルの `<base>` をリモートの最新へ早送りする。ユーザーが main worktree で
+次の作業を始めるときに、古い `<base>` から始めずに済む。上の追従の条件によらず、ほかの
+作業ブランチに留まって `fetch` だけにしたときも、マージのたびに流す。ローカルに `<base>` が
+無ければ何もしない。
+
+`<base>` のチェックアウト先を `git for-each-ref --format='%(worktreepath)' refs/heads/<base>` で
+見て、次の表で決める。出力が空ならどこにも無い。
+
+| `<base>` のチェックアウト先 | すること                                                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| どこにも無い                | `git fetch origin <base>:<base>`。ref だけを動かし、作業ツリーに触れない                                                                                     |
+| 今の worktree               | 上の追従で `git switch <base>` と `git pull --rebase` を流したなら済んでいる。`fetch` だけにして作業ブランチ（積んだ PR のベースなど）に留まったなら触らない |
+| main worktree               | 下の条件を満たすときだけ `git -C <main worktree のパス> pull --ff-only origin <base>`。満たさなければ触らず、このコマンドを最終応答に書く                    |
+| ほかの linked worktree      | 触らない。ほかのセッションの作業場所である。そのパスと、`<base>` が古いままであることを最終応答に書く                                                        |
+
+main worktree で流すのは、`git -C <main worktree のパス> status --porcelain --untracked-files=normal` の
+出力が空のときだけである。これが git-workflow のルール 12 の、main worktree に触れてよい例外に
+当たる。未コミット変更か未追跡のファイルがあれば、ユーザーが作業の途中なので触らない。main worktree の
+中に置いた linked worktree は、無視されていなくてもこの出力に出ない（Git 2.54.0 で実測）。
+
+早送りできなかったときは、force も rebase もせずに止まる。
+
+| 結果                                                                                                       | 意味と扱い                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fetch` が exit 1 `! [rejected] ... (non-fast-forward)`、`pull` が exit 128 `Not possible to fast-forward` | ローカルの `<base>` にリモートに無いコミットがある。`git log --oneline origin/<base>..<base>` の出力を最終応答に書く（git-workflow の「ローカルの `<base>` を早送りする」と同じ扱い） |
+| `pull` が exit 1 `would be overwritten by merge`                                                           | 確かめた後にユーザーがファイルを足した。作業ツリーは変わっていない。拒否されたファイルと、上の `pull --ff-only` のコマンドを最終応答に書く                                            |
+| `pull` が exit 1 `Unable to create '...index.lock': File exists`                                           | ユーザーかほかのセッションの git が main worktree で動いている。lock は消さず、上の `pull --ff-only` のコマンドを最終応答に書く                                                       |
+
+古い状態からブランチを切ると、無駄なマージ作業が発生しうる。git-branch のルール 3(b)
+は「派生直前に更新する」と定めているが、それだけでは足りない。マージから次の
+派生までの間に手元が遅れたままになり、その間に作った作業ブランチが古いベースを
+指す。
+
+「ファイルが無い」「変更が反映されていない」と判断する前に、ブランチのずれを
+疑う。マージ済みの変更は `origin/<base>` にあっても手元には無い。
+
+```bash
+git branch --show-current
+git status -sb | head -1        # ## main...origin/main [behind N] が出ていないか
+```
+
+### マージ済みのブランチを掃除する
 
 **マージ済みのローカルブランチは残さない。** ベースへ追従した直後に、毎回下のコマンドで
 まとめて消す。マージした head のほかに、次のものもベースに取り込まれていれば消える。
@@ -432,19 +480,6 @@ git push origin --delete <branch>
 | `false` | `gh api -X PATCH 'repos/{owner}/{repo}' -F delete_branch_on_merge=true` でオンにすることも提案する。リポジトリの設定を変える操作なので、ユーザーの承認を得てから流す |
 | `null`  | このトークンでは設定を読めない（read 権限だけのリポジトリで実測）。提案せず、設定を変えられる人に頼むよう最終応答に書く                                              |
 
-古い状態からブランチを切ると、無駄なマージ作業が発生しうる。git-branch のルール 3(b)
-は「派生直前に更新する」と定めているが、それだけでは足りない。マージから次の
-派生までの間に手元が遅れたままになり、その間に作った作業ブランチが古いベースを
-指す。
-
-「ファイルが無い」「変更が反映されていない」と判断する前に、ブランチのずれを
-疑う。マージ済みの変更は `origin/<base>` にあっても手元には無い。
-
-```bash
-git branch --show-current
-git status -sb | head -1        # ## main...origin/main [behind N] が出ていないか
-```
-
 ## チェックリスト
 
 - [ ] **PR を作る前に** 5 つの手順を上から流したか？
@@ -472,6 +507,10 @@ git status -sb | head -1        # ## main...origin/main [behind N] が出てい�
       作業ブランチに留まると手元が遅れ、次に切るブランチが古いベースを指す。
       ユーザーがマージした場合も同じ。未コミット変更は持ち込まない。
       stash したなら `<base>` でも detach した HEAD でも pop しない）
+- [ ] 追従の後に、ローカルの `<base>` を早送りしたか？
+      （どこにも無ければ `fetch origin <base>:<base>`。main worktree にあれば、
+      `status --porcelain --untracked-files=normal` が空のときだけ `git -C <main> pull --ff-only`。
+      ほかの linked worktree にあれば触らない。早送りできなければ止まって最終応答に書く）
 - [ ] 追従した直後に、マージ済みのローカルブランチをまとめて消したか？
       （使われなかった `claude/*` なども消える。ほかの作業ブランチの上では流さない。
       拒否されたものを `-D` で消さず、消したものと残ったものを最終応答に書く）

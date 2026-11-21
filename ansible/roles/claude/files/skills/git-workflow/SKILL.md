@@ -1,6 +1,6 @@
 ---
 name: git-workflow
-description: Git 操作の共通ルール（非対話時にどこまで進めてよいか、GitHub Flow のブランチモデルと命名、統合ブランチへの直接コミット禁止、コミット / push の委譲、破壊的操作の承認、rebase での統合）と、場面ごとに追加で読む git-* skill の振り分け表。あらゆる git 操作（ブランチ作成、コミット、push、マージ、checkout 等）を行う前に参照する。
+description: Git 操作の共通ルール（非対話時にどこまで進めてよいか、GitHub Flow のブランチモデルと命名、統合ブランチへの直接コミット禁止、作業を linked worktree で行い main worktree をユーザーに任せること、コミット / push の委譲、破壊的操作の承認、rebase での統合）と、場面ごとに追加で読む git-* skill の振り分け表。あらゆる git 操作（ブランチ作成、コミット、push、マージ、checkout 等）を行う前に参照する。
 ---
 
 # 概要
@@ -23,7 +23,7 @@ Read で SKILL.md を開いただけでは、圧縮の後に本文が戻らな�
 | `git log <base-ref>..HEAD` に説明できないコミットがある・コンフリクトが起きた・`stash pop` が exit 1 で終わった      | `git-recovery`           | 10                      |
 
 ルール番号は git-workflow / git-branch / git-pr / git-recovery を通した通し番号である。
-この skill にあるのは 0, 1, 2, 4, 5, 6, 8, 9。本文に出てくる番号がこの skill に
+この skill にあるのは 0, 1, 2, 4, 5, 6, 8, 9, 12。本文に出てくる番号がこの skill に
 無ければ、この表で持ち主を引く。
 
 ## ルール 0: 非対話時にどこまで進めてよいか
@@ -80,7 +80,8 @@ git-pr のルール 11 の承認規律どおり、マージは PR 単位・都�
 可逆でないのでこの例外に入らず、ルール 6 に従う。
 
 この表と抽象的な判定基準が食い違って見えたら、この表を優先する。
-git 操作についてはこの表が正本である。
+git 操作についてはこの表が正本である。どの worktree で打つかはルール 12 が決め、この表は
+自分の linked worktree の中での可否を決める。
 
 ### 要求そのものが多義的で、一方の解釈が破壊的な場合
 
@@ -137,12 +138,49 @@ git 操作についてはこの表が正本である。
 作業は `feature/*` または `hotfix/*` ブランチ上で行う。
 
 現在のブランチが統合ブランチのまま変更を加えようとしている場合、
-コミット前に `AskUserQuestion` で新しい作業ブランチを切るか確認する。
+コミット前に `AskUserQuestion` で新しい作業ブランチを切るか確認する。main worktree にいるなら
+確認せず、ルール 12 の表に従って linked worktree を作る。
 
 detach した HEAD（git-pr のルール 11 のマージ直後の追従で `origin/<base>` に detach した後など）
 でもコミットしない。rebase / cherry-pick の途中で git が作るコミットは除く（ルール 4 の例外）。
 そのコミットはどのブランチにも載らず、別のブランチへ切り替えるとどのブランチからも
 辿れなくなる。先に作業ブランチを切る。
+
+## ルール 12: 作業は linked worktree で行い、main worktree はユーザーに任せる
+
+同じリポジトリで複数のセッションが並列に作業する前提に立つ。作業ツリー・index・HEAD は
+worktree ごとに分かれるので、セッションごとに linked worktree を持てば、互いの変更が混ざらず、
+ブランチを切り替えてもほかの作業を動かさない。main worktree（`git worktree list` の 1 行目）は、
+ユーザーが直接触る場所である。
+
+main worktree では、読み取り（`status` / `log` / `diff` / `worktree list`、ファイルを開く）と、
+ref だけを動かす `fetch` と `git worktree add` だけを行う。
+ファイルの編集と、作業ツリー・index・HEAD を動かす操作（`switch` / `commit` / `stash` / `pull` /
+`reset` / `rebase` / `gh pr merge` など）はしない。main worktree の未コミット変更（未追跡を含む）は
+ユーザーのもので、git-branch のルール 7 の stash や持ち込みも当てない。例外は次の 2 つだけである。
+
+- git-pr のルール 11 の「マージした後にローカルの `<base>` を早送りする」で、main worktree が条件を満たすときの `pull --ff-only`
+- ユーザーが main worktree での操作を名指しで頼んだとき
+
+今いる worktree は次の 2 本で見分ける。1 本目の 1 行目 `worktree <パス>` が 2 本目の出力と
+同じなら、main worktree にいる。
+
+```bash
+git worktree list --porcelain
+git rev-parse --show-toplevel
+```
+
+| 今いる場所                                                                                  | すること                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| linked worktree（デスクトップアプリがセッションごとに作る `.claude/worktrees/<名前>` など） | その worktree で作業する。作業ブランチは git-branch のルール 3 で、その worktree の中で切る                                                                                        |
+| main worktree                                                                               | git-branch のルール 3 の (c) で、作業ブランチと一緒に linked worktree を作り、セッションの作業ディレクトリをそこへ移す。以降のファイル編集とコマンドは、すべてその worktree で行う |
+
+ほかのセッションの linked worktree にも入らない。そのセッションの作業ツリーを動かすことになる。
+入ってよいのは、git-pr のルール 11 で head がその worktree にある PR を、そこで `gh pr merge` するときだけである。
+
+自分で作った linked worktree は、マージの後も消さずにパスを最終応答に書く。`git worktree remove` は
+無視されたファイルごと消し、その worktree にいるシェルは作業ディレクトリを失う。消すかはユーザーが
+決める。
 
 ## ベース参照 `<base-ref>` の定義
 
@@ -169,6 +207,8 @@ git for-each-ref --format='%(worktreepath)' refs/heads/<base>
 ほかの worktree でチェックアウトされている `<base>` は、ここからは更新できない。
 `git switch <base>` も `git fetch origin <base>:<base>` も exit 128 で拒否される
 （`'<base>' is already used by worktree at '<path>'` / `refusing to fetch into branch`）。
+main worktree にある `<base>` をマージの後に更新する手順は、git-pr のルール 11 の
+「マージした後にローカルの `<base>` を早送りする」にある。
 
 一度決めたら最後まで同じものを使う。（1 行目と 3 行目は、下の「ローカルの `<base>` を
 早送りする」の結果で決まる。）途中で `<base>` と `origin/<base>` を
@@ -296,7 +336,7 @@ stash の drop のうち、自分で退避した entry を、直前の `git stas
 
 `git merge` は使用しない。ブランチの統合は rebase で行う。
 
-- `git pull` は常に `--rebase` を付ける
+- `git pull` は常に `--rebase` を付ける。例外は git-pr のルール 11 の「マージした後にローカルの `<base>` を早送りする」の `git pull --ff-only` で、早送りできなければ何もせずに止まり、コミットを作らない
 - 作業ブランチをベースブランチに追従させる場合も `git rebase <base-ref>` を使う
 - `git merge` を使ってよいのはユーザーが明示的に指示した場合のみ
 
@@ -328,6 +368,9 @@ PR の作成とマージを要求された場合は `git-pr` skill のルール 
 
 git 操作を行う前に、以下を自問する:
 
+- [ ] 今いるのは自分の linked worktree か？
+      （main worktree にいるなら、git-branch のルール 3 (c) で linked worktree を作って移り、
+      編集もコマンドもそこで行う。ルール 12）
 - [ ] 現在のブランチは作業ブランチ（`feature/*` / `hotfix/*`）か？
       （※これは「統合ブランチに直接コミットしない」ための確認。Yes でも安全とは限らない。
       作業ブランチ上にいることは、そこから派生すると混入する条件そのものである）

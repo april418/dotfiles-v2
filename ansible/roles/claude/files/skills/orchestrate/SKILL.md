@@ -244,7 +244,8 @@ sub-issue を持つ親を対象にするときは、親には着手せず、こ�
 グローバル指示の「判断ログ」のファイルに `## 台帳: <作業名>` の節を作る。会話の要約ではトラックの状態が落ちる
 ので、このセッションの状態は台帳を正本にする。ほかのセッションと共有する状態（着手、節目）は Issue に置く。
 判断ログのファイルに書けないとき（`~/.claude/` への書き込みを確認する窓口が無い非対話の実行など）は、作業ツリーの
-直下の `.orchestrate-ledger.md` に同じ節を作る。`.git/` も `~/.claude/` と同じく保護されたパスで断られるので
+直下の `.orchestrate-ledger.md` に同じ節を作る。作業ツリーは自分の linked worktree で、main worktree には書かない
+（git-workflow のルール 12）。`.git/` も `~/.claude/` と同じく保護されたパスで断られるので
 使わない。dotfiles の git ロールがグローバルな ignore に `.orchestrate-*` を入れているので、このファイルは
 `git status` に出ず、コミットにも stash にも入らない。
 
@@ -343,8 +344,8 @@ SessionStart フックは、判断ログのファイルが大きいと本文を�
 
 - Issue のあるトラックは、その Issue のブランチ（8. で 1 つの PR にまとめる Issue どうしは 1 本）に合流する。
   ブランチは 2. で決めた名前で、git-branch skill のルール 3 でベースから Issue ごとに切る。前の Issue のブランチから
-  切ると、そのコミットを引き連れる。メインの checkout をほかのセッションが使っていれば、`git worktree add` で
-  ベースを指定して切る
+  切ると、そのコミットを引き連れる。main worktree にいるなら、ルール 3 の (c) の `git worktree add` で linked
+  worktree ごと切って移る（git-workflow のルール 12）
 - 同じツリーのトラックは、そのトラックの diff を読んでからコミットする
 - worktree のトラックは、テストが通ったものだけを取り込む。`git -C <worktree> add -A` の後、
   `git -C <worktree> diff --cached --binary` をパッチに書き出し、作業ツリーで `git apply --3way <パッチ>` を

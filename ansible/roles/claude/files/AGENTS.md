@@ -264,6 +264,9 @@ subagent として動いているときは advisor を呼ばない。advisor は
 
 - git 操作の前に git-workflow skill を Skill ツールで呼ぶ。その振り分け表にある
   場面ごとの skill（git-branch / git-pr / git-recovery）も、操作の前に呼ぶ
+- リポジトリの main worktree（`git worktree list` の 1 行目）はユーザーの作業場所なので、
+  ファイルの編集も git の操作も linked worktree で行う。複数のセッションが並列で動くと、
+  作業ツリーと index を共有して変更が混ざる。手順は git-workflow skill のルール 12 にある
 - ベースを指定しないブランチの作成は `guard-branch-base.sh` フックが止める。
   止まったら stderr の指示に従い、迂回しない
 - パッケージマネージャーやランタイムのバージョンマネージャーを操作する前に
