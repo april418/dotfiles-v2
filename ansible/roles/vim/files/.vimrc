@@ -23,10 +23,17 @@ if &compatible
 endif
 
 " プラグインは vim ロールが clone し、state も作る。足りないものがあれば
-" プラグインを読まずに起動する。
+" プラグインを読まずに起動し、起動の後に裏で入れる。
 let s:goda_pm_base = expand('~/.cache/goda-pm')
 let s:goda_pm_repos = s:goda_pm_base . '/repos/github.com/'
 let s:goda_pm_config = expand('~/.vim/goda-pm/main.go')
+let s:goda_pm_toml = expand('~/.vim/goda-pm/plugins.toml')
+" 最後に更新を確かめた時刻を、このファイルの更新時刻で持つ。
+let s:goda_pm_checked = s:goda_pm_base . '/last-check'
+let s:goda_pm_check_interval = 24 * 60 * 60
+let s:goda_pm_log = s:goda_pm_base . '/install.log'
+" 入れるのと更新するのは同じ clone を触るので、1 つずつ流す。
+let s:goda_pm_busy = 0
 " state は runtimepath を $VIMRUNTIME ごと書き込むので、runtime ごとに分ける（vim91 など）。
 " 既定の v:progname だと、vimdiff や view で起動したときに別の state を探す。vim ロールも同じ名前で作る。
 let s:goda_pm_name = fnamemodify($VIMRUNTIME, ':t')
@@ -38,31 +45,136 @@ function! s:goda_pm_can_make_state() abort
         \ && isdirectory(s:goda_pm_repos . 'Shougo/goda.vim')
 endfunction
 
+" plugins.toml の repo のうち、clone されていないもの。state が無い起動にも、state を作り直した
+" 直後にも使うので、state ではなく TOML を読む。
+function! s:goda_pm_missing() abort
+  if !filereadable(s:goda_pm_toml)
+    return []
+  endif
+  let missing = []
+  for line in readfile(s:goda_pm_toml)
+    let m = matchlist(line, '^\s*repo\s*=\s*[''"]\([^''"]\+\)[''"]')
+    if !empty(m) && !isdirectory(s:goda_pm_repos . m[1])
+      call add(missing, m[1])
+    endif
+  endfor
+  return missing
+endfunction
+
+" 起動は goda.vim 無しで済むが、state を作るのと installer を流すのには要る。
+function! s:goda_pm_add_goda() abort
+  let goda = s:goda_pm_repos . 'Shougo/goda.vim'
+  if index(split(&runtimepath, ','), goda) < 0
+    execute 'set runtimepath^=' . fnameescape(goda)
+  endif
+endfunction
+
+function! s:goda_pm_make_state() abort
+  call s:goda_pm_add_goda()
+  call goda_pm#make_state(s:goda_pm_base, s:goda_pm_name)
+endfunction
+
+" 入れるのは別の vim で流す。installer はこの vim が起動時に読んだ state からプラグインを選ぶので、
+" state の無い起動や state を作り直した後は、新しい state を読み直した vim でないと入れられない。
+" 入れるものが無いと install はエラーを出すので、入っていないものがあるときだけ呼ぶ。
+function! s:goda_pm_install() abort
+  if s:goda_pm_busy
+    return
+  endif
+  let s:goda_pm_busy = 1
+  let repos = [s:goda_pm_repos . 'Shougo/goda-pm.vim', s:goda_pm_repos . 'Shougo/goda.vim']
+  " goda-pm は失敗を echomsg で出すだけで -es の終了コードに出ないので、:messages を残して落とす。
+  let fail = printf("call writefile(split(execute('messages'), \"\\n\"), %s) | cquit",
+        \ string(s:goda_pm_log))
+  call job_start([v:progpath, '-N', '-u', 'NONE', '-i', 'NONE', '-n', '-es',
+        \ '--cmd', 'set runtimepath^=' . join(map(copy(repos), {_, p -> fnameescape(p)}), ','),
+        \ '--cmd', 'let g:goda#workspace = ' . string(repos),
+        \ '-c', printf('if goda_pm#min#load_state(%s, %s) | %s | endif',
+        \   string(s:goda_pm_base), string(s:goda_pm_name), fail),
+        \ '-c', 'call goda_pm#sync_ext_action("installer", "install")',
+        \ '-c', 'let g:failed = goda_pm#sync_ext_action("installer", "getFailed")',
+        \ '-c', 'if type(g:failed) != v:t_list || !empty(g:failed) | ' . fail . ' | endif',
+        \ '-c', 'qall!'],
+        \ {'in_io': 'null', 'out_io': 'null', 'err_io': 'null',
+        \  'exit_cb': function('s:goda_pm_installed')})
+endfunction
+
+function! s:goda_pm_installed(job, status) abort
+  let s:goda_pm_busy = 0
+  if a:status == 0
+    echomsg 'goda-pm: 入っていなかったプラグインを入れました。vim を開き直すと読み込まれます'
+  else
+    echohl WarningMsg
+    echomsg 'goda-pm: プラグインを入れられませんでした。理由は ' . s:goda_pm_log . ' にあります'
+    echohl None
+  endif
+endfunction
+
+function! s:goda_pm_check_updates() abort
+  if s:goda_pm_busy
+    return
+  endif
+  let s:goda_pm_busy = 1
+  " 時刻は流す前に書く。オフラインで失敗したときも、起動のたびに fetch をやり直さない。
+  call writefile([], s:goda_pm_checked)
+  call s:goda_pm_add_goda()
+  " 更新が見つかると、更新するかを聞いてくる。入っていないものもここで拾う。
+  call goda_pm#async_ext_action('installer', 'checkNotUpdated')
+endfunction
+
+function! s:goda_pm_start() abort
+  if !empty(s:goda_pm_missing())
+    call s:goda_pm_install()
+  elseif localtime() - getftime(s:goda_pm_checked) >= s:goda_pm_check_interval
+    call s:goda_pm_check_updates()
+  endif
+endfunction
+
+" 更新した後は installer が state を作り直し、その makeStatePost は busy の間に来る。
+function! s:goda_pm_after_make_state() abort
+  if s:goda_pm_busy
+    return
+  endif
+  if !empty(s:goda_pm_missing())
+    call s:goda_pm_install()
+  else
+    echomsg 'goda-pm: state を作りました。vim を開き直すと読み込まれます'
+  endif
+endfunction
+
+function! s:goda_pm_done() abort
+  let s:goda_pm_busy = 0
+  let updated = goda_pm#sync_ext_action('installer', 'getUpdated')
+  if type(updated) == v:t_list && !empty(updated)
+    echomsg printf('goda-pm: %d 個のプラグインを入れるか更新しました。vim を開き直すと読み込まれます',
+          \ len(updated))
+  endif
+endfunction
+
 if v:version >= 901 && isdirectory(s:goda_pm_repos . 'Shougo/goda-pm.vim')
   execute 'set runtimepath^=' . fnameescape(s:goda_pm_repos . 'Shougo/goda-pm.vim')
 
-  if goda_pm#min#load_state(s:goda_pm_base, s:goda_pm_name)
-    " state が無いか古い。作れるときだけ作り、次の起動から効く。
-    " sudo の下では goda-pm が動かないので作らない。
-    if s:goda_pm_can_make_state() && !g:goda_pm._is_sudo
-      execute 'set runtimepath^=' . fnameescape(s:goda_pm_repos . 'Shougo/goda.vim')
-      augroup GodaPmMakeState
-        autocmd!
-        autocmd VimEnter * ++once
-              \ call goda_pm#make_state(s:goda_pm_base, s:goda_pm_name)
-        " 入っていないプラグインは state に入らない。
-        autocmd User GodaPm:makeStatePost
-              \ echomsg 'goda-pm: state を作りました。入っていないプラグインは'
-              \ . " :call goda_pm#async_ext_action('installer', 'install') で入れて、vim を開き直してください"
-      augroup END
-    endif
-  elseif s:goda_pm_can_make_state()
-    augroup GodaPmCheckFiles
+  " 失敗すると 1 を返す。state が無いか古い。
+  let s:goda_pm_stale = goda_pm#min#load_state(s:goda_pm_base, s:goda_pm_name)
+  " sudo の下では goda-pm が動かないので、state も作らずプラグインも入れない。
+  if s:goda_pm_can_make_state() && !g:goda_pm._is_sudo
+    augroup GodaPm
       autocmd!
-      autocmd BufWritePost plugins.toml,*.go,go.mod,go.sum
-            \ if !empty(goda_pm#check_files(s:goda_pm_base, s:goda_pm_name))
-            \ | call goda_pm#make_state(s:goda_pm_base, s:goda_pm_name)
-            \ | endif
+      if s:goda_pm_stale
+        " 作った state は次の起動から効く。
+        autocmd VimEnter * ++once call s:goda_pm_make_state()
+      else
+        autocmd VimEnter * ++once call s:goda_pm_start()
+        autocmd BufWritePost plugins.toml,*.go,go.mod,go.sum
+              \ if !empty(goda_pm#check_files(s:goda_pm_base, s:goda_pm_name))
+              \ | call s:goda_pm_make_state()
+              \ | endif
+      endif
+      autocmd User GodaPm:makeStatePost call s:goda_pm_after_make_state()
+      " goda-pm のイベントの中でバイナリに同期で頼むと、そのイベントを出した呼び出しの途中で
+      " 待つことになるので、timer で抜けてから頼む。
+      autocmd User GodaPm:ext:installer:updateDone
+            \ call timer_start(0, {-> s:goda_pm_done()})
     augroup END
   endif
 endif
