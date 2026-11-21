@@ -1,6 +1,6 @@
 ---
 name: git-branch
-description: 作業ブランチを新しく切る・既存ブランチへ切り替える・ベースを pull する際の手順（ベースの選定、最新化、ベースを明示した派生、混入コミットの検証）と、未コミット変更がある場合の扱い。git switch -c / checkout -b / switch / pull / stash を実行する前と、rebase や stash pop をした後に参照する。共通ルールは git-workflow skill にある。
+description: 作業ブランチを新しく切る・既存ブランチへ切り替える・ベースを pull する際の手順（ベースの選定、最新化、ベースを明示した派生と main worktree からの linked worktree の作成、混入コミットの検証）と、未コミット変更がある場合の扱い。git switch -c / checkout -b / switch / pull / stash を実行する前と、rebase や stash pop をした後に参照する。共通ルールは git-workflow skill にある。
 ---
 
 # 概要
@@ -77,6 +77,9 @@ push していないコミットがあると、pull はそのコミットをリ�
 （Git 2.54.0 で実測）。
 
 #### 例外 1: 作業ツリーに未コミット変更がある場合
+
+main worktree の未コミット変更では、この例外を踏まない。変更はユーザーのもので、通常ケースの (b) の後に
+(c) の `git worktree add` へ進めば、変更は main worktree に残る（git-workflow のルール 12）。
 
 まず **ルール 7** の表で現在のブランチ種別に応じた選択肢を決め、`AskUserQuestion` で
 ユーザーに選ばせる。選択肢ごとに (b) → (c) の続きが分岐する:
@@ -181,6 +184,24 @@ upstream が `origin/<base>` になる。`git status` の ahead / behind はベ�
 引数なしの `git push` は名前の不一致で exit 128 になる（Git 2.54.0 で実測）。git-push skill は
 初回 push の `-u` で upstream を付け替えるが、それまではベースを指したままになる。
 
+main worktree にいるときは（git-workflow のルール 12）、`git switch -c` の代わりに、ブランチと
+一緒に linked worktree を作る。`<path>` は `<main worktree のパス>/.claude/worktrees/<name>` にする
+（`<name>` はブランチ名の `feature/` / `hotfix/` を除いた部分）。Claude Code が worktree を作るのと
+同じ置き場である。`<path>` が既にあれば（`feature/foo` と `hotfix/foo`、前のセッションが残した
+worktree など）、末尾に `-2` などを付けて空いているパスにする。既にある worktree には入らない。
+
+```bash
+git worktree add --no-track -b <new-branch> <path> <base-ref>
+```
+
+作業ツリーに触れないので、main worktree に未コミット変更があっても、ルール 7 を踏まずに打てる。
+その変更は新しい worktree に入らず、main worktree に残る。
+
+作ったら、セッションの作業ディレクトリをその worktree へ移す。Claude Code では `EnterWorktree` に
+`path` を渡し、ほかの環境では `cd <path>` を単独で打つ。後に続く git-commit・git-push・git-pr の
+コマンドは `-C` を付けずに書かれていて、作業ディレクトリが main worktree のままだと main worktree で
+走る。移った後に `git rev-parse --show-toplevel` が `<path>` であることを確かめてから、(d) に進む。
+
 ### (d) 検証
 
 ブランチの位置が変わった直後は、余計なコミットを引き連れていないことを
@@ -230,6 +251,10 @@ git log --oneline <base-ref>..HEAD
 ## ルール 7: 未コミット変更の扱い
 
 ブランチ切り替え・pull・ベース更新の前には作業ツリーの状態を確認する。
+
+main worktree では、ブランチの切り替えも pull もしないので、このルールに当たる場面が無い。未コミット変更は
+ユーザーのもので、stash も持ち込みもしない（git-workflow のルール 12）。ユーザーに名指しで頼まれて main worktree を
+切り替えるとき（ルール 12 の例外）は、このルールを当てる。
 
 ```bash
 git status --porcelain --untracked-files=normal
@@ -303,6 +328,9 @@ git-pr のルール 11 の「`gh pr merge` を打つ前」）。対話時は「s
 - [ ] ブランチを切る場合、`git switch -c <new> <base-ref> --no-track` とベースを明示したか？
       （引数を省くと現在の HEAD から切られ、直前の作業ブランチのコミットを引き連れる。
       `--no-track` が無いと、`origin/<base>` から切ったときに upstream が `origin/<base>` になる）
+- [ ] main worktree にいるなら、`git worktree add --no-track -b <new> <path> <base-ref>` で
+      linked worktree ごと作り、`EnterWorktree`（`path`）か `cd` で移って
+      `git rev-parse --show-toplevel` がそのパスだと確かめたか？
 - [ ] 派生直後に `git branch --show-current` が新しいブランチで、
       `git log --oneline <base-ref>..HEAD` が空であることを確認したか？
       （※空を期待してよいのは派生直後だけ。作業が進んだブランチでは
