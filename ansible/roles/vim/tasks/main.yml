@@ -10,3 +10,92 @@
     src: files/.vimrc
     dest: "{{ ansible_facts['env'].HOME }}/.vimrc"
     mode: "0644"
+
+# vimrc の undodir。無いと undofile を書けない。
+- name: Ensure vim undo directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.vim/undo"
+    state: directory
+    mode: "0700"
+
+- name: Ensure goda-pm config directory exists
+  ansible.builtin.file:
+    path: "{{ ansible_facts['env'].HOME }}/.vim/goda-pm"
+    state: directory
+    mode: "0755"
+
+- name: Copy goda-pm config
+  ansible.builtin.copy:
+    src: "files/.vim/goda-pm/{{ item }}"
+    dest: "{{ ansible_facts['env'].HOME }}/.vim/goda-pm/{{ item }}"
+    mode: "0644"
+  loop:
+    - go.mod
+    - go.sum
+    - main.go
+    - plugins.toml
+  register: vim_goda_pm_config
+
+# protocol git が置く場所に clone する。installer も同じ場所を更新するので、ここでは取り直さない。
+- name: Clone goda-pm core plugins
+  ansible.builtin.git:
+    repo: "https://github.com/{{ item.repo }}.git"
+    dest: "{{ vim_goda_pm_base }}/repos/github.com/{{ item.repo }}"
+    version: "{{ item.version }}"
+    update: false
+  loop: "{{ vim_goda_pm_core }}"
+
+- name: Check goda-pm state
+  ansible.builtin.stat:
+    path: "{{ vim_goda_pm_base }}/vim/state.vim"
+  register: vim_goda_pm_state
+
+- name: Make goda-pm state and install plugins
+  when: >-
+    ansible_facts['os_family'] != 'Windows'
+    and (vim_goda_pm_config is changed or not vim_goda_pm_state.stat.exists)
+  environment: "{{ vim_goda_pm_env }}"
+  block:
+    # ~/.vimrc を読むと、state が無いときに VimEnter の make_state も走って重なるので、runtimepath だけを足す。
+    - name: Make goda-pm state
+      ansible.builtin.command:
+        argv:
+          - vim
+          - -N
+          - -u
+          - NONE
+          - -i
+          - NONE
+          - -n
+          - -es
+          - --cmd
+          - "set runtimepath^={{ vim_goda_pm_base }}/repos/github.com/Shougo/goda-pm.vim,{{ vim_goda_pm_base }}/repos/github.com/Shougo/goda.vim"
+          - -c
+          - "call goda_pm#make_state_sync('{{ vim_goda_pm_base }}')"
+          - -c
+          - "qall!"
+      changed_when: true
+
+    - name: Check goda-pm state is made
+      ansible.builtin.stat:
+        path: "{{ vim_goda_pm_base }}/vim/state.vim"
+      register: vim_goda_pm_made
+      failed_when: not vim_goda_pm_made.stat.exists
+
+    # state ができた後なので、~/.vimrc の load_state が通り、installer が見るプラグインの一覧が揃う。
+    - name: Install goda-pm plugins
+      ansible.builtin.command:
+        argv:
+          - vim
+          - -N
+          - -u
+          - "{{ ansible_facts['env'].HOME }}/.vimrc"
+          - -i
+          - NONE
+          - -n
+          - -es
+          - -c
+          - "call goda_pm#sync_ext_action('installer', 'install')"
+          - -c
+          - "qall!"
+      changed_when: true

@@ -1,0 +1,12 @@
+---
+vim_goda_pm_base: "{{ ansible_facts['env'].HOME }}/.cache/goda-pm"
+# vimrc が load_state の前に runtimepath に足す。後の更新は goda-pm の installer が行う。
+# 版は files/.vim/goda-pm/go.mod の require に揃える。
+vim_goda_pm_core:
+  - repo: Shougo/goda-pm.vim
+    version: v0.4.2
+  - repo: Shougo/goda.vim
+    version: v0.9.0
+# headless の vim から go を呼べるように、go ロールのリンクがある ~/.local/bin を PATH に入れる。
+vim_goda_pm_env:
+  PATH: "{{ ansible_facts['env'].HOME }}/.local/bin:{{ ansible_facts['env'].PATH }}"
