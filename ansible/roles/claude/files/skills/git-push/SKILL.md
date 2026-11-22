@@ -74,7 +74,13 @@ git for-each-ref --format='%(upstream:short) %(upstream:track)' "refs/heads/$(gi
 git remote
 ```
 
-以下の 1.〜3. を確認する。当てる順は、2. の detached HEAD と統合ブランチ → 非対話の force push（force-push.md）→ 1. の未コミットの変更 → 2. の表 → 3. で、前のもので止めるか終えたら後のものは見ない。
+以下の 1.〜3. を確認する。当てる順は、下の「main worktree にいるとき」→ 2. の detached HEAD と統合ブランチ → 非対話の force push（force-push.md）→ 1. の未コミットの変更 → 2. の表 → 3. で、前のもので止めるか終えたら後のものは見ない。
+
+#### main worktree にいるとき
+
+1.〜3. より先に、今いるのが main worktree かを git-workflow のルール 12 の 2 本で見分ける。main worktree なら、1.〜3. も Step 2 のチェックも流さずに止める（`— push しない（main worktree のため。linked worktree から頼み直すか、手で push する）`）。main worktree の作業ツリー・index・HEAD はユーザーのもので、この skill の確認（コミット、stash、作業ブランチへの移動）も、チェックが作業ツリーに書くもの（`eslint --fix` の書き換え、生成物、ロックファイル）も、そこに触れる。0 件と同じく中止条件に数えず、どのモードでも聞かない。
+
+ユーザーが main worktree のままの push を名指しで頼んだとき（「main worktree のまま push して」など）は、ルール 12 の例外に当たるので、この小節を飛ばして通常どおり進める。`/git-push` の呼び出しや場所を言わない push の依頼は、push を名指ししているが、main worktree でのチェックや確認までは名指ししていないので、例外に数えない。
 
 #### 1. 未コミットの変更がないこと
 
