@@ -81,7 +81,8 @@ Codex にも見せる。`~/.agents/skills/<名前>` を、`claude` ロールが�
 プレイブックを流すたびに Claude Code と同じバージョンになる。frontend-design は `claude` ロールがプラグインで入れ、
 `~/.claude/skills` には無いので、`claude_frontend_design_skill_url` の SKILL.md を
 `~/.local/share/dotfiles/codex-skills/frontend-design/`（`XDG_DATA_HOME` があればその下）に取り、そこへリンクする
-（`codex_shared_skill_sources`）。Claude Code の subagent と worktree の分離を前提にした `orchestrate` は入れていない。
+（`codex_shared_skill_sources`）。Claude Code の subagent・デスクトップアプリの別セッションと worktree の分離を前提にした
+`orchestrate` は入れていない。
 skill の中の `AskUserQuestion` などの名前は、グローバル指示の冒頭にあるとおり Codex が読み替える。
 Claude Code の skill を足したり改名したり消したりしたら、Codex に見せるかを決めて `codex_shared_skills` も直す。
 `claude` ロールは古い `~/.claude/skills/<旧名>` を消さず、一覧から外しても `~/.agents/skills` のリンクは残るので、
