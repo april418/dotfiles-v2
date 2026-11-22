@@ -50,6 +50,7 @@ class Request:
     cwrite: int
     output: int
     cost: float
+    cwrite_cost: float
     adv_calls: int
     adv_input: int
     adv_cost: float
@@ -66,24 +67,30 @@ def normalize_model(name):
     return name
 
 
-def cost_of(model, usage, fast, unknown):
-    price = PRICES.get(model)
-    if price is None:
-        unknown[model] += 1
-        return 0.0
-    inp, out, read = price
+def write_dollars(inp, usage):
+    """キャッシュ書き込みの費用（fast mode の倍率を掛ける前）。内訳の無い記録は全部を 5 分の書き込みとみなす。"""
     created = usage.get("cache_creation") or {}
     w5m = created.get("ephemeral_5m_input_tokens")
     w1h = created.get("ephemeral_1h_input_tokens")
     if w5m is None and w1h is None:
         w5m, w1h = usage.get("cache_creation_input_tokens") or 0, 0
-    dollars = (
-        (usage.get("input_tokens") or 0) * inp
-        + (usage.get("output_tokens") or 0) * out
-        + (usage.get("cache_read_input_tokens") or 0) * read
-        + (w5m or 0) * inp * 1.25
-        + (w1h or 0) * inp * 2
-    ) / 1e6
+    return ((w5m or 0) * inp * 1.25 + (w1h or 0) * inp * 2) / 1e6
+
+
+def cost_of(model, usage, fast, unknown, write_only=False):
+    """write_only なら、キャッシュ書き込みの分だけを返す。"""
+    price = PRICES.get(model)
+    if price is None:
+        unknown[model] += 1
+        return 0.0
+    inp, out, read = price
+    dollars = write_dollars(inp, usage)
+    if not write_only:
+        dollars += (
+            (usage.get("input_tokens") or 0) * inp
+            + (usage.get("output_tokens") or 0) * out
+            + (usage.get("cache_read_input_tokens") or 0) * read
+        ) / 1e6
     # fast mode は Opus 5.5 も Fable 5.2 も標準の 2 倍。
     return dollars * 2 if fast else dollars
 
@@ -170,6 +177,10 @@ def to_request(entry, ts, sub, agent, unknown):
         cwrite=total("cache_creation_input_tokens"),
         output=total("output_tokens"),
         cost=sum(cost_of(normalize_model(it.get("model")) or model, it, fast, unknown) for it in executor),
+        # 単価の無いモデルは上の cost で数えたので、ここでは unknown に重ねて数えない。
+        cwrite_cost=sum(
+            cost_of(normalize_model(it.get("model")) or model, it, fast, Counter(), write_only=True) for it in executor
+        ),
         adv_calls=len(advisor),
         adv_input=sum(it.get("input_tokens") or 0 for it in advisor),
         # advisor はキャッシュせず、fast mode も掛からない。
@@ -246,7 +257,11 @@ def summarize(requests, compactions):
             "main_per_1k": per_thousand(len(main_compactions), len(main)),
             "pre_tokens_p50": percentile(pre, 0.5) if pre else None,
         },
-        "rewrites": {"requests": len(rewrites)},
+        "rewrites": {
+            "requests": len(rewrites),
+            "cost": round(sum(r.cost for r in rewrites), 2),
+            "cost_cache_write": round(sum(r.cwrite_cost for r in rewrites), 2),
+        },
         "models": {
             m: round(sum(r.cost for r in requests if r.model == m), 2) for m in sorted({r.model for r in requests})
         },

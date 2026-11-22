@@ -94,6 +94,16 @@ class CostTest(unittest.TestCase):
         self.assertAlmostEqual(usage.cost_of("claude-opus-5-5", u, False, usage.Counter()), 32.2)
         self.assertAlmostEqual(usage.cost_of("claude-opus-5-5", u, True, usage.Counter()), 64.4)
 
+    def test_write_only_prices_each_cache_lifetime(self):
+        u = {
+            "output_tokens": 1_000_000,
+            "cache_creation_input_tokens": 2_000_000,
+            "cache_creation": {"ephemeral_5m_input_tokens": 1_000_000, "ephemeral_1h_input_tokens": 1_000_000},
+        }
+        # 5 分の書き込み 4×1.25 + 1 時間の書き込み 4×2。出力は入れない
+        self.assertAlmostEqual(usage.cost_of("claude-opus-5-5", u, False, usage.Counter(), write_only=True), 13.0)
+        self.assertAlmostEqual(usage.cost_of("claude-opus-5-5", u, True, usage.Counter(), write_only=True), 26.0)
+
     def test_write_without_breakdown_is_five_minute(self):
         u = {"cache_creation_input_tokens": 1_000_000}
         self.assertAlmostEqual(usage.cost_of("claude-sonnet-5-5", u, False, usage.Counter()), 2.5)
@@ -224,6 +234,36 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(after["requests"], 1)
         self.assertEqual(after["over_400k"]["requests"], 0)
         self.assertEqual(out["prices_as_of"], usage.PRICES_AS_OF)
+
+    def test_rewrites_report_their_cost(self):
+        self.logs.write(
+            "p/s3.jsonl",
+            [
+                # 書き直し: 書き込み 20 万がコンテキストの 8 割以上
+                assistant(
+                    "2026-11-20T09:00:00Z",
+                    "rw",
+                    session="s3",
+                    output_tokens=1_000,
+                    cache_creation_input_tokens=200_000,
+                    cache_creation={"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 200_000},
+                ),
+                # 書き込みが 10 万未満なので数えない
+                assistant(
+                    "2026-11-20T09:01:00Z",
+                    "small",
+                    session="s3",
+                    cache_read_input_tokens=10_000,
+                    cache_creation_input_tokens=90_000,
+                ),
+            ],
+        )
+        _, out = self.logs.run("compare", "--cut", "2026-11-20T17:49")
+        rewrites = out["result"]["after"]["rewrites"]
+        self.assertEqual(rewrites["requests"], 1)
+        # 書き込み 20 万×4×2 = $1.60、出力 1,000×20 = $0.02
+        self.assertEqual(rewrites["cost_cache_write"], 1.6)
+        self.assertEqual(rewrites["cost"], 1.62)
 
     def test_daily_splits_the_cut_day(self):
         _, out = self.logs.run("daily", "--since", "2026-11-15", "--cut", "2026-11-20T17:49")
