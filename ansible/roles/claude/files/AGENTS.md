@@ -274,6 +274,7 @@ subagent として動いているときは advisor を呼ばない。advisor は
 - GitHub の Issue を読んで作業に取りかかる前と、Issue に書き込む前に gh-issue skill を呼ぶ。
   ほかのセッションが先に着手していないかを確かめ、同じ Issue に書き手を重ねないためである
 - 記事・ドキュメント・PR 本文・コミットメッセージなどの日本語を書いたり直したりするときは、
-  yomiyasu:yomiyasu skill で推敲する。他人が読み返す文章に、AI の書いた日本語の癖を
-  残さないためである。口調を保つ応答本文と review-tone で書く PR のコメント、短い
+  explain-before-shorten skill で組み立てを直してから、yomiyasu:yomiyasu skill で推敲する。
+  他人が読み返す文章に、AI の書いた日本語の癖を残さないためである。順を逆にすると、組み立ての
+  変更で推敲した文が崩れる。口調を保つ応答本文と review-tone で書く PR のコメント、短い
   コードコメントとコード中の文字列には使わない
