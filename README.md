@@ -103,7 +103,7 @@ matcher・コマンド・`statusMessage`・`timeout` といった登録の内容
 プレイブックが知らせる。`hooks.json` はこのロールが書くので、Codex で足した hook は流すたびに消える（前の内容は Ansible のバックアップに残る）。
 Codex はフックの `additionalContext` が上限を超えると、全文をファイルに保存し、先頭と末尾の抜粋と保存先をモデルに渡す。
 既定の上限は概算 2,500 トークンで、4 バイトを約 1 トークンとして数える。
-会話の要約後に判断ログを復元する `reload-claude-md.sh` には、Codex 側で `additionalContextLimit: 9000` を設定する。
+会話の要約後と resume 時に判断ログを復元する `reload-claude-md.sh` には、Codex 側で `additionalContextLimit: 9000` を設定する。
 これでフックが返す最大 9,000 文字が収まる。案内文とログの合計が 9,000 文字を超えると、フックはログ本文を省き、
 元のファイルを読むようモデルに伝える。
 
