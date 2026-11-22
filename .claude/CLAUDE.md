@@ -39,8 +39,10 @@
 - hook の登録（`files/settings.json` の `hooks`）のうち `ansible/roles/codex/vars/main.yml` の
   `codex_shared_hooks` に挙げたものは、codex ロールが `~/.codex/hooks.json` にも登録する。hook を足したり
   改名したりしたら、Codex に登録するかを決めてこの一覧も直す。直さないと、足した hook が Codex で走らない
-- `files/agents/` の md は、codex ロールが `~/.codex/agents/<名前>.toml` にもする。md を消したり改名したり
-  したら、`~/.codex/agents/` の toml も `evacuate` で取り除く。残すと、消した agent が Codex に出続ける
+- `files/agents/` の md は、`ansible/roles/codex/vars/main.yml` の `codex_excluded_agents` に挙げたものを除き、
+  codex ロールが `~/.codex/agents/<名前>.toml` にもする。md を消したり改名したりしたら、`~/.codex/agents/` の
+  toml も `evacuate` で取り除き、除外の一覧の名前も直す。toml を残すと消した agent が Codex に出続け、
+  除外の名前が古いと外したはずの md が Codex に配られる
 - **このファイルを消さない。** リポジトリに CLAUDE.md が 1 つも無いと、
   Claude Code は `files/AGENTS.md` をこのリポジトリの指示として読み込む
 
