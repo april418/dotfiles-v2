@@ -1,6 +1,6 @@
 ---
 # dotfiles: tags https://github.com/aws/aws-cli
-awscli_version: "2.40.2"
+awscli_version: "2.40.3"
 # XDG_DATA_HOME が空文字のときも既定値に倒す。install.sh にも同じ親を渡し、読む場所と入れる場所を揃える。
 awscli_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/aws-cli"
 # install.sh がバージョンを比べる導入先の aws の置き場所。macOS の pkg は導入先の直下に、Linux の zip はバージョンごとのディレクトリに置く。
