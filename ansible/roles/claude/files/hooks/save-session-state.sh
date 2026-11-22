@@ -80,7 +80,8 @@ for r in m.git_repos(pathlib.Path(os.environ['CWD']), os.environ.get('TRANSCRIPT
 ")" || REPOS=""
 
 collect() {
-  printf '## 作業ツリーの状態（自動収集 / trigger=%s）\n\n' "${TRIGGER:-unknown}"
+  # resume では前に圧縮したときの写しが読まれるので、いつの状態かを見出しに残す。
+  printf '## 作業ツリーの状態（自動収集 / trigger=%s / %s）\n\n' "${TRIGGER:-unknown}" "$(date -u +%Y-%m-%dT%H:%MZ)"
   printf 'cwd: `%s`\n\n' "$CWD"
 
   [ -n "$REPOS" ] || {
