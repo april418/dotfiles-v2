@@ -28,6 +28,7 @@ codex_shared_skills:
   - git-workflow
   - package-manager
   - review-tone
+  - slide-writing
   - ui-audit
 # ~/.claude/skills に無い skill のリンク先。claude ロールがプラグインで入れる skill は、Codex 用に取ってここに書く。
 codex_shared_skill_sources:
