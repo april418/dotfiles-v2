@@ -49,6 +49,19 @@ CWD="$(extract cwd)"
 TRIGGER="$(extract trigger)"
 TRANSCRIPT="$(extract transcript_path)"
 
+# 発火した時刻を残す。systemMessage は会話記録に残らないので、アイドル圧縮で
+# 発火したか・要約を作る時点と当てる時点のどちらで発火したかを後から確かめられない。
+# 保存の途中で落ちても残るよう、最初に書く。
+HOOK_LOG="$HOME/.local/state/claude-hooks/precompact.log"
+if mkdir -p "$(dirname "$HOOK_LOG")" 2>/dev/null; then
+  printf '%s\ttrigger=%s\tsession=%s\tcwd=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${TRIGGER:-unknown}" "$(extract session_id)" "$CWD" >>"$HOOK_LOG"
+  # 1 行は 200 バイトほどなので、1,000 行で切っても 200 KB に収まる。
+  if [ "$(wc -l <"$HOOK_LOG")" -gt 1000 ]; then
+    tail -n 1000 "$HOOK_LOG" >"$HOOK_LOG.tmp" && mv "$HOOK_LOG.tmp" "$HOOK_LOG"
+  fi
+fi
+
 # shellcheck source=./session-state-path.sh
 . "$HOOK_DIR/session-state-path.sh"
 STATE="$(session_state_path "$CWD")"
