@@ -196,7 +196,7 @@ anthropics/claude-plugins-official にはタグが無く、マーケットプレ
 マーケットプレイスを書き、そこで frontend-design の取得元をコミット SHA で指す（vars の `claude_marketplace`）。
 Claude Code はこのディレクトリを写さずにその場で読むので、残しておく。
 
-どの文章を `yomiyasu:yomiyasu` で推敲するかは、共有のグローバル指示（`files/AGENTS.md`）の「手順を持つ skill」の節が決める。
+どの文章を `explain-before-shorten` と `yomiyasu:yomiyasu` で推敲するかは、共有のグローバル指示（`files/AGENTS.md`）の「手順を持つ skill」の節が決める。
 この節は Codex のグローバル指示にも入り、Codex には `codex` ロールが同じバージョンの skill を置く
 （[Codex / ChatGPT のグローバル指示](#codex--chatgpt-のグローバル指示)）。
 
@@ -282,7 +282,9 @@ Codex の側も外すときは、`ansible/roles/codex/tasks/skills.yml` から�
 `skills.yml` の取り込みと `codex_skills_dir` は、Claude Code と共有する skill（[Codex / ChatGPT のグローバル指示](#codex--chatgpt-のグローバル指示)）が
 使うので残す。配置先の `~/.agents/skills/yomiyasu`（リンク）と `~/.local/share/yomiyasu`（`XDG_DATA_HOME` があればその下）は
 `evacuate` で退避する。yomiyasu のタスクを残したまま `claude_yomiyasu_version` を消すと、codex ロールがバージョンを読めずに止まる。
-両方から外すときは、`files/AGENTS.md` の「手順を持つ skill」にある yomiyasu の行も消す。残すと、無い skill で推敲するよう指示し続ける。
+両方から外すときは、`files/AGENTS.md` の「手順を持つ skill」の推敲の項目から yomiyasu の部分を消し、
+`files/skills/explain-before-shorten/SKILL.md` の yomiyasu との分担の記述も直す。残すと、無い skill で推敲するよう指示し続ける。
+推敲の項目は explain-before-shorten の指示と同じ項目なので、項目ごと消すとそちらの指示も消える。
 
 frontend-design を外すときは、vars から `claude_frontend_design_skill_url`・`claude_frontend_design_source`・
 `claude_marketplace_dir`・`claude_marketplace` と、`claude_plugin_settings` の `dotfiles` と `frontend-design@dotfiles` を消す。
