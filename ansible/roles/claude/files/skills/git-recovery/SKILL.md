@@ -94,13 +94,11 @@ git-pr のルール 11 の内容確認をやり直す。名指しが無ければ
 飛ばして事故った場合）。先に git-branch のルール 3 (b) の取得・更新を済ませること。
 済んでいないと `unknown revision` で落ちる。
 
-未コミット変更があっても stash せずに `-C` を打つ。`-C` は、変更のあるファイルの中身が
+未コミット変更の扱い（確認を取るか、拒否されたらどうするか）は git-branch のルール 7 の「表の例外」にある。`-C` は、変更のあるファイルの中身が
 今の HEAD と `<base-ref>` で同じなら、変更をそのまま持ち込む。違えば
 `Your local changes to the following files would be overwritten by checkout` か
 `The following untracked working tree files would be overwritten by checkout` で exit 1 になり、
-ブランチも作業ツリーも変わらない（Git 2.54.0 で実測）。拒否されたら `-m` で押し通さず、
-git-branch のルール 7 の「表の例外」で選び直す。先に stash してから切り直すと、重なる変更は
-pop で衝突する。
+ブランチも作業ツリーも変わらない（Git 2.54.0 で実測）。拒否されたら `-m` で押し通さない。
 
 ```bash
 git switch -C <new-branch> <base-ref> --no-track   # 同名ブランチが既にあるので -c ではなく -C
