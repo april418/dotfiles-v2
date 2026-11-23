@@ -252,8 +252,8 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/issues.py view <番号> --repo <OWNER/REPO> 
 ```
 
 1. `view` で読み直し、`status` が `ready`（か、ユーザーが選んだ `external`）で、sub-issue を持つ Issue でない
-   （「着手中か確かめる」）ことを確かめる。orchestrate では、開いた blocked-by の先がどれも自分の着手で、
-   push 済みかこのセッションでマージ済みの `blocked` も、着手の確認に依存の先を書いて選ばれていれば通す
+   （「着手中か確かめる」）ことを確かめる。orchestrate では、開いた blocked-by の先がどれも、自分の着手で push 済みか
+   このセッションでマージ済みの `blocked` も、着手の確認に依存の先を書いて選ばれていれば通す
    （orchestrate の「依存の先に積む」）。`trusted` が false の `blocked` は `external` と同じに扱う
 2. `agent:doing` が `repo` の `missing_labels` にあれば作る。作るのは着手の確認に「ラベルを作る」が入っているときだけで、
    着手に使わない `agent:skip` は作らない。入っていなければ、ラベルもコメントも書かない（コメントだけでは `status` が
@@ -434,9 +434,8 @@ EOF
 自分の着手の目印が付いた Issue を親にしたら、`手放し:` に計画に分けたことを書いて目印を外す（「手放す・済ませる」）。
 外さないと親が `doing` に見え、親の番号で続きを回せない。依存は `--blocked-by` で持つ。先の sub-issue が閉じるまで
 後の sub-issue は `blocked` になり、ほかのセッションは着手しない（自分のセッションの例外は「着手する」の手順 1）。
-親は、開いた sub-issue があるあいだ `umbrella` になる。
-親の sub-issue の一覧（番号と、開いているか閉じたか）は、下の最後の行で読む。
-着手できるかは、開いたものを `view` で読んで `status` で決める。
+親は、開いた sub-issue があるあいだ `umbrella` になる。親の sub-issue の一覧（番号と、開いているか閉じたか）は、
+下の最後の行で読む。着手できるかは、開いたものを `view` で読んで `status` で決める。
 
 親と sub-issue のリポジトリが違うとき（`tracker` に立てる sub-issue を、作業中のリポジトリの Issue の親につなぐ、
 など）は、下のコマンドで Issue を指すところに番号ではなく URL を渡す。番号では、どのリポジトリの Issue かが決まらない。
