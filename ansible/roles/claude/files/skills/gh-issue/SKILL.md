@@ -252,9 +252,9 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/issues.py view <番号> --repo <OWNER/REPO> 
 ```
 
 1. `view` で読み直し、`status` が `ready`（か、ユーザーが選んだ `external`）で、sub-issue を持つ Issue でない
-   （「着手中か確かめる」）ことを確かめる。orchestrate では、開いた blocked-by の先がどれも自分の着手で
-   push 済みの `blocked` も、着手の確認に依存の先を書いて選ばれていれば通す（orchestrate の「依存の先に積む」）。
-   `blocked` は `external` より先に決まるので、作者を信頼できるか（「作者の信頼」）も確かめる
+   （「着手中か確かめる」）ことを確かめる。orchestrate では、開いた blocked-by の先がどれも自分の着手で、
+   push 済みかこのセッションでマージ済みの `blocked` も、着手の確認に依存の先を書いて選ばれていれば通す
+   （orchestrate の「依存の先に積む」）。`trusted` が false の `blocked` は `external` と同じに扱う
 2. `agent:doing` が `repo` の `missing_labels` にあれば作る。作るのは着手の確認に「ラベルを作る」が入っているときだけで、
    着手に使わない `agent:skip` は作らない。入っていなければ、ラベルもコメントも書かない（コメントだけでは `status` が
    `ready` のまま残る）。対話なら「ラベルを作る」を足して着手の確認を出し直し、非対話なら「途中で終える」の
