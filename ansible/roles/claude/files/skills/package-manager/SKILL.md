@@ -220,7 +220,8 @@ uv にはバージョン単位の除外が無いので、承認したバージ�
 
 pnpm 10 以下の `pnpm audit` は、npm が廃止を予告している旧エンドポイント
 （`/-/npm/v1/security/audits` と `/audits/quick`）を使うため、410 で失敗することがある
-（pnpm/pnpm#11265）。pnpm 11 以降は後継の `/-/npm/v1/security/advisories/bulk` を使う。
+（pnpm/pnpm#11265）。410 は一時的なこともあり、200 を返す時期もある（2026-11 に確認）。
+pnpm 11 以降は後継の `/-/npm/v1/security/advisories/bulk` を使う。
 
 `ERR_PNPM_AUDIT_BAD_RESPONSE` で 410 が出たら、pnpm 11 を一時的に取ってきて audit する。
 `--prod` など audit に渡していた引数はそのまま付ける。
