@@ -18,10 +18,14 @@ CI が通ったことと、変更が動いている場所があることは別�
 デプロイのトリガーを読む。多くのリポジトリは統合ブランチへの push でしかデプロイしない。
 
 ```bash
-grep -n -A6 "^on:" .github/workflows/deploy*.yml
+grep -rnE -A6 "^['\"]?on['\"]?[[:space:]]*:" .github/workflows
 ```
 
-`on: push: branches: [main]` だけなら、PR の時点ではどこにも反映されていない。この場合に取れる手段は 3 つある。
+リポジトリのルートで打つ。デプロイする workflow のファイル名は `deploy.yml` とは限らないので、全部の `on:` を出し、中身を開いてデプロイするものを選ぶ。CI だけの workflow の `pull_request` は、デプロイのトリガーではない。`workflow_call` は呼び出し元、`workflow_run` は起点の workflow のトリガーも見る。
+
+workflow のディレクトリが無いか、デプロイする workflow が無ければ、ホスティング側の連携（Vercel や Cloudflare など）がデプロイや PR ごとの preview を作るかを見る。
+
+デプロイする workflow のトリガーが `on: push: branches: [main]` だけなら、PR の時点ではどこにも反映されていない。この場合に取れる手段は 3 つある。
 
 | 手段                         | 使いどころ                                             |
 | ---------------------------- | ------------------------------------------------------ |
