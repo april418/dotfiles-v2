@@ -19,7 +19,7 @@ python3 -B ${CLAUDE_SKILL_DIR}/scripts/usage.py daily --since 2026-11-01 --cut 2
 
 - `compare` は `--cut` の前 `--before-days` 日（既定 7）と、`--cut` から後の全部を比べる
 - `daily` は `--since` から日ごとに並べる。`--cut` を渡すと、その日を前後に分ける
-- 時刻はタイムゾーンを書かなければ `--tz`（既定 9 = JST）で読む
+- 時刻はタイムゾーンを書かなければ `--tz`（既定 9 = JST）で読む。`--tz` と `--projects` は subcommand より前に書く（`python3 -B ${CLAUDE_SKILL_DIR}/scripts/usage.py --tz 0 compare --cut …`）。後ろに書くと引数のエラーで止まる
 - 記録は数 GB になることがあるので、結果はファイルに書いてから読む（`> <scratchpad>/usage.json`）
 - パスは引用符で囲まずに、上の形のまま書く。`allowed-tools` の規則が文字どおりに照合するので、`-B` を外したり
   引用符で囲んだりすると許可に当たらない。許可は呼んだターンだけ効くので、後のターンで確認が出たら skill を呼び直す
