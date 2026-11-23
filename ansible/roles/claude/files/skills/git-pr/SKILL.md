@@ -380,6 +380,8 @@ main worktree で流すのは、`git -C <main worktree のパス> status --porce
 出力が空のときだけである。これが git-workflow のルール 12 の、main worktree に触れてよい例外に
 当たる。未コミット変更か未追跡のファイルがあれば、ユーザーが作業の途中なので触らない。main worktree の
 中に置いた linked worktree は、無視されていなくてもこの出力に出ない（Git 2.54.0 で実測）。
+`EnterWorktree` で移ったセッションでは、Claude Code が `git -C <main worktree のパス>` を拒否することがある。
+拒否されたら回避せず、状態を確かめられなかったことと、上の `pull --ff-only` のコマンドを最終応答に書く。
 
 早送りできなかったときは、force も rebase もせずに止まる。
 
