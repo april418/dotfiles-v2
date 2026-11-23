@@ -15,7 +15,7 @@ codex_shared_skills_source_dir: "{{ ansible_facts['env'].HOME }}/.claude/skills"
 codex_frontend_design_skill_url: "{{ (lookup('ansible.builtin.file', role_path + '/../claude/vars/main.yml') | from_yaml).claude_frontend_design_skill_url }}"
 codex_frontend_design_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/dotfiles/codex-skills/frontend-design"
 # Claude Code に配る skill のうち、Codex にも見せるもの。
-# orchestrate は Claude Code の subagent と worktree の分離を前提にした手順なので入れない。
+# orchestrate は Claude Code の subagent・デスクトップアプリの別セッションと worktree の分離を前提にした手順なので入れない。
 codex_shared_skills:
   - empirical-prompt-tuning
   - explain-before-shorten
