@@ -1,6 +1,6 @@
 ---
 name: git-pr
-description: PR の作成とマージに関するルール。gh pr create の前にベースとの差を両方向に見る手順（含まれるコミットを説明文と突き合わせる、ベースからの遅れと衝突を先に見る）、マージしてよいかの承認規律、merge commit 形式でのマージ、gh pr merge --delete-branch が worktree ごとにローカルで行うことと打つ前の確認（積んだ PR の base の付け替えを含む）、マージ直後のベース追従（linked worktree を含む）、ローカルの統合ブランチの早送り（main worktree にあるときを含む）とマージ済みブランチの掃除。gh pr create / gh pr merge を実行する前と、PR がマージされた直後に参照する。共通ルールは git-workflow skill にある。
+description: PR の作成とマージの手順と承認規律。gh pr create / gh pr merge を実行する前と、PR がマージされた直後（ベースへの追従、ローカルの統合ブランチの早送り、マージ済みブランチの掃除）に参照する。共通ルールは git-workflow skill にある。
 ---
 
 # 概要
