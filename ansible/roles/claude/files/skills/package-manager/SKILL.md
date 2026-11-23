@@ -41,7 +41,7 @@ description: パッケージマネージャー（pnpm, npm, yarn, uv 等）や�
 `<pnpm の設定ディレクトリ>` は `$XDG_CONFIG_HOME/pnpm`。未設定なら macOS は `~/Library/Preferences/pnpm`、
 Linux は `~/.config/pnpm`。pnpm 11 以降は `rc` を読まず、`.npmrc` からは認証・レジストリ・プロキシなどの接続設定しか読まない。
 
-**casing 規則**: `.npmrc` と `rc`（ini 形式）はキーが **kebab-case**、`pnpm-workspace.yaml` と `config.yaml`（YAML）は **camelCase**。
+**casing 規則**: `.npmrc` と `rc`（ini 形式）はキーが kebab-case、`pnpm-workspace.yaml` と `config.yaml`（YAML）は camelCase。
 ファイル形式に合わせて表記する。
 
 **Python (uv):**
@@ -120,7 +120,7 @@ mise use python@<version>
 
 バージョン不一致のまま `engine-strict=false` 等で回避するのはルール 1 違反である。
 
-git-push skill の push 前のチェックで PM を流すときに限り、Node.js のバージョンの確認と切り替えは、照らさずに流す場面も含めて git-push の node.md の「PATH 解決のフォールバック」（「nvm のバージョンの選び方」を含む）と「PATH で見つけた PM の node のバージョン」に従い、**ルール 2 の例外** とする。
+git-push skill の push 前のチェックで PM を流すときに限り、Node.js のバージョンの確認と切り替えは、照らさずに流す場面も含めて git-push の node.md の「PATH 解決のフォールバック」（「nvm のバージョンの選び方」を含む）と「PATH で見つけた PM の node のバージョン」に従い、ルール 2 の例外とする。
 git-push は確認先を優先順で 1 つに絞らず、バージョンを切り替えるときは `nvm use` の代わりにそのバージョンの `bin` を `PATH` の先頭に足す。合うバージョンが無くても `nvm install` はしない。
 
 ---
@@ -234,7 +234,7 @@ pnpm dlx pnpm@11 --pm-on-fail=ignore audit --prod
 - pnpm 11 は Node.js 22.13 以上が要る。Node.js がそれより古いとき、または pnpm 11 でも失敗したときは、ほかの回避を試さず audit の失敗として報告する
 - `--ignore-registry-errors` では回避しない。レジストリのエラーを成功扱いにし、脆弱性を見ないまま通してしまう
 
-この audit で `pnpm dlx pnpm@11` に渡す `--pm-on-fail=ignore` に限り、**ルール 1 の例外** とする。
+この audit で `pnpm dlx pnpm@11` に渡す `--pm-on-fail=ignore` に限り、ルール 1 の例外とする。
 `pnpm dlx` で取ってきた一時的な pnpm にプロジェクトの PM の宣言を無視させるだけで、
 プロジェクトの依存関係や lockfile には影響しないためである。
 
