@@ -104,7 +104,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/issues.py view <番号> --repo <OWNER/REPO>
 | `closed`   | Issue が閉じている                                                        | 触らない                                                                          |
 | `skip`     | `agent:skip` ラベルがある                                                 | 提案しない                                                                        |
 | `doing`    | `agent:doing` ラベル、信頼する書き手の開いた PR、紐付いたブランチのどれか | 自分の着手（下の段落）でなければ触らない。`reasons` と `claim_*` をユーザーに示す |
-| `blocked`  | 開いている Issue に blocked-by されている                                 | 先にその Issue を見る                                                             |
+| `blocked`  | 開いている Issue に blocked-by されている                                 | 先にその Issue を見る（例外は「着手する」の手順 1）                               |
 | `umbrella` | 開いている sub-issue がある                                               | sub-issue を作業の単位にする                                                      |
 | `external` | 作者が bot でなく、OWNER・MEMBER・COLLABORATOR でもない                   | 「作者の信頼」に従う                                                              |
 | `ready`    | 上のどれでもない                                                          | 「仕分ける」に進む                                                                |
@@ -184,7 +184,7 @@ Issue の優先度と難易度は、次のラベルで持つ。値はラベル�
   - 中: 機能の追加や改善
   - 低: 整理、見た目、あれば良いもの
 - 優先度で決まるのは `ready` の Issue（とユーザーが選んだ `external`）の順だけで、`doing`・`blocked`・
-  `skip`・`closed` は優先度が高くても着手しない
+  `skip`・`closed` は優先度が高くても着手しない（`blocked` の例外は「着手する」の手順 1）
 - 難易度のラベルが無い Issue は、作業の中身（触るファイルの数、変更の量、未確定の設計判断、再現の手間）から
   難易度を推定する。既にある Issue の推定はそのセッションの中でだけ使い、ユーザーに見せるときは推定と書く
 - ラベルを付ける・変えるのに要る承認は「書き込みと承認」にある。既にある Issue では、推定した値は名指しされない限り
@@ -433,9 +433,10 @@ EOF
 承認を得たら、親を立ててから（既にある Issue を親にするなら立てない）、依存の先のものから順に sub-issue を立てる。
 自分の着手の目印が付いた Issue を親にしたら、`手放し:` に計画に分けたことを書いて目印を外す（「手放す・済ませる」）。
 外さないと親が `doing` に見え、親の番号で続きを回せない。依存は `--blocked-by` で持つ。先の sub-issue が閉じるまで
-後の sub-issue は `blocked` になり、ほかのセッションも着手しない。親は、開いた sub-issue があるあいだ `umbrella` に
-なる。親の sub-issue の一覧（番号と、開いているか閉じたか）は、下の最後の行で読む。着手できるかは、開いたものを
-`view` で読んで `status` で決める。
+後の sub-issue は `blocked` になり、ほかのセッションは着手しない（自分のセッションの例外は「着手する」の手順 1）。
+親は、開いた sub-issue があるあいだ `umbrella` になる。
+親の sub-issue の一覧（番号と、開いているか閉じたか）は、下の最後の行で読む。
+着手できるかは、開いたものを `view` で読んで `status` で決める。
 
 親と sub-issue のリポジトリが違うとき（`tracker` に立てる sub-issue を、作業中のリポジトリの Issue の親につなぐ、
 など）は、下のコマンドで Issue を指すところに番号ではなく URL を渡す。番号では、どのリポジトリの Issue かが決まらない。
