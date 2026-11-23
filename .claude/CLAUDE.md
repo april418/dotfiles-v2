@@ -65,8 +65,8 @@
   [arXiv 2512.05858](https://arxiv.org/abs/2512.05858)）。焦点を絞る 1 文の役割は書いてよいが
   （[prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)）、
   何を受け取り、何を返すかは別に書く
-- 汎用の「検証しろ」「subagent で検証しろ」を書かない。Opus 5 系では過剰な検証と委譲を
-  招く（[prompting-claude-opus-5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5)）。
+- 汎用の「検証しろ」「subagent で検証しろ」を書かない。今のモデルは頼まれなくても確かめるので、
+  重ねると過剰な検証と委譲を招く（[prompting-claude-opus-5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5)）。
   何をどの場面で確かめるかまで書く
 - キャラクターは形容詞ではなく、`files/AGENTS.md` の「場面ごとの振る舞い」と同じ場面名
   での反応で書く。ペルソナを状況と振る舞いで組むとロールプレイの再現度が上がり
