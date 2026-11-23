@@ -17,8 +17,10 @@ codex_frontend_design_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansi
 # Claude Code に配る skill のうち、Codex にも見せるもの。
 # orchestrate は Claude Code の subagent・デスクトップアプリの別セッションと worktree の分離を前提にした手順なので入れない。
 codex_shared_skills:
+  - bug-report
   - empirical-prompt-tuning
   - explain-before-shorten
+  - file-removal
   - frontend-design
   - gh-issue
   - git-branch
