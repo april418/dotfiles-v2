@@ -380,17 +380,23 @@ main worktree で流すのは、`git -C <main worktree のパス> status --porce
 出力が空のときだけである。これが git-workflow のルール 12 の、main worktree に触れてよい例外に
 当たる。未コミット変更か未追跡のファイルがあれば、ユーザーが作業の途中なので触らない。main worktree の
 中に置いた linked worktree は、無視されていなくてもこの出力に出ない（Git 2.54.0 で実測）。
-`EnterWorktree` で移ったセッションでは、Claude Code が `git -C <main worktree のパス>` を拒否する
+`EnterWorktree` で移ったセッションでは、Claude Code が `git -C <main worktree のパス>` を拒否することがある
 （`a worktree-isolated session's git operations must target its own worktree`）。このときは次の順で、
-隔離を一度抜けて流し、同じ worktree に戻る。この skill が `ExitWorktree` を呼ぶ指示に当たる。
+隔離を一度抜けて流し、同じ worktree に戻る。ユーザーは、この場面で `ExitWorktree`（`keep`）と
+`EnterWorktree`（`path`）を呼ぶよう頼んでいる。抜けて流すのはユーザーが選んだ手順で、拒否の迂回に
+当たらない。隔離の中から `cd` や `--git-dir`、`GIT_DIR` / `GIT_WORK_TREE` で main worktree を指すのは迂回なので使わない。
 
 1. `ExitWorktree` を `action: "keep"` で呼ぶ。`remove` にしない。無視されたファイルごと worktree が消える
 2. 上の `status --porcelain` と `pull --ff-only` を流す
-3. `EnterWorktree` に今の worktree のパスを `path` で渡して戻り、`git rev-parse --show-toplevel` がそのパスか確かめる
+3. `EnterWorktree` に今の worktree のパスを `path` で渡して戻り、`git rev-parse --show-toplevel` がそのパスか確かめる。
+   2 で `status` が空でなかったときも、`pull` が下の表のどれかで失敗したときも、止まる前にここで戻る
 
-戻ってから下の掃除へ進む。抜けたまま掃除すると、一括削除が main worktree の HEAD で判定する。
-`ExitWorktree` が抜ける worktree が無いと返したとき（セッションが最初から worktree で始まったときなど）と、
-抜けた後も拒否されたときは、回避せず、状態を確かめられなかったことと、上の `pull --ff-only` のコマンドを最終応答に書く。
+戻ってから下の掃除へ進む。抜けたまま掃除すると、`-d` を main worktree で流すことになり、pull を
+飛ばしたか失敗したときは main worktree の古い HEAD で判定する。戻れなかったとき（`EnterWorktree` が
+拒否された、`--show-toplevel` が違う）は、掃除も以降の git 操作とファイル編集もせず、worktree のパスと
+状態を最終応答に書く。`ExitWorktree` が抜ける worktree が無いと返したとき（セッションが最初から worktree で
+始まったときなど）と、抜けた後も拒否されたときは、回避せず、状態を確かめられなかったことと、
+上の `pull --ff-only` のコマンドを最終応答に書く。
 
 早送りできなかったときは、force も rebase もせずに止まる。
 
