@@ -2334,8 +2334,9 @@ def require_base(repo, remote, what):
     if branch != base:
         raise BumpError(f"{what}must run on {base} (now on {branch or 'detached HEAD'})")
     if git(repo, "rev-parse", "HEAD") != git(repo, "rev-parse", remote):
-        # 配置に使う checkout なので、check_dotfiles の取り込みと同じく、手元のコミットを書き換えない形で揃える。
-        raise BumpError(f"{base} is not at {remote}; run git pull --ff-only origin {base} first")
+        # 遅れているだけなら sync_base が先に早送りするので、ここに来るのは手元にしか無いコミットがあるとき。
+        # 配置に使う checkout なので、rebase や reset で書き換えずに止める。
+        raise BumpError(f"{base} has commits not on {remote}; check git log {remote}..{base}")
 
 
 def sync_base(repo, remote, style):
@@ -2355,9 +2356,11 @@ def bump_branch():
 
 def pr_preflight(repo, remote, style):
     """pr を流せるかを、書き換えと push の前に確かめる。"""
-    require_base(repo, remote, "pr ")
-    # 前に write で書き換えた固定値は通し、ほかの変更があればここで止める。
+    # 前に write で書き換えた固定値は通し、ほかの変更があればここで止める。早送りより先に見て、止まる回に HEAD を動かさない。
     pin_changes(repo)
+    # PR はほかの checkout でマージされることが多く、配置に使う checkout の既定ブランチはたいてい遅れている。
+    sync_base(repo, remote, style)
+    require_base(repo, remote, "pr ")
     branch = bump_branch()
     if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}") is not None or (
         git(repo, "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}") is not None
