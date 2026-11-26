@@ -2611,9 +2611,22 @@ def bump_pr(repo, remote, merge, style):
         return
     step(["git", "pull", "--rebase", "origin", base], repo, style)
     step(["git", "branch", "-d", branch], repo, style)
-    # リポジトリの設定でマージと一緒に消えていることがある。
-    if git(repo, "ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}") is not None:
+    delete_remote_branch(repo, branch, style)
+
+
+def delete_remote_branch(repo, branch, style):
+    """origin に branch が残っていれば消す。消せずに残っていれば BumpError を投げる。"""
+    # リポジトリの設定（delete_branch_on_merge）でマージと一緒に消えることがある。GitHub は少し遅れて消すので、
+    # ls-remote で見えた後に消えると push は "remote ref does not exist" で失敗する。消えていれば済んだものとする。
+    remote_ref = ["ls-remote", "--exit-code", "--heads", "origin", f"refs/heads/{branch}"]
+    if git(repo, *remote_ref) is None:
+        return
+    try:
         step(["git", "push", "origin", "--delete", branch], repo, style)
+    except BumpError:
+        if git(repo, *remote_ref) is not None:
+            raise
+        say(style, f"{branch} was already deleted on origin", "ok")
 
 
 def bump_apply(repo, remote, style):
