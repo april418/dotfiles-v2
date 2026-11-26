@@ -1,6 +1,6 @@
 ---
 # dotfiles: tags https://github.com/openai/codex rust-v
-codex_version: "0.169.0"
+codex_version: "0.170.0"
 codex_dir: "{{ ansible_facts['env'].XDG_DATA_HOME | default(ansible_facts['env'].HOME + '/.local/share', true) }}/codex"
 
 # Claude Code のプラグインと同じバージョンを使い、バージョンは claude ロールの claude_yomiyasu_version だけで持つ。
