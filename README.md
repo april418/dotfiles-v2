@@ -29,10 +29,19 @@ dotfiles bump --steps all --merge  # 書き換えから、PR、マージ、プ�
 dotfiles bump --steps apply        # PR をマージした後に、ほかのマシンで流す
 ```
 
-`pr` は master の上で origin/master と揃っているときだけ流れる。固定値の行のほかに変更があるときと、固定値を上げる
-PR がまだ開いているときは止まる。`apply` は、master が origin/master より遅れていれば `git pull --ff-only` で取り込んでから
-流す。マージしていない固定値をこのマシンだけに入れないよう、`apply` は `ansible/` にコミットしていない変更があると止まる。
-同じ理由で、`write` や `pr` の後に続けて `apply` を流すには、`pr` と `--merge` が要る。上げるものが無いときも `apply` は流す。
+`pr` と `apply` は master の上でだけ流れ、master が origin/master より遅れていれば `git pull --ff-only` で取り込んでから
+流す。origin/master に無いコミットが master にあるときは止まる。`pr` は、固定値の行のほかに変更があるときと、固定値を
+上げる PR がまだ開いているときも止まる。マージしていない固定値をこのマシンだけに入れないよう、`apply` は `ansible/` に
+コミットしていない変更があると止まる。同じ理由で、`write` や `pr` の後に続けて `apply` を流すには、`pr` と `--merge` が
+要る。上げるものが無いときも `apply` は流す。
+
+固定値が最新より古いものは、`dotfiles update`（シェルを開いたときの質問を含む）でも `p` で選べ、`a`（all）にも入る。選ぶと、
+知らせた固定値の名前を付けて `dotfiles bump --steps all --merge` を流す。上げる先は bump がその場で取り直した最新なので、
+知らせたバージョンより新しいことがある。CI を待ってマージするまで、そのシェルは使えない。
+
+続くグループは、前のグループで済んでいれば流さない（bump はマージの後にプレイブックも流す）。`p` が失敗か中断で
+終わったら、その回の dotfiles の適用は流さない。bump は固定値のブランチや書き換えた固定値を残して止まりうるためで、
+同じ理由で、checkout が master 以外にあるときと `ansible/` にコミットしていない変更があるときは、update は適用を出さない。
 
 ## Codex / ChatGPT のグローバル指示
 

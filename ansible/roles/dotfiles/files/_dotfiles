@@ -75,7 +75,7 @@ _dotfiles() {
           ;;
         update)
           _arguments $help $style \
-            '--only=[update without asking]:target:_sequence compadd - dotfiles tools brew all' \
+            '--only=[update without asking]:target:_sequence compadd - pins dotfiles tools brew all' \
             '--startup[for shell startup]' && ret=0
           ;;
         bump)
