@@ -368,6 +368,15 @@ def check_dotfiles():
         )
         return result
 
+    # bump が途中で止まると、固定値のブランチか書き換えた固定値が残る。マージしていない固定値をこのマシンだけに入れない。
+    branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+    if remote and branch != remote.split("/", 1)[1]:
+        result["warnings"].append(f"on {branch or 'detached HEAD'}, not {remote.split('/', 1)[1]}; not applying")
+        apply_steps = []
+    elif git(repo, "status", "--porcelain", "--", DEPLOYED_PATH):
+        result["warnings"].append(f"{DEPLOYED_PATH}/ has uncommitted changes; not applying")
+        apply_steps = []
+
     def apply_notice(summary):
         return notice(
             summary,
@@ -1137,7 +1146,10 @@ class TagPin(Pin):
             pinned, commands = self.current, [self.apply]
         if self.name in AFTER_APPLY:
             commands += AFTER_APPLY[self.name](pinned)
-        return notice(summary + when, summary, commands)
+        found = notice(summary + when, summary, commands)
+        # update はこの名前を bump に渡す。固定値が最新なら書き換えは要らず、適用は dotfiles の適用と重なる。
+        found["bump"] = self.name if pinned != self.current else None
+        return found
 
 
 def find_pins(repo):
@@ -1342,7 +1354,7 @@ def refresh(wait):
             },
         )
         # 取得で見つかった更新を、次に開くシェルで聞けるようにする。
-        sync_pending(update_groups(check_dotfiles(), check_tools()))
+        sync_pending(update_groups(*check_all()))
         return error
 
 
@@ -1392,8 +1404,7 @@ def run_check(style):
         # brew outdated が brew update を走らせると数十秒かかり、その間は何も表示されない。
         print("Fetching…", file=sys.stderr)
     fetch_error = refresh(wait=True)
-    dotfiles = check_dotfiles()
-    tools = check_tools(remarks=True)
+    dotfiles, tools, pins = check_all(remarks=True)
     updates = unknown = False
 
     where = shown(dotfiles["where"]) if dotfiles["where"] else "unknown"
@@ -1417,12 +1428,11 @@ def run_check(style):
             else:
                 say_kind(style, "ok", "up to date", indent=2)
 
-    pins = check_pins(dotfiles["where"], dotfiles["remote"])
     for icon, section, empty in (("tools", tools, "no tools installed"), ("pins", pins, "no pins")):
         found_updates, found_unknown = print_items(section, empty, style, icon)
         updates |= found_updates
         unknown |= found_unknown
-    if update_groups(dotfiles, tools):
+    if update_groups(dotfiles, tools, pins):
         print()
         say(style, "Update: dotfiles update", "info", "command", "Update", ["dotfiles update"])
     return updates, unknown
@@ -1500,7 +1510,7 @@ NOTIFY_FOOTER = [("Details", "dotfiles check")]
 UPDATE_FOOTER = NOTIFY_FOOTER + [("Update", "dotfiles update")]
 
 
-def notify_rows(repo, dotfiles, tools):
+def notify_rows(repo, dotfiles, tools, pins):
     """通知に出す行を (アイコン, 色, 見出し, 項目) の並びで返す。"""
     label = dotfiles["label"]
     rows = [("warn", "error", label, [dotfiles["error"]])] if dotfiles["error"] else []
@@ -1511,7 +1521,7 @@ def notify_rows(repo, dotfiles, tools):
         rows.append(("warn", "error", label, [failure]))
     for icon, title, section in (
         ("tools", "tool updates", tools),
-        ("pins", "pin updates", check_pins(repo, dotfiles["remote"])),
+        ("pins", "pin updates", pins),
     ):
         shorts = [item["notice"]["short"] for item in section["items"] if item["notice"]]
         if shorts:
@@ -1605,9 +1615,9 @@ def run_notify(fmt, style="plain"):
         repo, _ = locate()
         if needs_refresh(repo):
             spawn_refresh()
-        dotfiles, tools = check_dotfiles(), check_tools()
-        rows = notify_rows(repo, dotfiles, tools)
-        groups = update_groups(dotfiles, tools)
+        dotfiles, tools, pins = check_all()
+        rows = notify_rows(repo, dotfiles, tools, pins)
+        groups = update_groups(dotfiles, tools, pins)
         sync_pending(groups)
     except Exception as e:  # noqa: BLE001
         # 黙ると利用者は dotfiles check を実行する理由が無く、壊れたまま気づけない。
@@ -1626,26 +1636,53 @@ def run_notify(fmt, style="plain"):
 
 # ---------------------------------------------------------------- 更新
 #
-# 更新できるものを 3 つに分けて聞き、選ばれたものの手順を実行する。固定バージョンは、固定が古ければ
-# リポジトリを直す必要があり、固定が最新ならプレイブックを流すだけで dotfiles 本体の適用と重なるので含めない。
+# 更新できるものを 4 つに分けて聞き、選ばれたものの手順を実行する。固定バージョンは、固定が古いものだけを
+# bump に渡す。固定が最新ならプレイブックを流すだけで dotfiles 本体の適用と重なるので含めない。
 
 
+# 固定値を先に流す。bump はマージした後にプレイブックも流すので、続く dotfiles の適用はたいてい要らなくなる。
 UPDATE_GROUPS = [
+    ("pins", "p", "pins", "pins"),
     ("dotfiles", "d", "dotfiles", "dotfiles"),
     ("tools", "t", "tools", "tools"),
     ("brew", "b", "Homebrew", "tools"),
 ]
 # 質問の選択肢に添える。Homebrew はバージョンの公開日時を持たず、待ち期間なしで上げる。Claude Code も待たないが、
-# 起動すれば自分で上がるバージョンへ上げるだけなので、ツールには添えない。
-UPDATE_NOTES = {"brew": "no cooldown"}
+# 起動すれば自分で上がるバージョンへ上げるだけなので、ツールには添えない。固定値は CI を待つ間シェルを使えない。
+UPDATE_NOTES = {"pins": "PR, CI and merge", "brew": "no cooldown"}
 
 
-def update_groups(dotfiles, tools):
+def check_all(remarks=False):
+    """(dotfiles, tools, pins) の判定を返す。pins は入っているバージョンを読むコマンドを流すので、1 回だけ呼ぶ。"""
+    dotfiles = check_dotfiles()
+    return dotfiles, check_tools(remarks), check_pins(dotfiles["where"], dotfiles["remote"])
+
+
+def bump_notice(pins):
+    """固定が古いものをまとめて上げる 1 つの手順。見せていない固定値は上げないよう、名前を渡す。
+
+    上げる先は bump がその場で取り直した最新で、見せたバージョンより新しいことがある。
+    """
+    shown_pins = [item["notice"] for item in pins["items"] if item["notice"] and item["notice"].get("bump")]
+    if not shown_pins:
+        return None
+    names = sorted({n["bump"] for n in shown_pins})
+    argv = [sys.executable, os.path.abspath(__file__), "bump", "--steps", "all", "--merge", *names]
+    steps = [(shlex.join(["dotfiles", *argv[2:]]), argv)]
+    if os.uname().sysname != "Darwin" and os.geteuid() != 0 and find_tool("sudo"):
+        # bump の apply が流す sudo -v を、窓の外で先に済ませる（check_dotfiles の適用と同じ）。
+        steps.insert(0, ("sudo -v", ["sudo", "-v"]))
+    summary = ", ".join(n["short"] for n in shown_pins)
+    return notice(summary, summary, [steps[-1][0]], steps=steps, keys=[k for n in shown_pins for k in n["keys"]])
+
+
+def update_groups(dotfiles, tools, pins):
     """更新できるものを、実行する順にグループの dict で返す。"""
-    found = [n for n in dotfiles["notices"] if n["steps"]], [], []
+    bump = bump_notice(pins)
+    found = [bump] if bump else [], [n for n in dotfiles["notices"] if n["steps"]], [], []
     for item in tools["items"]:
         if item["notice"] and item["notice"]["steps"]:
-            found[2 if item["key"] == "brew" else 1].append(item["notice"])
+            found[3 if item["key"] == "brew" else 2].append(item["notice"])
     return [
         {
             "id": gid,
@@ -2036,8 +2073,8 @@ def run_update(startup, only, style):
             if sys.stderr.isatty():
                 print("Fetching…", file=sys.stderr)
             fetch_error = refresh(wait=True)
-        dotfiles, tools = check_dotfiles(), check_tools()
-        groups = update_groups(dotfiles, tools)
+        dotfiles, tools, pins = check_all()
+        groups = update_groups(dotfiles, tools, pins)
         if startup and not askable(groups, read_declined()):
             sync_pending(groups)
             return 1
@@ -2045,7 +2082,7 @@ def run_update(startup, only, style):
             # 開いてすぐ打ったコマンドは、捨てずにシェルに渡す。次のシェルでまた聞く。
             return 1
         asked = True
-        return update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_error)
+        return update_chosen(repo, (dotfiles, tools, pins), groups, startup, only, style, fetch_error)
     finally:
         # 聞いたシェルでは notify を出さないので、取得の起動もここで行う。更新と lock の後に回すのは、
         # 取得の git fetch や brew outdated を、選んだ pull や brew upgrade と同時に走らせないため。
@@ -2053,8 +2090,9 @@ def run_update(startup, only, style):
             spawn_refresh()
 
 
-def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_error):
-    rows = notify_rows(repo, dotfiles, tools)
+def update_chosen(repo, checked, groups, startup, only, style, fetch_error):
+    dotfiles = checked[0]
+    rows = notify_rows(repo, *checked)
     if fetch_error:
         rows.insert(
             0,
@@ -2111,7 +2149,7 @@ def update_chosen(repo, dotfiles, tools, groups, startup, only, style, fetch_err
             print("another shell is updating", file=sys.stderr)
             return 2
         ids, asked_keys = {g["id"] for g in chosen}, {k for g in chosen for k in g["keys"]}
-        current = update_groups(check_dotfiles(), check_tools())
+        current = update_groups(*check_all())
         # 答えを待つ間に別のシェルが上げたものは飛ばす。取得でバージョンが進んだものは、見せていないバージョンへ上げないよう飛ばす。
         remaining, changed = [], []
         for g in current:
@@ -2135,7 +2173,7 @@ def run_chosen(chosen, partial, startup, style):
 
     partial は、聞いたグループのうち選ばれなかったものがあるか。
     """
-    results, updated, started, done = [], set(), 0, 0
+    results, updated, failed_ids, started, done = [], set(), set(), 0, 0
     # 端末でなければ（ログに落とすときなど）、出力を消さずにそのまま流す。カーソルを動かせない端末も同じ。
     live_output, live = sys.stdout.isatty() and os.environ.get("TERM", "dumb") != "dumb", None
 
@@ -2154,6 +2192,18 @@ def run_chosen(chosen, partial, startup, style):
                 say(style, "Waiting for the background fetch…", "progress", "info")
                 fcntl.flock(fetching, fcntl.LOCK_EX)
             for group in chosen:
+                skipped = None
+                if group["id"] == "dotfiles" and "pins" in failed_ids:
+                    # bump は固定値のブランチや書き換えた固定値を残して止まりうる。その上でプレイブックを流さない。
+                    skipped = ("warn", "error", group["title"], ["not run (pins did not finish)"])
+                elif done and group["id"] not in {g["id"] for g in update_groups(*check_all())}:
+                    # 前のグループが済ませたもの（bump がマージの後に流すプレイブックなど）は流し直さない。
+                    skipped = ("ok", "ok", group["title"], ["not needed anymore"])
+                if skipped:
+                    show(skipped)
+                    done += 1
+                    started += 1
+                    continue
                 show((group["icon"], "progress", group["title"], ["updating"]))
                 log.write(f"== {group['title']}\n".encode())
                 started += 1
@@ -2162,12 +2212,14 @@ def run_chosen(chosen, partial, startup, style):
                 errors = [e for e in (run_steps(n["steps"], live, log, style) for n in group["notices"]) if e]
                 if errors:
                     row = ("warn", "error", group["title"], errors)
-                elif group["id"] in {g["id"] for g in update_groups(check_dotfiles(), check_tools())}:
+                elif group["id"] in {g["id"] for g in update_groups(*check_all())}:
                     # 手順が 0 で終わっても、判定が変わらなければ上がっていない。
                     row = ("warn", "warn", group["title"], ["steps finished, but updates remain"])
                 else:
                     updated.add(group["id"])
                     row = ("ok", "ok", group["title"], ["updated"])
+                if row[1] != "ok":
+                    failed_ids.add(group["id"])
                 if live is not None:
                     live.erase()
                     if not live.dirty:
@@ -2189,9 +2241,9 @@ def run_chosen(chosen, partial, startup, style):
                         ["interrupted" if done + i < started else "not run (interrupted)"],
                     )
                 )
-        sync_pending(update_groups(check_dotfiles(), check_tools()))
+        sync_pending(update_groups(*check_all()))
     hints = []
-    if "dotfiles" in updated:
+    if updated & {"dotfiles", "pins"}:
         hints.append(("info", "info", "reload this shell with exec zsh", []))
     if startup and partial and ask_policy() == "changed":
         hints.append(("info", "info", "not asking about the rest until they change", []))
@@ -2281,9 +2333,9 @@ def run_character_set(name, style):
 
 def parse_only(value):
     targets = {t.strip() for t in value.split(",") if t.strip()}
-    unknown = targets - {"dotfiles", "tools", "brew", "all"}
+    unknown = targets - {"pins", "dotfiles", "tools", "brew", "all"}
     if not targets or unknown:
-        raise argparse.ArgumentTypeError("use a comma-separated list of dotfiles, tools, brew, all")
+        raise argparse.ArgumentTypeError("use a comma-separated list of pins, dotfiles, tools, brew, all")
     return targets
 
 
@@ -2696,7 +2748,7 @@ def main():
         parents=[style_option],
     )
     update.add_argument(
-        "--only", type=parse_only, help="update without asking: comma-separated dotfiles, tools, brew, all"
+        "--only", type=parse_only, help="update without asking: comma-separated pins, dotfiles, tools, brew, all"
     )
     update.add_argument(
         "--startup",
