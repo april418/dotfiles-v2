@@ -258,7 +258,9 @@ claude plugin marketplace add 'nanaism/yomiyasu#<claude_yomiyasu_version の値>
 claude plugin update yomiyasu@yomiyasu
 ```
 
-`dotfiles bump --steps apply` は、入っているバージョンが固定値と違えば、プレイブックの後にこの 2 行も流す。
+`dotfiles bump --steps apply` と `dotfiles update` の dotfiles の適用（`d`）は、プレイブックの後に `dotfiles after-apply` を流す。
+これは入っているバージョンが固定値と違うときだけ、この 2 行を流す。プレイブックを手で流したときなど、適用の後もずれが残っていれば、
+`dotfiles update` の `d` で `dotfiles after-apply` だけを流せる。
 
 Codex の側は手で揃えなくてよい。プレイブックが clone を新しいタグへ checkout し直し、リンクはそのまま新しいバージョンを指す。
 
