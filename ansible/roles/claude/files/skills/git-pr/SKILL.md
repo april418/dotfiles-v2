@@ -380,8 +380,17 @@ main worktree で流すのは、`git -C <main worktree のパス> status --porce
 出力が空のときだけである。これが git-workflow のルール 12 の、main worktree に触れてよい例外に
 当たる。未コミット変更か未追跡のファイルがあれば、ユーザーが作業の途中なので触らない。main worktree の
 中に置いた linked worktree は、無視されていなくてもこの出力に出ない（Git 2.54.0 で実測）。
-`EnterWorktree` で移ったセッションでは、Claude Code が `git -C <main worktree のパス>` を拒否することがある。
-拒否されたら回避せず、状態を確かめられなかったことと、上の `pull --ff-only` のコマンドを最終応答に書く。
+`EnterWorktree` で移ったセッションでは、Claude Code が `git -C <main worktree のパス>` を拒否する
+（`a worktree-isolated session's git operations must target its own worktree`）。このときは次の順で、
+隔離を一度抜けて流し、同じ worktree に戻る。この skill が `ExitWorktree` を呼ぶ指示に当たる。
+
+1. `ExitWorktree` を `action: "keep"` で呼ぶ。`remove` にしない。無視されたファイルごと worktree が消える
+2. 上の `status --porcelain` と `pull --ff-only` を流す
+3. `EnterWorktree` に今の worktree のパスを `path` で渡して戻り、`git rev-parse --show-toplevel` がそのパスか確かめる
+
+戻ってから下の掃除へ進む。抜けたまま掃除すると、一括削除が main worktree の HEAD で判定する。
+`ExitWorktree` が抜ける worktree が無いと返したとき（セッションが最初から worktree で始まったときなど）と、
+抜けた後も拒否されたときは、回避せず、状態を確かめられなかったことと、上の `pull --ff-only` のコマンドを最終応答に書く。
 
 早送りできなかったときは、force も rebase もせずに止まる。
 
@@ -502,6 +511,7 @@ git push origin --delete <branch>
 - [ ] 追従の後に、ローカルの `<base>` を早送りしたか？
       （どこにも無ければ `fetch origin <base>:<base>`。main worktree にあれば、
       `status --porcelain --untracked-files=normal` が空のときだけ `git -C <main> pull --ff-only`。
+      `git -C` を拒否されたら `ExitWorktree`（keep）で抜けて流し、`EnterWorktree`（path）で戻ってから掃除する。
       ほかの linked worktree にあれば触らない。早送りできなければ止まって最終応答に書く）
 - [ ] 追従した直後に、マージ済みのローカルブランチをまとめて消したか？
       （使われなかった `claude/*` なども消える。ほかの作業ブランチの上では流さない。
