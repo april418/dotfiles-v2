@@ -327,7 +327,9 @@ def check_dotfiles():
     playbook = os.path.join(repo, "ansible", "playbook.yml")
     apply = apply_command(repo)
     playbook_bin = ansible_playbook()
-    apply_steps = [(apply, [playbook_bin or "ansible-playbook", playbook, "--connection=local"])]
+    # 固定値は pull の後でないと決まらないので、AFTER_APPLY の中身はここで組まずに流すときに読ませる。
+    after_step = ("dotfiles after-apply", [sys.executable, os.path.abspath(__file__), "after-apply"])
+    apply_steps = [(apply, [playbook_bin or "ansible-playbook", playbook, "--connection=local"]), after_step]
     if os.uname().sysname != "Darwin" and os.geteuid() != 0 and find_tool("sudo"):
         # install と同じく先に認証を済ませる。become は macOS 以外の作業にしか無く、
         # 認証が残っていないと ansible は聞かずに "Missing sudo password" で失敗する。
@@ -400,6 +402,25 @@ def check_dotfiles():
         unapplied = count(repo, f"{commit}..HEAD", DEPLOYED_PATH)
         result["notices"].append(
             apply_notice(f"{unapplied} commits not applied" if unapplied else "applied files differ from the checkout")
+        )
+        return result
+
+    # 宣言は固定値に追いついているが、bump の apply を逃すなどで AFTER_APPLY が流れていないもの。
+    # 固定値の節は最新を取得できたときしかずれを出さないので、ここでも出す。
+    # 固定値より新しいものも固定値に戻す。宣言と食い違うと、Claude Code はプラグインを読み込まない（README）。
+    pending = (
+        [(pin, installed) for pin, installed, error in pending_after_apply(repo) if not error] if apply_steps else []
+    )
+    if pending:
+        summary = ", ".join(f"{pin.name} {installed} installed, pinned {pin.current}" for pin, installed in pending)
+        result["notices"].append(
+            notice(
+                summary,
+                summary,
+                [command for pin, _ in pending for command in AFTER_APPLY[pin.name](pin.current)],
+                steps=[after_step],
+                keys=[f"dotfiles:after-apply:{pin.name}:{installed}:{pin.current}" for pin, installed in pending],
+            )
         )
     return result
 
@@ -1179,6 +1200,23 @@ def find_pins(repo):
                     )
                 )
     return found
+
+
+def pending_after_apply(repo):
+    """AFTER_APPLY のある固定値のうち、入っているバージョンが固定値と違うものを (固定値, 入っているバージョン, 失敗の理由) で返す。
+
+    最新の取得の結果は見ない。取得に失敗していても、checkout の固定値と入っているものだけで決まる。
+    """
+    pending = []
+    for pin in find_pins(repo):
+        if not isinstance(pin, TagPin) or pin.name not in AFTER_APPLY:
+            continue
+        installed, error = attempt(pin.installed)
+        # 入れていないマシンでは、update が入れていないプラグインを探して失敗する。
+        if not error and (installed is None or version_key(installed) == version_key(pin.current)):
+            continue
+        pending.append((pin, installed, error))
+    return pending
 
 
 def check_pins(repo, remote=None):
@@ -2645,17 +2683,38 @@ def bump_apply(repo, remote, style):
         # check_dotfiles の手順と同じく、認証が残っていないと ansible は聞かずに "Missing sudo password" で失敗する。
         step(["sudo", "-v"], repo, style)
     step([playbook_bin, os.path.join(repo, "ansible", "playbook.yml"), "--connection=local"], repo, style)
-    for pin in find_pins(repo):
-        if not isinstance(pin, TagPin) or pin.name not in AFTER_APPLY:
-            continue
-        installed, error = attempt(pin.installed)
+    after_apply(repo, style)
+
+
+def after_apply(repo, style):
+    """入っているバージョンが固定値と違うものに AFTER_APPLY の手順を流す。プレイブックを流した後に呼ぶ。"""
+    for pin, installed, error in pending_after_apply(repo):
         if error:
             raise BumpError(f"{pin.name}: cannot read the installed version ({error})")
-        # 入れていないマシンでは、update が入れていないプラグインを探して失敗する。
-        if installed is None or version_key(installed) == version_key(pin.current):
-            continue
         for command in AFTER_APPLY[pin.name](pin.current):
             step(shlex.split(command), repo, style)
+
+
+def run_after_apply(style):
+    repo, _ = locate()
+    if repo is None:
+        print("checkout not found (put it at $DOTPATH or ~/.dotfiles)", file=sys.stderr)
+        return 1
+    try:
+        # check_dotfiles が適用を出さないときと同じく、マージしていない固定値をこのマシンだけに入れない。
+        remote = default_remote(repo)
+        branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+        if remote is None:
+            raise BumpError("origin's default branch is unknown")
+        if branch != remote.split("/", 1)[1]:
+            raise BumpError(f"on {branch or 'detached HEAD'}, not {remote.split('/', 1)[1]}")
+        if git(repo, "status", "--porcelain", "--", DEPLOYED_PATH):
+            raise BumpError(f"{DEPLOYED_PATH}/ has uncommitted changes")
+        after_apply(repo, style)
+    except BumpError as e:
+        print(f"dotfiles after-apply: {e}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def run_bump(names, steps, merge, dry_run, style):
@@ -2792,6 +2851,15 @@ def main():
     )
     bump.add_argument("--merge", action="store_true", help="with pr: wait for CI, merge, and pull the default branch")
     bump.add_argument("--dry-run", action="store_true", help="with write: show bumps without editing")
+    sub.add_parser(
+        "after-apply",
+        help=(
+            "Run what the playbook cannot do (re-add and update Claude Code plugins) for pins installed at another "
+            "version (update runs this after the playbook). Exit: 0 = done or nothing to do, "
+            "1 = a step failed or did not run"
+        ),
+        parents=[style_option],
+    )
     sub.add_parser("refresh", help="Fetch (notify runs this in the background)")
     character = sub.add_parser(
         "character", help="Show the Claude Code character; switch with set", parents=[style_option]
@@ -2818,6 +2886,8 @@ def main():
         return 0
     if args.command == "bump":
         return run_bump(args.names, args.steps, args.merge, args.dry_run, style)
+    if args.command == "after-apply":
+        return run_after_apply(style)
     if args.command == "update":
         try:
             return run_update(args.startup, args.only, style)

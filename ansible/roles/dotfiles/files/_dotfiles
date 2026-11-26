@@ -55,6 +55,7 @@ _dotfiles() {
         'notify:notify from the last fetch'
         'update:choose and apply updates'
         'bump:bump pins to the latest'
+        'after-apply:run what the playbook cannot do'
         'refresh:fetch'
         'character:show or switch the Claude Code character'
       )
@@ -63,7 +64,7 @@ _dotfiles() {
     argument)
       curcontext=${curcontext%:*:*}:dotfiles-$line[1]:
       case $line[1] in
-        check)
+        check|after-apply)
           _arguments $help $style && ret=0
           ;;
         refresh)
