@@ -319,16 +319,7 @@ def apply_command(repo):
 
 def check_dotfiles():
     repo, applied = locate()
-    # after_apply は update だけが使う。check の表示は、固定値の節が同じずれを出す。
-    result = {
-        "label": label(repo),
-        "where": repo,
-        "notices": [],
-        "warnings": [],
-        "error": None,
-        "remote": None,
-        "after_apply": None,
-    }
+    result = {"label": label(repo), "where": repo, "notices": [], "warnings": [], "error": None, "remote": None}
     if repo is None:
         result["error"] = "checkout not found (put it at $DOTPATH or ~/.dotfiles)"
         return result
@@ -415,15 +406,21 @@ def check_dotfiles():
         return result
 
     # 宣言は固定値に追いついているが、bump の apply を逃すなどで AFTER_APPLY が流れていないもの。
-    pending = [(pin, installed) for pin, installed, error in pending_after_apply(repo) if not error]
-    if apply_steps and pending:
-        summary = ", ".join(f"{pin.name} {installed} → {pin.current}" for pin, installed in pending)
-        result["after_apply"] = notice(
-            summary,
-            summary,
-            [command for pin, _ in pending for command in AFTER_APPLY[pin.name](pin.current)],
-            steps=[after_step],
-            keys=[f"dotfiles:after-apply:{pin.name}:{installed}:{pin.current}" for pin, installed in pending],
+    # 固定値の節は最新を取得できたときしかずれを出さないので、ここでも出す。
+    # 固定値より新しいものも固定値に戻す。宣言と食い違うと、Claude Code はプラグインを読み込まない（README）。
+    pending = (
+        [(pin, installed) for pin, installed, error in pending_after_apply(repo) if not error] if apply_steps else []
+    )
+    if pending:
+        summary = ", ".join(f"{pin.name} {installed} installed, pinned {pin.current}" for pin, installed in pending)
+        result["notices"].append(
+            notice(
+                summary,
+                summary,
+                [command for pin, _ in pending for command in AFTER_APPLY[pin.name](pin.current)],
+                steps=[after_step],
+                keys=[f"dotfiles:after-apply:{pin.name}:{installed}:{pin.current}" for pin, installed in pending],
+            )
         )
     return result
 
@@ -1720,10 +1717,7 @@ def bump_notice(pins):
 def update_groups(dotfiles, tools, pins):
     """更新できるものを、実行する順にグループの dict で返す。"""
     bump = bump_notice(pins)
-    applying = [n for n in dotfiles["notices"] if n["steps"]] + (
-        [dotfiles["after_apply"]] if dotfiles["after_apply"] else []
-    )
-    found = [bump] if bump else [], applying, [], []
+    found = [bump] if bump else [], [n for n in dotfiles["notices"] if n["steps"]], [], []
     for item in tools["items"]:
         if item["notice"] and item["notice"]["steps"]:
             found[3 if item["key"] == "brew" else 2].append(item["notice"])
@@ -2707,6 +2701,15 @@ def run_after_apply(style):
         print("checkout not found (put it at $DOTPATH or ~/.dotfiles)", file=sys.stderr)
         return 1
     try:
+        # check_dotfiles が適用を出さないときと同じく、マージしていない固定値をこのマシンだけに入れない。
+        remote = default_remote(repo)
+        branch = git(repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+        if remote is None:
+            raise BumpError("origin's default branch is unknown")
+        if branch != remote.split("/", 1)[1]:
+            raise BumpError(f"on {branch or 'detached HEAD'}, not {remote.split('/', 1)[1]}")
+        if git(repo, "status", "--porcelain", "--", DEPLOYED_PATH):
+            raise BumpError(f"{DEPLOYED_PATH}/ has uncommitted changes")
         after_apply(repo, style)
     except BumpError as e:
         print(f"dotfiles after-apply: {e}", file=sys.stderr)
@@ -2852,7 +2855,8 @@ def main():
         "after-apply",
         help=(
             "Run what the playbook cannot do (re-add and update Claude Code plugins) for pins installed at another "
-            "version (update runs this after the playbook). Exit: 0 = done or nothing to do, 1 = a step failed"
+            "version (update runs this after the playbook). Exit: 0 = done or nothing to do, "
+            "1 = a step failed or did not run"
         ),
         parents=[style_option],
     )

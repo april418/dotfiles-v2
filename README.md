@@ -259,8 +259,10 @@ claude plugin update yomiyasu@yomiyasu
 ```
 
 `dotfiles bump --steps apply` と `dotfiles update` の dotfiles の適用（`d`）は、プレイブックの後に `dotfiles after-apply` を流す。
-これは入っているバージョンが固定値と違うときだけ、この 2 行を流す。プレイブックを手で流したときなど、適用の後もずれが残っていれば、
-`dotfiles update` の `d` で `dotfiles after-apply` だけを流せる。
+これは入っているバージョンが固定値と違うときだけ、この 2 行を流す。固定値より新しいものも固定値に戻す（宣言と食い違うと読み込まれないため）。
+プレイブックを手で流したときなど、適用の後もずれが残っていれば、`dotfiles check` の dotfiles の節に出て、`dotfiles update` の `d` で
+`dotfiles after-apply` だけを流せる。出すのは、dotfiles の適用と同じく checkout が master の上にあり、`ansible/` にコミットしていない変更が
+無いときだけで、`dotfiles after-apply` を直接流したときも同じ条件で止まる。
 
 Codex の側は手で揃えなくてよい。プレイブックが clone を新しいタグへ checkout し直し、リンクはそのまま新しいバージョンを指す。
 
